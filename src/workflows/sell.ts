@@ -18,11 +18,11 @@ import {
 import * as btc from "bitcoinjs-lib";
 
 export interface OpenSellOrderParams {
-  /** Asset UTXO id in `{txid}:{vout}` format. Omit for xcp attach prep or zeld transfer prep (server-composed). */
+  /** Asset UTXO id in `{txid}:{vout}` format. Omit for counterparty attach prep or zeld transfer prep (server-composed). */
   assetUtxoId?: string;
-  /** Asset name (required for xcp/zeld; optional display name for ordinals). */
+  /** Asset name (required for counterparty/zeld; optional display name for ordinals). */
   assetName?: string;
-  /** Asset quantity (required for xcp/zeld). */
+  /** Asset quantity (required for counterparty/zeld). */
   assetQuantity?: bigint | number;
   /** Net sats the seller receives. Buyers pay price + royalty. */
   priceSats: number;
@@ -47,7 +47,7 @@ export interface OpenSellOrderParams {
  *
  * Workflow:
  * 1. Request sell quote (server composes all PSBTs).
- * 2. If prep_psbt is present: sign + finalize → attach commit tx hex (xcp) or zeld_payment (zeld transfer).
+ * 2. If prep_psbt is present: sign + finalize → attach commit tx hex (counterparty) or zeld_payment / funding_tx_hex (zeld transfer).
  * 3. Sign swap_psbt (PSBT hex, do NOT finalize).
  * 4. If fee_psbt is present: sign (PSBT hex, do NOT finalize).
  * 5. Create the swap listing.
@@ -116,7 +116,7 @@ export async function openSellOrder(
   let feePayment:
     | { psbtHex: string; feePaymentId: string }
     | undefined;
-  if (quote.feePsbt) {
+  if (quote.feePsbt && quote.feePaymentId) {
     const signedFeePsbt = signer.signPsbtHex(
       quote.feePsbt,
       quote.feeInputsToSign,

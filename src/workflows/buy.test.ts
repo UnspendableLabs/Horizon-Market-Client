@@ -15,9 +15,9 @@ const WIRE_PENDING_SALES = [
   { tx_id: "txid_abc", buyer_address: "bc1qbuyer", atomic_swap: { id: "swap_abc" } },
 ];
 
-const WIRE_SWAP_XCP = {
+const WIRE_SWAP_COUNTERPARTY = {
   id: "swap_abc",
-  listing_type: "xcp",
+  listing_type: "counterparty",
   seller_address: "bc1qseller",
   buyer_address: null,
   asset_utxo_id: "utxo:0",
@@ -44,7 +44,7 @@ const WIRE_SWAP_XCP = {
   on_chain_payment: null,
 };
 
-const WIRE_SWAP_ORDINAL = { ...WIRE_SWAP_XCP, id: "swap_ordinal", listing_type: "ordinal" };
+const WIRE_SWAP_ORDINAL = { ...WIRE_SWAP_COUNTERPARTY, id: "swap_ordinal", listing_type: "ordinal" };
 
 // buy.test.ts uses a buyer address, override the default signer address
 const buyerSigner = () =>
@@ -53,7 +53,6 @@ const buyerSigner = () =>
 describe("fillSwaps", () => {
   it("requests buy quote, signs PSBT, submits purchase", async () => {
     const fetch = makeSequentialFetch(
-      { status: 200, body: { data: WIRE_SWAP_XCP } },
       { status: 200, body: { data: WIRE_BUY_QUOTE } },
       { status: 200, body: { data: WIRE_PENDING_SALES } },
     );
@@ -73,7 +72,7 @@ describe("fillSwaps", () => {
     expect(signer.signPsbtHex).toHaveBeenCalledWith("70736274ff_buy", [1, 2]);
 
     // Purchase body has signed PSBT
-    const [, purchaseInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[2] as [
+    const [, purchaseInit] = (fetch as ReturnType<typeof makeSequentialFetch>).mock.calls[1] as [
       string,
       RequestInit,
     ];
@@ -85,7 +84,6 @@ describe("fillSwaps", () => {
 
   it("auto-fills buyerAddress from signer when omitted", async () => {
     const fetch = makeSequentialFetch(
-      { status: 200, body: { data: WIRE_SWAP_XCP } },
       { status: 200, body: { data: WIRE_BUY_QUOTE } },
       { status: 200, body: { data: [] } },
     );
@@ -94,7 +92,7 @@ describe("fillSwaps", () => {
 
     await fillSwaps({ swapIds: ["swap_abc"] }, http, signer);
 
-    const [, quoteInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+    const [, quoteInit] = (fetch as ReturnType<typeof makeSequentialFetch>).mock.calls[0] as [
       string,
       RequestInit,
     ];
@@ -122,7 +120,6 @@ describe("fillSwaps", () => {
 
   it("defaults detach to true on buy-quotes when omitted", async () => {
     const fetch = makeSequentialFetch(
-      { status: 200, body: { data: WIRE_SWAP_XCP } },
       { status: 200, body: { data: WIRE_BUY_QUOTE } },
       { status: 200, body: { data: [] } },
     );
@@ -131,7 +128,7 @@ describe("fillSwaps", () => {
 
     await fillSwaps({ swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" }, http, signer);
 
-    const [, quoteInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+    const [, quoteInit] = (fetch as ReturnType<typeof makeSequentialFetch>).mock.calls[0] as [
       string,
       RequestInit,
     ];
@@ -176,40 +173,6 @@ describe("fillSwaps", () => {
         signer,
       ),
     ).rejects.toThrow("exactly one swapId");
-  });
-
-  it("throws when multi-buy includes an ordinal listing", async () => {
-    const fetch = makeSequentialFetch(
-      { status: 200, body: { data: WIRE_SWAP_XCP } },
-      { status: 200, body: { data: WIRE_SWAP_ORDINAL } },
-    );
-    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
-    const signer = makeSigner();
-
-    await expect(
-      fillSwaps(
-        { swapIds: ["swap_abc", "swap_ordinal"], buyerAddress: "bc1qbuyer" },
-        http,
-        signer,
-      ),
-    ).rejects.toThrow("Multi-buy cannot include ordinal listings");
-  });
-
-  it("throws when ordinal buy is missing buyerTaprootAddress", async () => {
-    const fetch = makeSequentialFetch({
-      status: 200,
-      body: { data: WIRE_SWAP_ORDINAL },
-    });
-    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
-    const signer = makeSigner();
-
-    await expect(
-      fillSwaps(
-        { swapIds: ["swap_ordinal"], buyerAddress: "bc1qbuyer" },
-        http,
-        signer,
-      ),
-    ).rejects.toThrow("buyerTaprootAddress");
   });
 
   it("includes buyer_taproot_address for ordinal buys", async () => {

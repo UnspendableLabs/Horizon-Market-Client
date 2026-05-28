@@ -21,7 +21,7 @@ interface WireFeeQuoteZeldResponse {
 }
 
 export type FeeQuoteParams =
-  | { address: string; utxoSetIds: string[]; satsPerVbyte: number }
+  | { address: string; utxoSetIds: string[]; satsPerVbyte?: number }
   | { type: "zeld"; address: string };
 
 /**
@@ -49,7 +49,7 @@ export async function requestFeeQuote(
     body = {
       address,
       utxo_set_ids: utxoSetIds,
-      sats_per_vbyte: satsPerVbyte,
+      ...(satsPerVbyte !== undefined && { sats_per_vbyte: satsPerVbyte }),
     };
   }
 

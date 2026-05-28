@@ -9,6 +9,7 @@ const WIRE_SELL_QUOTE_NO_PREP = {
   fee_psbt: "70736274ff_fee",
   fee_inputs_to_sign: [0],
   fee_payment_id: "fp_abc123",
+  fee_waived: false,
   asset_utxo_id: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234:0",
   asset_utxo_value: 600,
   prep_psbt: null,
@@ -34,7 +35,7 @@ describe("requestSellQuote", () => {
     const quote = await requestSellQuote(http, {
       price: 250000,
       sellerAddress: "bc1qseller",
-      listingType: "xcp",
+      listingType: "counterparty",
       assetUtxoId: "abcd:0",
       assetName: "RAREPEPE",
       assetQuantity: 1n,
@@ -45,6 +46,7 @@ describe("requestSellQuote", () => {
       feePsbt: "70736274ff_fee",
       feeInputsToSign: [0],
       feePaymentId: "fp_abc123",
+      feeWaived: false,
       assetUtxoId: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234:0",
       assetUtxoValue: 600,
       prepPsbt: null,
@@ -96,7 +98,7 @@ describe("requestSellQuote", () => {
     const quote = await requestSellQuote(http, {
       price: 250000,
       sellerAddress: "bc1qseller",
-      listingType: "xcp",
+      listingType: "counterparty",
       assetName: "RAREPEPE",
       assetQuantity: 1n,
     });
@@ -112,7 +114,7 @@ describe("requestSellQuote", () => {
     await requestSellQuote(http, {
       price: 100000,
       sellerAddress: "bc1qseller",
-      listingType: "xcp",
+      listingType: "counterparty",
       assetName: "RAREPEPE",
       assetQuantity: 1n,
     });
@@ -120,7 +122,7 @@ describe("requestSellQuote", () => {
     const body = JSON.parse(init.body as string);
     expect(body.price).toBe(100000);
     expect(body.seller_address).toBe("bc1qseller");
-    expect(body.listing_type).toBe("xcp");
+    expect(body.listing_type).toBe("counterparty");
     expect(body.asset_name).toBe("RAREPEPE");
     expect(body.asset_quantity).toBe(1); // bigint <= MAX_SAFE_INTEGER → number
     expect(body).not.toHaveProperty("data"); // must not wrap in { data }

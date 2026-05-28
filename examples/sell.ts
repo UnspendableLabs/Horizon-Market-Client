@@ -1,5 +1,5 @@
 /**
- * Sell order examples — demonstrates openSellOrder for xcp, ordinal, and zeld.
+ * Sell order examples — demonstrates openSellOrder for counterparty, ordinal, and zeld.
  *
  * Run with: npx tsx examples/sell.ts
  * Requires: PRIVATE_KEY env var set to a mainnet/testnet private key hex.
@@ -14,9 +14,9 @@ import {
 const PRIVATE_KEY = process.env["PRIVATE_KEY"];
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY env var is required");
 
-// ─── XCP — existing asset UTXO ───────────────────────────────────────────────
+// ─── Counterparty — existing asset UTXO ──────────────────────────────────────
 
-async function sellXcpExistingUtxo() {
+async function sellCounterpartyExistingUtxo() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "testnet",
@@ -24,7 +24,7 @@ async function sellXcpExistingUtxo() {
   });
 
   const { swap, created } = await client.openSellOrder({
-    listingType: "xcp",
+    listingType: "counterparty",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     assetUtxoId: "abcdef1234...64hexchars...:0", // from wallet/indexer
@@ -35,20 +35,20 @@ async function sellXcpExistingUtxo() {
   console.log("Created:", created, "Swap ID:", swap.id);
 }
 
-// ─── XCP — attach prep (no upfront asset UTXO) ───────────────────────────────
+// ─── Counterparty — attach prep (no upfront asset UTXO) ──────────────────────
 
-async function sellXcpAttachPrep() {
+async function sellCounterpartyAttachPrep() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "testnet",
   });
 
   const { swap, created } = await client.openSellOrder({
-    listingType: "xcp",
+    listingType: "counterparty",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     priceSats: 250_000,
-    // No assetUtxoId — server composes attach commit + reveal
+    // No assetUtxoId — server composes attach commit + reveal (or reuses existing UTXO)
   });
 
   console.log("Created:", created, "Swap ID:", swap.id, "Funded:", swap.funded);
@@ -63,13 +63,13 @@ async function sellOrdinal() {
     network: "mainnet",
   });
 
-  // For P2TR sellers: sellerAddress should be your bc1p… address.
-  // The SDK auto-fills seller_pubkey for your Taproot address.
+  // Omit sellerAddress to auto-fill from the signer's P2TR address (recommended).
+  // If you pass an external P2TR sellerAddress, also pass sellerPubkey (32-byte x-only hex).
   const { swap } = await client.openSellOrder({
     listingType: "ordinal",
     assetUtxoId: "abcdef1234...64hexchars...:0",
     priceSats: 500_000,
-    sellerAddress: "bc1p...", // your P2TR address
+    // sellerAddress auto-filled from signer P2TR; or pass sellerAddress + sellerPubkey explicitly.
   });
 
   console.log("Ordinal listed:", swap.id);
@@ -120,7 +120,7 @@ async function sellZeldTransferPrep() {
 // ─── Manual quote → sign → submit ────────────────────────────────────────────
 
 async function sellManual() {
-  const network = "testnet";
+  const network: "mainnet" | "testnet" = "testnet";
   const btcNetwork =
     network === "mainnet" ? btc.networks.bitcoin : btc.networks.testnet;
   const client = new HorizonMarketClient({
@@ -134,7 +134,7 @@ async function sellManual() {
   const quote = await client.requestSellQuote({
     price: 250_000,
     sellerAddress,
-    listingType: "xcp",
+    listingType: "counterparty",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     assetUtxoId: "abcdef:0",
@@ -151,7 +151,7 @@ async function sellManual() {
 
   // 4. Sign fee PSBT if present (do NOT finalize)
   let feePayment: { psbtHex: string; feePaymentId: string } | undefined;
-  if (quote.feePsbt) {
+  if (quote.feePsbt && quote.feePaymentId) {
     feePayment = {
       psbtHex: signer.signPsbtHex(quote.feePsbt, quote.feeInputsToSign),
       feePaymentId: quote.feePaymentId,
@@ -165,7 +165,7 @@ async function sellManual() {
     price: 250_000,
     sellerAddress,
     psbtHex: signedSwapPsbt,
-    listingType: "xcp",
+    listingType: "counterparty",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     feePayment,
@@ -177,12 +177,12 @@ async function sellManual() {
   console.log("Created:", created, "Swap ID:", swap.id);
 }
 
-// Run examples: `npx tsx examples/sell.ts [xcp-existing|xcp-attach|ordinal|zeld-utxo|zeld-prep|manual|all]`
-const SCENARIO = process.argv[2] ?? "xcp-existing";
+// Run examples: `npx tsx examples/sell.ts [counterparty-existing|counterparty-attach|ordinal|zeld-utxo|zeld-prep|manual|all]`
+const SCENARIO = process.argv[2] ?? "counterparty-existing";
 
 const SCENARIOS: Record<string, () => Promise<void>> = {
-  "xcp-existing": sellXcpExistingUtxo,
-  "xcp-attach": sellXcpAttachPrep,
+  "counterparty-existing": sellCounterpartyExistingUtxo,
+  "counterparty-attach": sellCounterpartyAttachPrep,
   ordinal: sellOrdinal,
   "zeld-utxo": sellZeldExistingUtxo,
   "zeld-prep": sellZeldTransferPrep,

@@ -36,7 +36,7 @@ interface WireAtomicSwap {
   asset_quantity: number | string | null;
   price: number;
   price_per_unit: number | null;
-  psbt_hex: string;
+  psbt_hex: string | null;
   tx_id: string | null;
   block_index: number | null;
   funded: boolean;
@@ -318,7 +318,7 @@ export async function createSwap(
   }
   if (req.zeldPayment !== undefined) {
     body.zeld_payment = {
-      zeld_send_txid: req.zeldPayment.zeldSendTxid,
+      zeld_send_txid: req.zeldPayment.zeldSendTxId,
       zeld_send_tx_hex: req.zeldPayment.zeldSendTxHex,
       fee_payment_id: req.zeldPayment.feePaymentId,
     };

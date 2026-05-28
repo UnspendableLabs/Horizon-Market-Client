@@ -1,5 +1,5 @@
 /**
- * Buy order examples — demonstrates fillSwaps for xcp, ordinal, and zeld.
+ * Buy order examples — demonstrates fillSwaps for counterparty, ordinal, and zeld.
  *
  * Run with: npx tsx examples/buy.ts
  * Requires: PRIVATE_KEY env var set to a mainnet/testnet private key hex.
@@ -9,7 +9,7 @@ import { HorizonMarketClient, LocalSigner } from "../src/index.js";
 const PRIVATE_KEY = process.env["PRIVATE_KEY"];
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY env var is required");
 
-// ─── Buy XCP / ZELD (multi-swap) ─────────────────────────────────────────────
+// ─── Buy counterparty / ZELD (multi-swap) ────────────────────────────────────
 
 async function buyXcp() {
   const client = new HorizonMarketClient({
@@ -23,7 +23,7 @@ async function buyXcp() {
     swapIds: ["swap_abc", "swap_def"],
     // buyerAddress: "tb1q...",  // optional — defaults to signer P2WPKH
     satsPerVbyte: 5,
-    detach: true, // xcp only; default true
+    detach: true, // counterparty only; default true
   });
 
   console.log("Purchases submitted:", sales.length);
@@ -93,6 +93,6 @@ async function buyManual() {
 }
 
 (async () => {
-  console.log("=== Buy XCP ===");
+  console.log("=== Buy counterparty ===");
   await buyXcp().catch(console.error);
 })();

@@ -181,7 +181,7 @@ export class HorizonMarketClient {
    * ZELD listings (transfer prep and `zeld_payment` path): HTTP **201** → `created: true`;
    * HTTP **200** with identical `psbt_hex` / `price` / `asset_quantity` → `created: false`
    * (idempotent replay). HTTP **409** → `HorizonMarketApiError` (`Conflicting zeld listing`).
-   * xcp/ordinal creates are not idempotent — do not retry on network errors.
+   * counterparty/ordinal creates are not idempotent — do not retry on network errors.
    */
   createSwap(
     req: AtomicSwapCreateRequest,

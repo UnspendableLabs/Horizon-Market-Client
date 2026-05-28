@@ -13,7 +13,7 @@ import { makeFetch } from "../test-utils.js";
 
 const WIRE_SWAP = {
   id: "swap_abc123",
-  listing_type: "xcp",
+  listing_type: "counterparty",
   seller_address: "bc1qseller",
   buyer_address: null,
   asset_utxo_id: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234:0",
@@ -42,7 +42,7 @@ const WIRE_SWAP = {
 
 const DOMAIN_SWAP = {
   id: "swap_abc123",
-  listingType: "xcp",
+  listingType: "counterparty",
   sellerAddress: "bc1qseller",
   buyerAddress: null,
   assetUtxoId: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234:0",
@@ -107,6 +107,17 @@ describe("getSwap", () => {
     });
     const swap = await getSwap(http, "swap_abc123");
     expect(swap.assetQuantity).toBeNull();
+  });
+
+  it("maps null psbt_hex for unfunded swaps", async () => {
+    const wire = { ...WIRE_SWAP, psbt_hex: null, funded: false };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.psbtHex).toBeNull();
+    expect(swap.funded).toBe(false);
   });
 
   it("maps user when present", async () => {
@@ -300,7 +311,7 @@ describe("createSwap", () => {
       assetName: "ZELD",
       assetQuantity: 100_000_000n,
       zeldPayment: {
-        zeldSendTxid: "abc123",
+        zeldSendTxId: "abc123",
         zeldSendTxHex: "02000000",
         feePaymentId: "fp_1",
       },

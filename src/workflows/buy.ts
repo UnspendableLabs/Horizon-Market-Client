@@ -1,6 +1,6 @@
 import type { HttpClient } from "../api/http.js";
 import { requestBuyQuote } from "../api/buy-quotes.js";
-import { getSwap, purchaseSwaps } from "../api/atomic-swaps.js";
+import { purchaseSwaps } from "../api/atomic-swaps.js";
 import { assertBuyQuoteParams } from "../buy-params.js";
 import type { Signer } from "../crypto/signer.js";
 import type { BuyQuoteParams, PendingSale } from "../types/index.js";
@@ -16,7 +16,7 @@ export interface FillSwapsParams {
   fundingUtxoIds?: string[];
   /** Ask server to auto-select funding UTXOs. Mutually exclusive with fundingUtxoIds. */
   autoSelect?: boolean;
-  /** Detach the asset from the UTXO (xcp only; default true). */
+  /** Detach the asset from the UTXO (counterparty only; default true). */
   detach?: boolean;
 }
 
@@ -47,30 +47,12 @@ export async function fillSwaps(
   });
 
   // Ordinal buys: exactly one swap id and a taproot receive address are required
-  if (params.buyerTaprootAddress !== undefined) {
-    if (params.swapIds.length !== 1) {
-      throw new Error(
-        "Ordinal buys require exactly one swapId (got " +
-          params.swapIds.length +
-          ")",
-      );
-    }
-  } else if (params.swapIds.length === 1) {
-    const swap = await getSwap(http, params.swapIds[0]!);
-    if (swap.listingType === "ordinal") {
-      throw new Error(
-        "Ordinal buys require buyerTaprootAddress (P2TR address that receives the inscription)",
-      );
-    }
-  } else {
-    const swaps = await Promise.all(
-      params.swapIds.map((id) => getSwap(http, id)),
+  if (params.buyerTaprootAddress !== undefined && params.swapIds.length !== 1) {
+    throw new Error(
+      "Ordinal buys require exactly one swapId (got " +
+        params.swapIds.length +
+        ")",
     );
-    if (swaps.some((swap) => swap.listingType === "ordinal")) {
-      throw new Error(
-        "Multi-buy cannot include ordinal listings — purchase ordinals one at a time with buyerTaprootAddress",
-      );
-    }
   }
 
   const quoteParams: BuyQuoteParams = {

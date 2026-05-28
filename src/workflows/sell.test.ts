@@ -17,6 +17,7 @@ const WIRE_SELL_QUOTE = {
   fee_psbt: "70736274ff_fee",
   fee_inputs_to_sign: [0],
   fee_payment_id: "fp_abc",
+  fee_waived: false,
   asset_utxo_id: "quoteutxo:0",
   asset_utxo_value: 600,
   prep_psbt: null,
@@ -26,7 +27,7 @@ const WIRE_SELL_QUOTE = {
 
 const WIRE_SWAP = {
   id: "swap_abc",
-  listing_type: "xcp",
+  listing_type: "counterparty",
   seller_address: "bc1qseller",
   buyer_address: null,
   asset_utxo_id: "quoteutxo:0",
@@ -69,7 +70,7 @@ describe("openSellOrder", () => {
         assetName: "RAREPEPE",
         assetQuantity: 1n,
         priceSats: 250000,
-        listingType: "xcp",
+        listingType: "counterparty",
       },
       http,
       signer,
@@ -110,7 +111,7 @@ describe("openSellOrder", () => {
     const signer = makeSigner();
 
     await openSellOrder(
-      { assetUtxoId: "utxo:0", assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "xcp" },
+      { assetUtxoId: "utxo:0", assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
       http,
       signer,
       "mainnet",
@@ -272,7 +273,7 @@ describe("openSellOrder", () => {
           assetName: "RAREPEPE",
           assetQuantity: 1n,
           priceSats: 250000,
-          listingType: "xcp",
+          listingType: "counterparty",
           feeUtxoIds: ["tx:0"],
           autoSelectFeeUtxos: true,
         },
@@ -409,7 +410,7 @@ describe("openSellOrder", () => {
     expect(result.created).toBe(false);
   });
 
-  it("omits asset_utxo_id on sell-quotes for xcp attach prep", async () => {
+  it("omits asset_utxo_id on sell-quotes for counterparty attach prep", async () => {
     const quoteWithPrep = {
       ...WIRE_SELL_QUOTE,
       prep_psbt: FIXTURE_PSBT_HEX,
@@ -432,7 +433,7 @@ describe("openSellOrder", () => {
     };
 
     await openSellOrder(
-      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "xcp" },
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
       http,
       hybridSigner,
       "mainnet",
@@ -458,7 +459,7 @@ describe("openSellOrder", () => {
     const signer = makeSigner();
 
     await openSellOrder(
-      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "xcp" },
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
       http,
       signer,
       "mainnet",
@@ -578,7 +579,7 @@ describe("openSellOrder", () => {
     };
 
     await openSellOrder(
-      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "xcp" },
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
       http,
       hybridSigner,
       "mainnet",
@@ -611,13 +612,60 @@ describe("openSellOrder", () => {
 
     await expect(
       openSellOrder(
-        { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "xcp" },
+        { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
         http,
         signer,
         "mainnet",
         btc.networks.bitcoin,
       ),
     ).rejects.toThrow('Unexpected prep_kind "null"');
+  });
+
+  it("omits fee_payment and sends funding_tx_hex for counterparty attach prep when fee is waived", async () => {
+    const quoteFeeWaivedAttach = {
+      ...WIRE_SELL_QUOTE,
+      fee_psbt: null,
+      fee_inputs_to_sign: [],
+      fee_payment_id: null,
+      fee_waived: true,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      asset_utxo_id: "revealthash:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteFeeWaivedAttach } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: (hex, indices) =>
+        hex === FIXTURE_PSBT_HEX
+          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+          : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(createInit.body as string);
+    expect(body.fee_payment).toBeUndefined();
+    expect(body.zeld_payment).toBeUndefined();
+    expect(typeof body.funding_tx_hex).toBe("string");
+    expect(body.funding_tx_hex.length).toBeGreaterThan(0);
+    expect(body.funding_tx_hex.startsWith("70736274ff")).toBe(false);
+    expect(body.psbt_hex).toBe("70736274ff_swap_signed");
   });
 
   it("passes reveal_tx_hex unchanged from quote when attach+reveal", async () => {
@@ -645,7 +693,7 @@ describe("openSellOrder", () => {
     };
 
     await openSellOrder(
-      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "xcp" },
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
       http,
       hybridSigner,
       "mainnet",

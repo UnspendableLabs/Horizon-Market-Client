@@ -57,21 +57,21 @@ const client = new HorizonMarketClient({
   network: "mainnet",
 });
 
-// --- Open a sell order (xcp, existing UTXO) ---
+// --- Open a sell order (counterparty, existing UTXO) ---
 const { swap, created } = await client.openSellOrder({
   assetUtxoId: "abc123...64hex...:0",
   assetName: "RAREPEPE",
   assetQuantity: 1n,
   priceSats: 250_000,
-  listingType: "xcp",
+  listingType: "counterparty",
 });
 
-// --- Open a sell order (xcp, attach prep — no upfront UTXO needed) ---
+// --- Open a sell order (counterparty, attach prep — no upfront UTXO needed) ---
 const { swap: attachSwap } = await client.openSellOrder({
   assetName: "RAREPEPE",
   assetQuantity: 1n,
   priceSats: 250_000,
-  listingType: "xcp",
+  listingType: "counterparty",
 });
 
 // --- Open a sell order (ZELD transfer prep — mainnet only) ---
@@ -160,10 +160,10 @@ const swaps = await client.listSwaps({ limit: 10 }, { signal: controller.signal 
 
 - **Private key security**: never share your private key; this SDK signs locally.
 - **`price`** is the **net sats the seller receives**. Buyers pay `price + royalty`.
-- **Quote expiry**: `fee_payment_id` expires in 30 minutes — sign and submit promptly.
-- **ZELD listings**: mainnet only. Sell from an existing UTXO (`fee_payment`), or omit `assetUtxoId` for **transfer prep** (finalize `prep_psbt` → `zeld_payment` on create).
-- **ZELD idempotency**: transfer-prep creates (`zeld_payment`) may return HTTP 200 with `created: false` on replay, or 409 on conflict. Do not blindly retry xcp/ordinal creates.
-- **Buyer address**: must be P2WPKH (`bc1q…` / `tb1q…`) for xcp/zeld.
+- **Quote expiry**: `fee_payment_id` expires in 30 minutes — sign and submit promptly (null when `feeWaived`).
+- **ZELD listings**: mainnet only. Sell from an existing UTXO (`fee_payment`), or omit `assetUtxoId` for **transfer prep** (finalize `prep_psbt` → `zeld_payment` on create, or `funding_tx_hex` when fee is waived).
+- **ZELD idempotency**: transfer-prep creates (`zeld_payment`) may return HTTP 200 with `created: false` on replay, or 409 on conflict. Do not blindly retry counterparty/ordinal creates.
+- **Buyer address**: must be P2WPKH (`bc1q…` / `tb1q…`) for counterparty/zeld.
 - **Ordinal buys**: provide `buyerTaprootAddress` (receives the inscription) plus P2WPKH `buyerAddress` (funds the purchase).
 - **Prep listings**: attach-prep and zeld transfer-prep swaps may be `funded: false` until the prep tx confirms — poll `getSwap` before `fillSwaps`.
 

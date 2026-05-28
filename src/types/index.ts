@@ -16,7 +16,7 @@
  * New attach-prep or zeld transfer-prep listings may stay `funded: false` until
  * the prep tx confirms — poll {@link AtomicSwap} via `getSwap` before `fillSwaps`.
  */
-export type ListingType = "xcp" | "ordinal" | "zeld";
+export type ListingType = "counterparty" | "ordinal" | "zeld";
 
 /** Prep transaction kind returned by sell-quotes when `prepPsbt` is present. */
 export type PrepKind = "attach" | "zeld_transfer" | null;
@@ -60,7 +60,8 @@ export interface AtomicSwap {
   /** Net sats the seller receives. */
   price: number;
   pricePerUnit: number | null;
-  psbtHex: string;
+  /** Null until the swap is funded on-chain. */
+  psbtHex: string | null;
   txId: string | null;
   blockIndex: number | null;
   /** Asset UTXO confirmed on-chain. */
@@ -127,8 +128,10 @@ export interface SellQuote {
   swapInputsToSign: number[];
   feePsbt: string | null;
   feeInputsToSign: number[];
-  /** Expires in ~30 minutes — sign and submit promptly. */
-  feePaymentId: string;
+  /** Expires in ~30 minutes — sign and submit promptly. Null when `feeWaived`. */
+  feePaymentId: string | null;
+  /** Platform fee waived (subscription/credits). Omit fee/zeld payment on create. */
+  feeWaived: boolean;
   /** Use on create — may be reveal txid:0 for attach+reveal. */
   assetUtxoId: string;
   /** Use on create. */
@@ -169,7 +172,7 @@ export interface FeeQuoteZeldTransferPrep {
   paymentAmount: number;
 }
 
-/** Signed platform fee PSBT submitted on create (xcp, ordinal, zeld existing UTXO). */
+/** Signed platform fee PSBT submitted on create (counterparty, ordinal, zeld existing UTXO). */
 export interface FeePayment {
   psbtHex: string;
   feePaymentId: string;
@@ -177,7 +180,7 @@ export interface FeePayment {
 
 /** Finalized ZELD transfer prep tx submitted on create (zeld transfer prep sell). */
 export interface ZeldPayment {
-  zeldSendTxid: string;
+  zeldSendTxId: string;
   zeldSendTxHex: string;
   feePaymentId: string;
 }
@@ -198,9 +201,9 @@ export interface AtomicSwapCreateRequest {
   /** RFC 3339 UTC; omit = no expiry. */
   expiresAt?: string | null;
   feePayment?: FeePayment;
-  /** ZELD transfer prep — signed prep tx (not used for existing-UTXO or xcp attach sells). */
+  /** ZELD transfer prep — signed prep tx (not used for existing-UTXO or counterparty attach sells). */
   zeldPayment?: ZeldPayment;
-  /** Signed attach commit tx hex (xcp prep). */
+  /** Signed attach commit tx hex (counterparty attach prep). */
   fundingTxHex?: string;
   /** From quote when attach+reveal. */
   revealTxHex?: string;
@@ -266,6 +269,6 @@ export interface BuyQuoteParams {
   /** Mutually exclusive with `autoSelect`. */
   fundingUtxoIds?: string[];
   autoSelect?: boolean;
-  /** XCP only; default `true` on server. Ignored for zeld. */
+  /** Counterparty only; default `true` on server. Ignored for zeld. */
   detach?: boolean;
 }

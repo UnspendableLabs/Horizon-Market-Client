@@ -12,6 +12,7 @@ const BASE_QUOTE: SellQuote = {
   feePsbt: null,
   feeInputsToSign: [],
   feePaymentId: "fp_abc",
+  feeWaived: false,
   assetUtxoId: "preptxid:0",
   assetUtxoValue: 600,
   prepPsbt: null,
@@ -77,8 +78,27 @@ describe("signAndFinalizeSellPrep", () => {
     expect(result?.zeldPayment?.zeldSendTxHex.startsWith("70736274ff")).toBe(
       false,
     );
-    expect(result?.zeldPayment?.zeldSendTxid).toMatch(/^[0-9a-f]{64}$/);
+    expect(result?.zeldPayment?.zeldSendTxId).toMatch(/^[0-9a-f]{64}$/);
     expect(result?.fundingTxHex).toBeUndefined();
+  });
+
+  it("finalizes zeld transfer prep to funding_tx_hex when fee is waived", () => {
+    const signer = hybridSigner();
+    const result = signAndFinalizeSellPrep(
+      {
+        ...BASE_QUOTE,
+        prepPsbt: FIXTURE_PSBT_HEX,
+        prepInputsToSign: [0],
+        prepKind: "zeld_transfer",
+        feeWaived: true,
+        feePaymentId: null,
+      },
+      signer,
+      btc.networks.bitcoin,
+    );
+
+    expect(result?.fundingTxHex).toMatch(/^[0-9a-f]+$/);
+    expect(result?.zeldPayment).toBeUndefined();
   });
 
   it("throws when prep_psbt is present but prep_kind is null", () => {

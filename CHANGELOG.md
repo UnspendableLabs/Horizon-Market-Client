@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `HorizonMarketClient` with quote → sign → submit workflows:
-  - `openSellOrder` — xcp (existing UTXO + attach prep), ordinal, zeld (existing UTXO + transfer prep)
-  - `fillSwaps` — xcp, zeld, ordinal multi/single buy
+  - `openSellOrder` — counterparty (existing UTXO + attach prep), ordinal, zeld (existing UTXO + transfer prep)
+  - `fillSwaps` — counterparty, zeld, ordinal multi/single buy
   - `delistSwap` — BIP322 confirmation flow
 - Typed REST helpers for all v1 atomic swap endpoints
 - `LocalSigner` — P2WPKH + P2TR PSBT signing and BIP322 message signing

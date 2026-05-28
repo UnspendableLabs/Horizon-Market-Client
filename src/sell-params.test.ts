@@ -17,20 +17,20 @@ describe("assertSellListingParams", () => {
     ).toThrow("Ordinal listings require assetUtxoId");
   });
 
-  it("throws when xcp existing UTXO lacks assetName", () => {
+  it("throws when counterparty existing UTXO lacks assetName", () => {
     expect(() =>
       assertSellListingParams({
-        listingType: "xcp",
+        listingType: "counterparty",
         assetUtxoId: "abcd:0",
         assetQuantity: 1n,
       }),
     ).toThrow("require assetName");
   });
 
-  it("throws when xcp attach prep lacks assetQuantity", () => {
+  it("throws when counterparty attach prep lacks assetQuantity", () => {
     expect(() =>
       assertSellListingParams({
-        listingType: "xcp",
+        listingType: "counterparty",
         assetName: "RAREPEPE",
       }),
     ).toThrow("attach prep requires assetQuantity");

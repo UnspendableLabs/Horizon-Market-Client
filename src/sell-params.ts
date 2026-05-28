@@ -72,11 +72,11 @@ export function assertSellListingParams(params: SellListingParams): void {
     "autoSelectFeeUtxos",
   );
 
-  const listingType = params.listingType ?? "xcp";
+  const listingType = params.listingType ?? "counterparty";
 
   if (params.assetName === "ZELD" && listingType !== "zeld") {
     throw new Error(
-      'assetName "ZELD" requires listingType: "zeld" (omit listingType defaults to "xcp")',
+      'assetName "ZELD" requires listingType: "zeld" (omit listingType defaults to "counterparty")',
     );
   }
 
@@ -95,7 +95,7 @@ export function assertSellListingParams(params: SellListingParams): void {
   }
 
   if (params.assetUtxoId) {
-    if (listingType === "xcp" || listingType === "zeld") {
+    if (listingType === "counterparty" || listingType === "zeld") {
       if (!params.assetName) {
         throw new Error(
           `${listingType} listings with assetUtxoId require assetName`,
@@ -111,12 +111,12 @@ export function assertSellListingParams(params: SellListingParams): void {
   }
 
   // Compose prep (no asset_utxo_id upfront)
-  if (listingType === "xcp") {
+  if (listingType === "counterparty") {
     if (!params.assetName) {
-      throw new Error("XCP attach prep requires assetName");
+      throw new Error("Counterparty attach prep requires assetName");
     }
     if (params.assetQuantity === undefined) {
-      throw new Error("XCP attach prep requires assetQuantity");
+      throw new Error("Counterparty attach prep requires assetQuantity");
     }
   } else if (listingType === "zeld") {
     if (params.assetQuantity === undefined) {

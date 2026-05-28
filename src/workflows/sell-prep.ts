@@ -5,11 +5,11 @@ import type { SellQuote, ZeldPayment } from "../types/index.js";
 
 /** Result of signing and finalizing a sell quote prep PSBT. */
 export interface SignedSellPrepResult {
-  /** Signed attach commit tx hex (xcp attach prep). */
+  /** Signed attach commit tx hex (counterparty attach prep). */
   fundingTxHex?: string;
   /** Reveal tx hex from the quote — pass unchanged on create (attach+reveal). */
   revealTxHex?: string;
-  /** Finalized ZELD transfer prep tx (zeld transfer prep). */
+  /** Finalized ZELD transfer prep tx (zeld transfer prep with on-chain fee). */
   zeldPayment?: ZeldPayment;
 }
 
@@ -17,7 +17,8 @@ export interface SignedSellPrepResult {
  * Sign and finalize a sell quote's prep PSBT when present.
  *
  * - `prep_kind: "attach"` → `fundingTxHex` (+ optional `revealTxHex` from quote)
- * - `prep_kind: "zeld_transfer"` → `zeldPayment` with raw tx hex/tid
+ * - `prep_kind: "zeld_transfer"` with on-chain fee → `zeldPayment`
+ * - `prep_kind: "zeld_transfer"` with `feeWaived` → `fundingTxHex` (no payment objects on create)
  *
  * Returns `undefined` when the quote has no `prepPsbt`. Swap and fee PSBTs must
  * still be signed separately (as PSBT hex, not finalized).
@@ -44,10 +45,21 @@ export function signAndFinalizeSellPrep(
 
   if (quote.prepKind === "zeld_transfer") {
     const { txHex, txId } = finalizePsbtHex(signedPrepHex, btcNetwork);
+
+    if (quote.feeWaived) {
+      return { fundingTxHex: txHex };
+    }
+
+    if (!quote.feePaymentId) {
+      throw new Error(
+        "ZELD transfer prep requires feePaymentId when fee is not waived",
+      );
+    }
+
     return {
       zeldPayment: {
         zeldSendTxHex: txHex,
-        zeldSendTxid: txId,
+        zeldSendTxId: txId,
         feePaymentId: quote.feePaymentId,
       },
     };

@@ -1,5 +1,6 @@
 import type { HttpClient } from "./http.js";
 import type {
+  ListingType,
   SellQuote,
   SellQuoteParams,
   PrepKind,
@@ -14,7 +15,8 @@ interface WireSellQuoteResponse {
   swap_inputs_to_sign: number[];
   fee_psbt: string | null;
   fee_inputs_to_sign: number[];
-  fee_payment_id: string;
+  fee_payment_id: string | null;
+  fee_waived: boolean;
   asset_utxo_id: string;
   asset_utxo_value: number;
   prep_psbt: string | null;
@@ -29,7 +31,7 @@ interface WireSellQuoteBody {
   price: number;
   seller_address: string;
   seller_pubkey?: string;
-  listing_type?: string;
+  listing_type?: ListingType;
   asset_utxo_id?: string;
   asset_name?: string;
   asset_quantity?: number | string;
@@ -74,6 +76,7 @@ export async function requestSellQuote(
     feePsbt: wire.fee_psbt,
     feeInputsToSign: wire.fee_inputs_to_sign,
     feePaymentId: wire.fee_payment_id,
+    feeWaived: wire.fee_waived,
     assetUtxoId: wire.asset_utxo_id,
     assetUtxoValue: wire.asset_utxo_value,
     prepPsbt: wire.prep_psbt,

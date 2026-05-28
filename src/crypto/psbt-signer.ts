@@ -80,7 +80,6 @@ export function signPsbtHex(
     const allowedSighashTypes = [
       btc.Transaction.SIGHASH_DEFAULT,
       btc.Transaction.SIGHASH_ALL,
-      btc.Transaction.SIGHASH_NONE,
       btc.Transaction.SIGHASH_SINGLE | btc.Transaction.SIGHASH_ANYONECANPAY,
     ];
 

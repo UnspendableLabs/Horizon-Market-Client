@@ -61,6 +61,7 @@ describe("HorizonMarketClient.requestSellQuote", () => {
         fee_psbt: null,
         fee_inputs_to_sign: [],
         fee_payment_id: "fp_1",
+        fee_waived: false,
         asset_utxo_id: "utxo:0",
         asset_utxo_value: 600,
         prep_psbt: null,
@@ -115,7 +116,7 @@ describe("HorizonMarketClient.requestSellQuote", () => {
       client.requestSellQuote({
         price: 1000,
         sellerAddress: "bc1qseller",
-        listingType: "xcp",
+        listingType: "counterparty",
         assetName: "RAREPEPE",
         assetQuantity: 1n,
         assetUtxoId: "utxo:0",
