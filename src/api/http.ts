@@ -71,7 +71,13 @@ export class HttpClient {
 
     // Treat 2xx as success
     if (status >= 200 && status < 300) {
-      const payload = (await response.json()) as { data: T };
+      const payload = (await response.json()) as { data?: T };
+      if (payload.data === undefined) {
+        throw new HorizonMarketApiError(
+          status,
+          "Response missing required { data } envelope",
+        );
+      }
       return { data: payload.data, status };
     }
 

@@ -1,5 +1,9 @@
 import type { HttpClient } from "./http.js";
-import type { ConfirmDelistResult, DelistRequest } from "../types/index.js";
+import type {
+  ConfirmDelistResult,
+  DelistRequest,
+  RequestOptions,
+} from "../types/index.js";
 
 // ─── Wire types (internal) ────────────────────────────────────────────────────
 
@@ -10,7 +14,7 @@ interface WireDelistRequest {
 
 interface WireConfirmDelistResult {
   id: string;
-  signature: string;
+  signature: string | null;
 }
 
 /**
@@ -21,11 +25,13 @@ interface WireConfirmDelistResult {
 export async function startDelist(
   http: HttpClient,
   atomicSwapId: string,
+  options?: RequestOptions,
 ): Promise<DelistRequest> {
   const wire = await http.request<WireDelistRequest>(
     "POST",
     `/api/atomic-swaps/${atomicSwapId}/delist-requests`,
     {},
+    options?.signal,
   );
 
   return {
@@ -46,11 +52,13 @@ export async function confirmDelist(
   http: HttpClient,
   requestId: string,
   signature: string,
+  options?: RequestOptions,
 ): Promise<ConfirmDelistResult> {
   const wire = await http.request<WireConfirmDelistResult>(
     "PUT",
     `/api/atomic-swaps/delist-requests/${requestId}`,
     { signature },
+    options?.signal,
   );
 
   return {

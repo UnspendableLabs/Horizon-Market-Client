@@ -4,7 +4,12 @@
  * Run with: npx tsx examples/sell.ts
  * Requires: PRIVATE_KEY env var set to a mainnet/testnet private key hex.
  */
-import { HorizonMarketClient, LocalSigner } from "../src/index.js";
+import * as btc from "bitcoinjs-lib";
+import {
+  HorizonMarketClient,
+  LocalSigner,
+  signAndFinalizeSellPrep,
+} from "../src/index.js";
 
 const PRIVATE_KEY = process.env["PRIVATE_KEY"];
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY env var is required");
@@ -72,7 +77,7 @@ async function sellOrdinal() {
 
 // ─── ZELD — existing UTXO (mainnet only) ─────────────────────────────────────
 
-async function sellZeld() {
+async function sellZeldExistingUtxo() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "mainnet", // ZELD is mainnet only
@@ -92,27 +97,59 @@ async function sellZeld() {
   console.log("Created:", created, "Swap ID:", swap.id);
 }
 
+// ─── ZELD — transfer prep (no upfront UTXO, mainnet only) ────────────────────
+
+async function sellZeldTransferPrep() {
+  const client = new HorizonMarketClient({
+    privateKey: PRIVATE_KEY,
+    network: "mainnet",
+  });
+
+  const { swap, created } = await client.openSellOrder({
+    listingType: "zeld",
+    assetName: "ZELD",
+    assetQuantity: 100_000_000n,
+    priceSats: 250_000,
+    // No assetUtxoId — server composes prep tx (isolates ZELD + platform fee)
+  });
+
+  console.log("Created:", created, "Swap ID:", swap.id, "Funded:", swap.funded);
+  // Listing may be funded: false until prep tx confirms on-chain.
+}
+
 // ─── Manual quote → sign → submit ────────────────────────────────────────────
 
 async function sellManual() {
+  const network = "testnet";
+  const btcNetwork =
+    network === "mainnet" ? btc.networks.bitcoin : btc.networks.testnet;
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
-    network: "testnet",
+    network,
   });
+  const signer = new LocalSigner(PRIVATE_KEY!, network);
+  const sellerAddress = signer.getAddresses().p2wpkh;
 
   // 1. Request sell quote
   const quote = await client.requestSellQuote({
     price: 250_000,
-    sellerAddress: "tb1q...",
+    sellerAddress,
     listingType: "xcp",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     assetUtxoId: "abcdef:0",
   });
 
-  // 2. Sign swap PSBT (server-composed)
-  const signer = new LocalSigner(PRIVATE_KEY, "testnet");
-  const signedSwapPsbt = signer.signPsbtHex(quote.swapPsbt, quote.swapInputsToSign);
+  // 2. Sign + finalize prep PSBT when present (attach or zeld transfer)
+  const prep = signAndFinalizeSellPrep(quote, signer, btcNetwork);
+
+  // 3. Sign swap PSBT (do NOT finalize)
+  const signedSwapPsbt = signer.signPsbtHex(
+    quote.swapPsbt,
+    quote.swapInputsToSign,
+  );
+
+  // 4. Sign fee PSBT if present (do NOT finalize)
   let feePayment: { psbtHex: string; feePaymentId: string } | undefined;
   if (quote.feePsbt) {
     feePayment = {
@@ -121,27 +158,56 @@ async function sellManual() {
     };
   }
 
-  // 3. Submit listing
+  // 5. Submit listing — always use quote-derived asset UTXO fields
   const { swap, created } = await client.createSwap({
     assetUtxoId: quote.assetUtxoId,
     assetUtxoValue: quote.assetUtxoValue,
     price: 250_000,
-    sellerAddress: "tb1q...",
+    sellerAddress,
     psbtHex: signedSwapPsbt,
     listingType: "xcp",
     assetName: "RAREPEPE",
     assetQuantity: 1n,
     feePayment,
+    zeldPayment: prep?.zeldPayment,
+    fundingTxHex: prep?.fundingTxHex,
+    revealTxHex: prep?.revealTxHex,
   });
 
   console.log("Created:", created, "Swap ID:", swap.id);
 }
 
-// Run all examples in sequence (for demonstration)
-(async () => {
-  console.log("=== XCP existing UTXO ===");
-  await sellXcpExistingUtxo().catch(console.error);
+// Run examples: `npx tsx examples/sell.ts [xcp-existing|xcp-attach|ordinal|zeld-utxo|zeld-prep|manual|all]`
+const SCENARIO = process.argv[2] ?? "xcp-existing";
 
-  console.log("\n=== XCP attach prep ===");
-  await sellXcpAttachPrep().catch(console.error);
+const SCENARIOS: Record<string, () => Promise<void>> = {
+  "xcp-existing": sellXcpExistingUtxo,
+  "xcp-attach": sellXcpAttachPrep,
+  ordinal: sellOrdinal,
+  "zeld-utxo": sellZeldExistingUtxo,
+  "zeld-prep": sellZeldTransferPrep,
+  manual: sellManual,
+};
+
+async function runScenario(name: string, fn: () => Promise<void>) {
+  console.log(`=== ${name} ===`);
+  await fn().catch(console.error);
+}
+
+(async () => {
+  if (SCENARIO === "all") {
+    for (const [name, fn] of Object.entries(SCENARIOS)) {
+      await runScenario(name, fn);
+    }
+    return;
+  }
+
+  const fn = SCENARIOS[SCENARIO];
+  if (!fn) {
+    console.error(
+      `Unknown scenario "${SCENARIO}". Use one of: ${Object.keys(SCENARIOS).join(", ")}, all`,
+    );
+    process.exit(1);
+  }
+  await runScenario(SCENARIO, fn);
 })();

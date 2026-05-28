@@ -44,6 +44,16 @@ describe("confirmDelist", () => {
     expect(result).toEqual({ id: "dr_abc123", signature: "base64sig==" });
   });
 
+  it("maps null signature from wire response", async () => {
+    const wire = { id: "dr_abc123", signature: null };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(201, { data: wire }),
+    });
+    const result = await confirmDelist(http, "dr_abc123", "base64sig==");
+    expect(result.signature).toBeNull();
+  });
+
   it("puts to correct URL with flat signature body", async () => {
     const fetchFn = makeFetch(201, { data: { id: "dr_1", signature: "sig" } });
     const http = new HttpClient({ baseUrl: "https://horizon.market", fetch: fetchFn });

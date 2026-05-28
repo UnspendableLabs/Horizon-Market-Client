@@ -31,6 +31,7 @@ export type {
   Pagination,
   PendingSale,
   PrepKind,
+  RequestOptions,
   SellQuote,
   SellQuoteParams,
   ZeldPayment,
@@ -41,3 +42,9 @@ export type { HorizonMarketClientOptions } from "./config.js";
 
 // Advanced (fee-quotes)
 export type { FeeQuoteParams } from "./api/fee-quotes.js";
+
+// Manual sell workflow helper (quote → sign → submit)
+export {
+  signAndFinalizeSellPrep,
+  type SignedSellPrepResult,
+} from "./workflows/sell-prep.js";

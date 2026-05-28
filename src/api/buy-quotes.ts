@@ -1,5 +1,5 @@
 import type { HttpClient } from "./http.js";
-import type { BuyQuote, BuyQuoteParams } from "../types/index.js";
+import type { BuyQuote, BuyQuoteParams, RequestOptions } from "../types/index.js";
 
 // ─── Wire types (internal) ────────────────────────────────────────────────────
 
@@ -25,6 +25,7 @@ interface WireBuyQuoteBody {
 export async function requestBuyQuote(
   http: HttpClient,
   params: BuyQuoteParams,
+  options?: RequestOptions,
 ): Promise<BuyQuote> {
   const body: WireBuyQuoteBody = {
     swap_ids: params.swapIds,
@@ -44,6 +45,7 @@ export async function requestBuyQuote(
     "POST",
     "/api/atomic-swaps/buy-quotes",
     body,
+    options?.signal,
   );
 
   return {

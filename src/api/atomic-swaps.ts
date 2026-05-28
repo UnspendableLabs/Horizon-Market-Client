@@ -11,6 +11,7 @@ import type {
   Pagination,
   PendingSale,
   ListingType,
+  RequestOptions,
 } from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
 
@@ -51,6 +52,7 @@ interface WireAtomicSwap {
   created_at: string;
   updated_at: string;
   on_chain_payment: WireOnChainPayment | null;
+  user?: { id: string } | null;
 }
 
 interface WirePagination {
@@ -152,6 +154,7 @@ function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     onChainPayment: wire.on_chain_payment
       ? mapOnChainPayment(wire.on_chain_payment)
       : null,
+    user: wire.user ?? undefined,
   };
 }
 
@@ -160,6 +163,7 @@ function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
 export async function listSwaps(
   http: HttpClient,
   params: ListSwapsParams = {},
+  options?: RequestOptions,
 ): Promise<ListSwapsResult> {
   const qs = new URLSearchParams();
   if (params.assetName !== undefined) qs.set("asset_name", params.assetName);
@@ -191,7 +195,12 @@ export async function listSwaps(
     ? `/api/atomic-swaps?${query}`
     : "/api/atomic-swaps";
 
-  const wire = await http.request<WireListSwapsResult>("GET", path);
+  const wire = await http.request<WireListSwapsResult>(
+    "GET",
+    path,
+    undefined,
+    options?.signal,
+  );
 
   return {
     count: wire.count,
@@ -204,10 +213,13 @@ export async function listSwaps(
 export async function getSwap(
   http: HttpClient,
   id: string,
+  options?: RequestOptions,
 ): Promise<AtomicSwap> {
   const wire = await http.request<WireAtomicSwap>(
     "GET",
     `/api/atomic-swaps/${id}`,
+    undefined,
+    options?.signal,
   );
   return mapAtomicSwap(wire);
 }
@@ -215,6 +227,7 @@ export async function getSwap(
 export async function getLockedAssetUtxoIds(
   http: HttpClient,
   params: { sellerAddress?: string; sellerAddresses?: string[] } = {},
+  options?: RequestOptions,
 ): Promise<LockedAssetUtxoIds> {
   const qs = new URLSearchParams();
   if (params.sellerAddress !== undefined)
@@ -227,12 +240,18 @@ export async function getLockedAssetUtxoIds(
     ? `/api/atomic-swaps/asset-utxo-id?${query}`
     : "/api/atomic-swaps/asset-utxo-id";
 
-  return http.request<LockedAssetUtxoIds>("GET", path);
+  return http.request<LockedAssetUtxoIds>(
+    "GET",
+    path,
+    undefined,
+    options?.signal,
+  );
 }
 
 export async function searchAssetNames(
   http: HttpClient,
   params: { query?: string; filled?: boolean; limit?: number } = {},
+  options?: RequestOptions,
 ): Promise<AssetNameSearchResult> {
   const qs = new URLSearchParams();
   if (params.query !== undefined) qs.set("query", params.query);
@@ -245,7 +264,12 @@ export async function searchAssetNames(
     ? `/api/atomic-swaps/asset-name?${query}`
     : "/api/atomic-swaps/asset-name";
 
-  const wire = await http.request<WireAssetNameSearchResult>("GET", path);
+  const wire = await http.request<WireAssetNameSearchResult>(
+    "GET",
+    path,
+    undefined,
+    options?.signal,
+  );
 
   return {
     assetNames: wire.asset_names,
@@ -257,16 +281,20 @@ export async function getPendingPurchaseTxIds(
   http: HttpClient,
   id: string,
   address: string,
+  options?: RequestOptions,
 ): Promise<string[]> {
   return http.request<string[]>(
     "GET",
     `/api/atomic-swaps/${id}/pending-sales/${address}`,
+    undefined,
+    options?.signal,
   );
 }
 
 export async function createSwap(
   http: HttpClient,
   req: AtomicSwapCreateRequest,
+  options?: RequestOptions,
 ): Promise<CreateSwapResult> {
   const body: WireAtomicSwapCreateBody = {
     asset_utxo_id: req.assetUtxoId,
@@ -302,6 +330,7 @@ export async function createSwap(
     "POST",
     "/api/atomic-swaps",
     body,
+    options?.signal,
   );
 
   return {
@@ -314,6 +343,7 @@ export async function createSwap(
 export async function purchaseSwaps(
   http: HttpClient,
   params: { swapIds: string[]; buyerAddress: string; psbtHex: string },
+  options?: RequestOptions,
 ): Promise<PendingSale[]> {
   const wire = await http.request<WirePendingSale[]>(
     "POST",
@@ -323,6 +353,7 @@ export async function purchaseSwaps(
       buyer_address: params.buyerAddress,
       psbt_hex: params.psbtHex,
     },
+    options?.signal,
   );
 
   return wire.map((w) => ({

@@ -19,6 +19,14 @@ import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflow
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
 import type { HorizonMarketClientOptions } from "./config.js";
 import { DEFAULT_BASE_URL } from "./config.js";
+import { assertBuyQuoteParams, assertP2WpkhBuyerAddress } from "./buy-params.js";
+import {
+  assertOrdinalSellerAddress,
+  assertSellListingParams,
+  assertTaprootSellerPubkey,
+  assertZeldMainnet,
+  resolveSellerPubkey,
+} from "./sell-params.js";
 import type {
   AtomicSwap,
   AtomicSwapCreateRequest,
@@ -34,6 +42,7 @@ import type {
   ListSwapsResult,
   LockedAssetUtxoIds,
   PendingSale,
+  RequestOptions,
   SellQuote,
   SellQuoteParams,
 } from "./types/index.js";
@@ -79,13 +88,16 @@ export class HorizonMarketClient {
   // ─── REST helpers ───────────────────────────────────────────────────────────
 
   /** List and filter atomic swaps. */
-  listSwaps(params?: ListSwapsParams): Promise<ListSwapsResult> {
-    return apiListSwaps(this.http, params ?? {});
+  listSwaps(
+    params?: ListSwapsParams,
+    options?: RequestOptions,
+  ): Promise<ListSwapsResult> {
+    return apiListSwaps(this.http, params ?? {}, options);
   }
 
   /** Get a single atomic swap by id. */
-  getSwap(id: string): Promise<AtomicSwap> {
-    return apiGetSwap(this.http, id);
+  getSwap(id: string, options?: RequestOptions): Promise<AtomicSwap> {
+    return apiGetSwap(this.http, id, options);
   }
 
   /**
@@ -94,48 +106,88 @@ export class HorizonMarketClient {
    */
   getLockedAssetUtxoIds(
     params?: { sellerAddress?: string; sellerAddresses?: string[] },
+    options?: RequestOptions,
   ): Promise<LockedAssetUtxoIds> {
-    return apiGetLockedAssetUtxoIds(this.http, params ?? {});
+    return apiGetLockedAssetUtxoIds(this.http, params ?? {}, options);
   }
 
   /** Search distinct listed asset names. */
-  searchAssetNames(params?: {
-    query?: string;
-    filled?: boolean;
-    limit?: number;
-  }): Promise<AssetNameSearchResult> {
-    return apiSearchAssetNames(this.http, params ?? {});
+  searchAssetNames(
+    params?: {
+      query?: string;
+      filled?: boolean;
+      limit?: number;
+    },
+    options?: RequestOptions,
+  ): Promise<AssetNameSearchResult> {
+    return apiSearchAssetNames(this.http, params ?? {}, options);
   }
 
   /** Poll in-flight purchase tx ids after fillSwaps. */
-  getPendingPurchaseTxIds(swapId: string, address: string): Promise<string[]> {
-    return apiGetPendingPurchaseTxIds(this.http, swapId, address);
+  getPendingPurchaseTxIds(
+    swapId: string,
+    address: string,
+    options?: RequestOptions,
+  ): Promise<string[]> {
+    return apiGetPendingPurchaseTxIds(this.http, swapId, address, options);
   }
 
   /** Request a sell quote (server composes all unsigned PSBTs). */
-  requestSellQuote(params: SellQuoteParams): Promise<SellQuote> {
-    return apiRequestSellQuote(this.http, params);
+  requestSellQuote(
+    params: SellQuoteParams,
+    options?: RequestOptions,
+  ): Promise<SellQuote> {
+    assertZeldMainnet(params.listingType, this.network);
+    assertSellListingParams(params);
+    assertOrdinalSellerAddress(params.listingType, params.sellerAddress);
+    const sellerPubkey = resolveSellerPubkey(
+      params.sellerAddress,
+      params.sellerPubkey,
+      this.signer.getAddresses(),
+    );
+    assertTaprootSellerPubkey(params.sellerAddress, sellerPubkey);
+    return apiRequestSellQuote(
+      this.http,
+      { ...params, sellerPubkey },
+      options,
+    );
   }
 
   /** Request a buy quote (server composes the unsigned buyer PSBT). */
-  requestBuyQuote(params: BuyQuoteParams): Promise<BuyQuote> {
-    return apiRequestBuyQuote(this.http, params);
+  requestBuyQuote(
+    params: BuyQuoteParams,
+    options?: RequestOptions,
+  ): Promise<BuyQuote> {
+    assertBuyQuoteParams(params);
+    return apiRequestBuyQuote(this.http, params, options);
   }
 
-  /** Request a fee quote (advanced — for custom fee-quote flows). */
+  /** Request a fee quote (advanced — for custom fee-quote flows). ZELD variant is mainnet only. */
   requestFeeQuote(
     params: FeeQuoteParams,
+    options?: RequestOptions,
   ): Promise<FeeQuoteBtc | FeeQuoteZeldTransferPrep> {
-    return apiRequestFeeQuote(this.http, params);
+    if ("type" in params && params.type === "zeld") {
+      assertZeldMainnet("zeld", this.network);
+    }
+    return apiRequestFeeQuote(this.http, params, options);
   }
 
   /**
    * Submit a signed swap listing.
    *
    * Prefer `openSellOrder` for the full workflow. Use this for manual quote → sign → submit.
+   *
+   * ZELD listings (transfer prep and `zeld_payment` path): HTTP **201** → `created: true`;
+   * HTTP **200** with identical `psbt_hex` / `price` / `asset_quantity` → `created: false`
+   * (idempotent replay). HTTP **409** → `HorizonMarketApiError` (`Conflicting zeld listing`).
+   * xcp/ordinal creates are not idempotent — do not retry on network errors.
    */
-  createSwap(req: AtomicSwapCreateRequest): Promise<CreateSwapResult> {
-    return apiCreateSwap(this.http, req);
+  createSwap(
+    req: AtomicSwapCreateRequest,
+    options?: RequestOptions,
+  ): Promise<CreateSwapResult> {
+    return apiCreateSwap(this.http, req, options);
   }
 
   /**
@@ -144,25 +196,30 @@ export class HorizonMarketClient {
    * Prefer `fillSwaps` for the full workflow. Use this for manual quote → sign → submit.
    * Note: NOT idempotent — do not retry on network errors.
    */
-  purchaseSwaps(params: {
-    swapIds: string[];
-    buyerAddress: string;
-    psbtHex: string;
-  }): Promise<PendingSale[]> {
-    return apiPurchaseSwaps(this.http, params);
+  purchaseSwaps(
+    params: {
+      swapIds: string[];
+      buyerAddress: string;
+      psbtHex: string;
+    },
+    options?: RequestOptions,
+  ): Promise<PendingSale[]> {
+    assertP2WpkhBuyerAddress(params.buyerAddress);
+    return apiPurchaseSwaps(this.http, params, options);
   }
 
   /** Start a delist flow — returns the delist request. */
-  startDelist(swapId: string): Promise<DelistRequest> {
-    return apiStartDelist(this.http, swapId);
+  startDelist(swapId: string, options?: RequestOptions): Promise<DelistRequest> {
+    return apiStartDelist(this.http, swapId, options);
   }
 
   /** Confirm delist with a BIP322 signature over the delist request id. */
   confirmDelist(
     requestId: string,
     signature: string,
+    options?: RequestOptions,
   ): Promise<ConfirmDelistResult> {
-    return apiConfirmDelist(this.http, requestId, signature);
+    return apiConfirmDelist(this.http, requestId, signature, options);
   }
 
   // ─── Workflow methods ────────────────────────────────────────────────────────
@@ -170,8 +227,15 @@ export class HorizonMarketClient {
   /**
    * Open a sell order: sell-quote → sign → create listing.
    *
-   * Returns `{ swap, created }` where `created: true` on 201 (new listing),
-   * `created: false` when ZELD idempotency returns 200 with an existing open listing.
+   * Returns `{ swap, created }` where `created: true` on HTTP 201 (new listing),
+   * `created: false` when ZELD idempotency returns HTTP 200 with an existing open
+   * listing (same `psbt_hex`, `price`, and `asset_quantity`).
+   *
+   * Throws `HorizonMarketApiError` with status **409** (`Conflicting zeld listing`)
+   * when a conflicting open ZELD listing exists for the same seller UTXO.
+   *
+   * New attach-prep or zeld transfer-prep listings may be `funded: false` until the
+   * prep tx confirms — poll `getSwap` before calling `fillSwaps`.
    */
   openSellOrder(
     params: OpenSellOrderParams,

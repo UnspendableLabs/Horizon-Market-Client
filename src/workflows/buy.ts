@@ -1,6 +1,7 @@
 import type { HttpClient } from "../api/http.js";
 import { requestBuyQuote } from "../api/buy-quotes.js";
-import { purchaseSwaps } from "../api/atomic-swaps.js";
+import { getSwap, purchaseSwaps } from "../api/atomic-swaps.js";
+import { assertBuyQuoteParams } from "../buy-params.js";
 import type { Signer } from "../crypto/signer.js";
 import type { BuyQuoteParams, PendingSale } from "../types/index.js";
 
@@ -35,12 +36,15 @@ export async function fillSwaps(
   const addresses = signer.getAddresses();
   const buyerAddress = params.buyerAddress ?? addresses.p2wpkh;
 
-  // Validate buyer address is P2WPKH (bc1q... / tb1q...)
-  if (!buyerAddress.startsWith("bc1q") && !buyerAddress.startsWith("tb1q")) {
-    throw new Error(
-      `Buyer address must be P2WPKH (bc1q… or tb1q…), got: ${buyerAddress}`,
-    );
-  }
+  assertBuyQuoteParams({
+    swapIds: params.swapIds,
+    buyerAddress,
+    buyerTaprootAddress: params.buyerTaprootAddress,
+    satsPerVbyte: params.satsPerVbyte,
+    fundingUtxoIds: params.fundingUtxoIds,
+    autoSelect: params.autoSelect,
+    detach: params.detach,
+  });
 
   // Ordinal buys: exactly one swap id and a taproot receive address are required
   if (params.buyerTaprootAddress !== undefined) {
@@ -49,6 +53,22 @@ export async function fillSwaps(
         "Ordinal buys require exactly one swapId (got " +
           params.swapIds.length +
           ")",
+      );
+    }
+  } else if (params.swapIds.length === 1) {
+    const swap = await getSwap(http, params.swapIds[0]!);
+    if (swap.listingType === "ordinal") {
+      throw new Error(
+        "Ordinal buys require buyerTaprootAddress (P2TR address that receives the inscription)",
+      );
+    }
+  } else {
+    const swaps = await Promise.all(
+      params.swapIds.map((id) => getSwap(http, id)),
+    );
+    if (swaps.some((swap) => swap.listingType === "ordinal")) {
+      throw new Error(
+        "Multi-buy cannot include ordinal listings — purchase ordinals one at a time with buyerTaprootAddress",
       );
     }
   }
@@ -60,7 +80,7 @@ export async function fillSwaps(
     satsPerVbyte: params.satsPerVbyte,
     fundingUtxoIds: params.fundingUtxoIds,
     autoSelect: params.autoSelect,
-    detach: params.detach,
+    detach: params.detach ?? true,
   };
 
   // Step 1: Request buy quote

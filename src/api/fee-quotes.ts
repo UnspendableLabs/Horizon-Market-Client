@@ -1,5 +1,9 @@
 import type { HttpClient } from "./http.js";
-import type { FeeQuoteBtc, FeeQuoteZeldTransferPrep } from "../types/index.js";
+import type {
+  FeeQuoteBtc,
+  FeeQuoteZeldTransferPrep,
+  RequestOptions,
+} from "../types/index.js";
 
 // ─── Wire types (internal) ────────────────────────────────────────────────────
 
@@ -30,6 +34,7 @@ export type FeeQuoteParams =
 export async function requestFeeQuote(
   http: HttpClient,
   params: FeeQuoteParams,
+  options?: RequestOptions,
 ): Promise<FeeQuoteBtc | FeeQuoteZeldTransferPrep> {
   let body: Record<string, unknown>;
 
@@ -50,7 +55,7 @@ export async function requestFeeQuote(
 
   const wire = await http.request<
     WireFeeQuoteBtcResponse | WireFeeQuoteZeldResponse
-  >("POST", "/api/atomic-swaps/fee-quotes", body);
+  >("POST", "/api/atomic-swaps/fee-quotes", body, options?.signal);
 
   if ("psbt" in wire) {
     const btcWire = wire as WireFeeQuoteBtcResponse;

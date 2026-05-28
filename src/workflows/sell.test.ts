@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import * as btc from "bitcoinjs-lib";
-import { HttpClient } from "../api/http.js";
+import { HttpClient, HorizonMarketApiError } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import { signPsbtHex } from "../crypto/psbt-signer.js";
 import { openSellOrder } from "./sell.js";
@@ -135,7 +135,13 @@ describe("openSellOrder", () => {
     const signer = makeSigner();
 
     const result = await openSellOrder(
-      { assetUtxoId: "utxo:0", assetName: "ZELD", assetQuantity: 1n, priceSats: 250000, listingType: "zeld" },
+      {
+        assetUtxoId: "utxo:0",
+        assetName: "ZELD",
+        assetQuantity: 1n,
+        priceSats: 250000,
+        listingType: "zeld",
+      },
       http,
       signer,
       "mainnet",
@@ -143,6 +149,101 @@ describe("openSellOrder", () => {
     );
 
     expect(result.created).toBe(false);
+  });
+
+  it("throws HorizonMarketApiError on 409 ZELD conflict", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_SELL_QUOTE } },
+      { status: 409, body: { error: "Conflicting zeld listing" } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signer = makeSigner();
+
+    await expect(
+      openSellOrder(
+        {
+          assetUtxoId: "utxo:0",
+          assetName: "ZELD",
+          assetQuantity: 1n,
+          priceSats: 250000,
+          listingType: "zeld",
+        },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      error: "Conflicting zeld listing",
+    });
+    await expect(
+      openSellOrder(
+        {
+          assetUtxoId: "utxo:0",
+          assetName: "ZELD",
+          assetQuantity: 1n,
+          priceSats: 250000,
+          listingType: "zeld",
+        },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toBeInstanceOf(HorizonMarketApiError);
+  });
+
+  it("throws for ZELD when assetName is not ZELD", async () => {
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
+    const signer = makeSigner();
+
+    await expect(
+      openSellOrder(
+        {
+          assetUtxoId: "utxo:0",
+          assetName: "RAREPEPE",
+          assetQuantity: 1n,
+          priceSats: 1000,
+          listingType: "zeld",
+        },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow('assetName: "ZELD"');
+  });
+
+  it("forwards explicit sellerPubkey to sell-quotes", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_SELL_QUOTE } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signer = makeSigner();
+
+    await openSellOrder(
+      {
+        sellerAddress: "bc1pexternal",
+        sellerPubkey: "deadbeef".repeat(8),
+        assetUtxoId: "utxo:0",
+        priceSats: 250000,
+        listingType: "ordinal",
+      },
+      http,
+      signer,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    const [, quoteInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const quoteBody = JSON.parse(quoteInit.body as string);
+    expect(quoteBody.seller_pubkey).toBe("deadbeef".repeat(8));
+    expect(quoteBody.seller_address).toBe("bc1pexternal");
   });
 
   it("throws for ZELD on testnet", async () => {
@@ -160,19 +261,192 @@ describe("openSellOrder", () => {
     ).rejects.toThrow("ZELD listings are only supported on mainnet");
   });
 
-  it("throws for ZELD transfer prep (no assetUtxoId) in v1", async () => {
+  it("throws when feeUtxoIds and autoSelectFeeUtxos are both set", async () => {
     const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
     const signer = makeSigner();
 
     await expect(
       openSellOrder(
-        { assetName: "ZELD", assetQuantity: 1n, priceSats: 1000, listingType: "zeld" },
+        {
+          assetUtxoId: "utxo:0",
+          assetName: "RAREPEPE",
+          assetQuantity: 1n,
+          priceSats: 250000,
+          listingType: "xcp",
+          feeUtxoIds: ["tx:0"],
+          autoSelectFeeUtxos: true,
+        },
         http,
         signer,
         "mainnet",
         btc.networks.bitcoin,
       ),
-    ).rejects.toThrow("Phase 7");
+    ).rejects.toThrow("mutually exclusive");
+  });
+
+  it("throws when ordinal listing has no assetUtxoId", async () => {
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
+    const signer = makeSigner({ p2tr: "bc1pseller", xOnlyPubkey: "aabbccdd" });
+
+    await expect(
+      openSellOrder(
+        { priceSats: 250000, listingType: "ordinal" },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow("Ordinal listings require assetUtxoId");
+  });
+
+  it("signs and finalizes zeld transfer prep → zeld_payment on create", async () => {
+    const quoteWithZeldPrep = {
+      ...WIRE_SELL_QUOTE,
+      fee_psbt: null,
+      fee_inputs_to_sign: [],
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "zeld_transfer",
+      payment_address: "bc1qplatformfee",
+      payment_amount: 10_000,
+      asset_utxo_id: "zeldpreptxid:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithZeldPrep } },
+      { status: 201, body: { data: { ...WIRE_SWAP, listing_type: "zeld", asset_name: "ZELD" } } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+
+    const signPsbtHexFn = vi.fn((hex: string, indices: number[]) =>
+      hex === FIXTURE_PSBT_HEX
+        ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+        : `${hex}_signed`,
+    );
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: signPsbtHexFn,
+      signMessage: () => "base64sig",
+    };
+
+    const result = await openSellOrder(
+      {
+        assetName: "ZELD",
+        assetQuantity: 100_000_000n,
+        priceSats: 250_000,
+        listingType: "zeld",
+      },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    expect(result.created).toBe(true);
+
+    // signPsbtHex: prep + swap only (no fee_psbt)
+    expect(signPsbtHexFn).toHaveBeenCalledTimes(2);
+
+    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(createInit.body as string);
+    expect(body.zeld_payment).toMatchObject({
+      fee_payment_id: "fp_abc",
+    });
+    expect(typeof body.zeld_payment.zeld_send_tx_hex).toBe("string");
+    expect(body.zeld_payment.zeld_send_tx_hex.length).toBeGreaterThan(0);
+    expect(body.zeld_payment.zeld_send_tx_hex.startsWith("70736274ff")).toBe(
+      false,
+    );
+    expect(body.zeld_payment.zeld_send_txid).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.fee_payment).toBeUndefined();
+    expect(body.funding_tx_hex).toBeUndefined();
+    expect(body.asset_utxo_id).toBe("zeldpreptxid:0");
+    expect(body.listing_type).toBe("zeld");
+  });
+
+  it("returns created: false for zeld transfer prep on HTTP 200 idempotency", async () => {
+    const quoteWithZeldPrep = {
+      ...WIRE_SELL_QUOTE,
+      fee_psbt: null,
+      fee_inputs_to_sign: [],
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "zeld_transfer",
+      asset_utxo_id: "zeldpreptxid:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithZeldPrep } },
+      {
+        status: 200,
+        body: { data: { ...WIRE_SWAP, listing_type: "zeld", asset_name: "ZELD" } },
+      },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: (hex, indices) =>
+        hex === FIXTURE_PSBT_HEX
+          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+          : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    const result = await openSellOrder(
+      {
+        assetName: "ZELD",
+        assetQuantity: 100_000_000n,
+        priceSats: 250_000,
+        listingType: "zeld",
+      },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    expect(result.created).toBe(false);
+  });
+
+  it("omits asset_utxo_id on sell-quotes for xcp attach prep", async () => {
+    const quoteWithPrep = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      asset_utxo_id: "revealthash:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithPrep } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: (hex, indices) =>
+        hex === FIXTURE_PSBT_HEX
+          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+          : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "xcp" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    const [, quoteInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const quoteBody = JSON.parse(quoteInit.body as string);
+    expect(quoteBody.asset_utxo_id).toBeUndefined();
+    expect(quoteBody.asset_name).toBe("RAREPEPE");
+    expect(quoteBody.asset_quantity).toBe(1);
   });
 
   it("auto-fills sellerAddress from signer P2WPKH when omitted", async () => {
@@ -199,7 +473,7 @@ describe("openSellOrder", () => {
     expect(quoteBody.seller_address).toBe("bc1qseller");
   });
 
-  it("auto-fills seller_pubkey for P2TR sellerAddress", async () => {
+  it("auto-fills sellerAddress from signer P2TR for ordinal when omitted", async () => {
     const fetch = makeSequentialFetch(
       { status: 200, body: { data: WIRE_SELL_QUOTE } },
       { status: 201, body: { data: WIRE_SWAP } },
@@ -208,7 +482,7 @@ describe("openSellOrder", () => {
     const signer = makeSigner({ p2tr: "bc1pseller", xOnlyPubkey: "aabbccdd" });
 
     await openSellOrder(
-      { sellerAddress: "bc1pseller", assetUtxoId: "utxo:0", priceSats: 250000, listingType: "ordinal" },
+      { assetUtxoId: "utxo:0", priceSats: 250000, listingType: "ordinal" },
       http,
       signer,
       "mainnet",
@@ -220,7 +494,63 @@ describe("openSellOrder", () => {
       RequestInit,
     ];
     const quoteBody = JSON.parse(quoteInit.body as string);
+    expect(quoteBody.seller_address).toBe("bc1pseller");
     expect(quoteBody.seller_pubkey).toBe("aabbccdd");
+  });
+
+  it("throws when ordinal listing and signer has no P2TR address", async () => {
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
+    const signer = makeSigner();
+
+    await expect(
+      openSellOrder(
+        { assetUtxoId: "utxo:0", priceSats: 250000, listingType: "ordinal" },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow("P2TR seller address");
+  });
+
+  it("throws when external P2TR sellerAddress has no sellerPubkey", async () => {
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
+    const signer = makeSigner({ p2tr: "bc1pseller", xOnlyPubkey: "aabbccdd" });
+
+    await expect(
+      openSellOrder(
+        {
+          sellerAddress: "bc1pexternal",
+          assetUtxoId: "utxo:0",
+          priceSats: 250000,
+          listingType: "ordinal",
+        },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow("P2TR sellerAddress requires sellerPubkey");
+  });
+
+  it("throws when ordinal listing uses a P2WPKH seller address", async () => {
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: vi.fn() });
+    const signer = makeSigner();
+
+    await expect(
+      openSellOrder(
+        {
+          sellerAddress: "bc1qseller",
+          assetUtxoId: "utxo:0",
+          priceSats: 250000,
+          listingType: "ordinal",
+        },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow("P2TR seller address");
   });
 
   it("signs and finalizes attach prep PSBT → funding_tx_hex on create", async () => {
@@ -264,6 +594,30 @@ describe("openSellOrder", () => {
     expect(body.funding_tx_hex.length).toBeGreaterThan(0);
     expect(body.funding_tx_hex.startsWith("70736274ff")).toBe(false); // raw tx, not PSBT
     expect(body.asset_utxo_id).toBe("revealthash:0");
+  });
+
+  it("throws when prep_psbt is present but prep_kind is null", async () => {
+    const quoteBadPrep = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: null,
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteBadPrep } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signer = makeSigner();
+
+    await expect(
+      openSellOrder(
+        { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "xcp" },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow('Unexpected prep_kind "null"');
   });
 
   it("passes reveal_tx_hex unchanged from quote when attach+reveal", async () => {

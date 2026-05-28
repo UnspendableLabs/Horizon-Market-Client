@@ -111,4 +111,13 @@ describe("HttpClient", () => {
       expect.anything(),
     );
   });
+
+  it("throws when 2xx response is missing { data } envelope", async () => {
+    const fetch = makeFetch(200, { error: "unexpected shape" });
+    const client = new HttpClient({ baseUrl: "https://example.com", fetch });
+    await expect(client.request("GET", "/foo")).rejects.toMatchObject({
+      status: 200,
+      error: "Response missing required { data } envelope",
+    });
+  });
 });

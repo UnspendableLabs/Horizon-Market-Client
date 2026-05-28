@@ -1,5 +1,10 @@
 import type { HttpClient } from "./http.js";
-import type { SellQuote, SellQuoteParams, PrepKind } from "../types/index.js";
+import type {
+  SellQuote,
+  SellQuoteParams,
+  PrepKind,
+  RequestOptions,
+} from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
 
 // ─── Wire types (internal) ────────────────────────────────────────────────────
@@ -37,6 +42,7 @@ interface WireSellQuoteBody {
 export async function requestSellQuote(
   http: HttpClient,
   params: SellQuoteParams,
+  options?: RequestOptions,
 ): Promise<SellQuote> {
   const body: WireSellQuoteBody = {
     price: params.price,
@@ -59,6 +65,7 @@ export async function requestSellQuote(
     "POST",
     "/api/atomic-swaps/sell-quotes",
     body,
+    options?.signal,
   );
 
   return {

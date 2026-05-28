@@ -1,9 +1,12 @@
 {
-  "name": "@horizon-market/client",
-  "version": "0.1.0",
+  "name": "@unspendablelabs/horizon-market-client",
+  "version": "0.1.0-rc.1",
   "description": "TypeScript client for the Horizon Market Atomic Swap API",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/index.cjs"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -26,7 +29,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",

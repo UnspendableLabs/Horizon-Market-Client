@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { HttpClient } from "./http.js";
+import { HttpClient, HorizonMarketApiError } from "./http.js";
 import {
   listSwaps,
   getSwap,
@@ -109,6 +109,16 @@ describe("getSwap", () => {
     expect(swap.assetQuantity).toBeNull();
   });
 
+  it("maps user when present", async () => {
+    const wire = { ...WIRE_SWAP, user: { id: "user_abc" } };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.user).toEqual({ id: "user_abc" });
+  });
+
   it("maps on_chain_payment correctly", async () => {
     const wire = {
       ...WIRE_SWAP,
@@ -177,6 +187,20 @@ describe("listSwaps", () => {
     const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://example.com/api/atomic-swaps");
   });
+
+  it("forwards AbortSignal to fetch", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    const controller = new AbortController();
+    await listSwaps(http, {}, { signal: controller.signal });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(init.signal).toBe(controller.signal);
+  });
 });
 
 describe("createSwap", () => {
@@ -227,6 +251,102 @@ describe("createSwap", () => {
     const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.fee_payment).toEqual({ psbt_hex: "feepsbt", fee_payment_id: "fp_1" });
+  });
+
+  it("throws HorizonMarketApiError on 409 Conflicting zeld listing", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(409, { error: "Conflicting zeld listing" }),
+    });
+    await expect(
+      createSwap(http, {
+        assetUtxoId: "zeldutxo:0",
+        assetUtxoValue: 600,
+        price: 250_000,
+        sellerAddress: "bc1qseller",
+        psbtHex: "70736274ff",
+        listingType: "zeld",
+        assetName: "ZELD",
+        assetQuantity: 100_000_000n,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      error: "Conflicting zeld listing",
+    });
+    await expect(
+      createSwap(http, {
+        assetUtxoId: "zeldutxo:0",
+        assetUtxoValue: 600,
+        price: 250_000,
+        sellerAddress: "bc1qseller",
+        psbtHex: "70736274ff",
+        listingType: "zeld",
+        assetName: "ZELD",
+        assetQuantity: 100_000_000n,
+      }),
+    ).rejects.toBeInstanceOf(HorizonMarketApiError);
+  });
+
+  it("serializes zeld_payment in body", async () => {
+    const fetchFn = makeFetch(201, { data: WIRE_SWAP });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await createSwap(http, {
+      assetUtxoId: "zeldpreptxid:0",
+      assetUtxoValue: 600,
+      price: 250000,
+      sellerAddress: "bc1qseller",
+      psbtHex: "70736274ff",
+      listingType: "zeld",
+      assetName: "ZELD",
+      assetQuantity: 100_000_000n,
+      zeldPayment: {
+        zeldSendTxid: "abc123",
+        zeldSendTxHex: "02000000",
+        feePaymentId: "fp_1",
+      },
+    });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.zeld_payment).toEqual({
+      zeld_send_txid: "abc123",
+      zeld_send_tx_hex: "02000000",
+      fee_payment_id: "fp_1",
+    });
+  });
+
+  it("serializes funding_tx_hex and reveal_tx_hex in body", async () => {
+    const fetchFn = makeFetch(201, { data: WIRE_SWAP });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await createSwap(http, {
+      assetUtxoId: "revealthash:0",
+      assetUtxoValue: 600,
+      price: 250000,
+      sellerAddress: "bc1qseller",
+      psbtHex: "70736274ff",
+      fundingTxHex: "02000000commit",
+      revealTxHex: "02000000reveal",
+    });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.funding_tx_hex).toBe("02000000commit");
+    expect(body.reveal_tx_hex).toBe("02000000reveal");
+  });
+
+  it("serializes large asset_quantity as string", async () => {
+    const fetchFn = makeFetch(201, { data: WIRE_SWAP });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    const bigQty = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    await createSwap(http, {
+      assetUtxoId: "abcd:0",
+      assetUtxoValue: 600,
+      price: 250000,
+      sellerAddress: "bc1qseller",
+      psbtHex: "70736274ff",
+      assetQuantity: bigQty,
+    });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.asset_quantity).toBe(bigQty.toString());
   });
 });
 

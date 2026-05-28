@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import * as btc from "bitcoinjs-lib";
 import { signPsbtHex, finalizePsbtHex } from "./psbt-signer.js";
-import { TEST_PRIVATE_KEY_HEX, FIXTURE_PSBT_HEX } from "../test-utils.js";
+import {
+  TEST_PRIVATE_KEY_HEX,
+  FIXTURE_PSBT_HEX,
+  buildTaprootPsbtFixture,
+} from "../test-utils.js";
 
 describe("signPsbtHex", () => {
   it("signs a P2WPKH input and returns a valid PSBT hex", () => {
@@ -69,6 +73,22 @@ describe("signPsbtHex", () => {
 
     // Should still be a valid PSBT (not raw tx)
     expect(() => btc.Psbt.fromHex(signedHex, { network })).not.toThrow();
+  });
+
+  it("signs a P2TR key-path input and sets tapKeySig", () => {
+    const network = btc.networks.bitcoin;
+    const psbtHex = buildTaprootPsbtFixture(TEST_PRIVATE_KEY_HEX, network);
+    const signedHex = signPsbtHex(
+      psbtHex,
+      [0],
+      TEST_PRIVATE_KEY_HEX,
+      network,
+    );
+
+    const psbt = btc.Psbt.fromHex(signedHex, { network });
+    expect(psbt.data.inputs[0].tapKeySig).toBeDefined();
+    expect(psbt.data.inputs[0].tapKeySig!.length).toBeGreaterThan(0);
+    expect(psbt.data.inputs[0].partialSig).toBeUndefined();
   });
 });
 

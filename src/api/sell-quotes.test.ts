@@ -56,6 +56,38 @@ describe("requestSellQuote", () => {
     });
   });
 
+  it("maps wire response with prep (zeld_transfer) to domain SellQuote", async () => {
+    const wire = {
+      ...WIRE_SELL_QUOTE_NO_PREP,
+      fee_psbt: null,
+      fee_inputs_to_sign: [],
+      prep_psbt: "70736274ff_zeld_prep",
+      prep_inputs_to_sign: [0, 1],
+      prep_kind: "zeld_transfer",
+      payment_address: "bc1qplatformfee",
+      payment_amount: 10_000,
+      asset_utxo_id: "zeldpreptxid:0",
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const quote = await requestSellQuote(http, {
+      price: 250_000,
+      sellerAddress: "bc1qseller",
+      listingType: "zeld",
+      assetName: "ZELD",
+      assetQuantity: 100_000_000n,
+    });
+    expect(quote.prepPsbt).toBe("70736274ff_zeld_prep");
+    expect(quote.prepKind).toBe("zeld_transfer");
+    expect(quote.prepInputsToSign).toEqual([0, 1]);
+    expect(quote.feePsbt).toBeNull();
+    expect(quote.paymentAddress).toBe("bc1qplatformfee");
+    expect(quote.paymentAmount).toBe(10_000);
+    expect(quote.assetUtxoId).toBe("zeldpreptxid:0");
+  });
+
   it("maps wire response with prep (attach) to domain SellQuote", async () => {
     const http = new HttpClient({
       baseUrl: "https://example.com",

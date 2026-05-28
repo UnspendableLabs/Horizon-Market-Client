@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Verifier } from "bip322-js";
 import { signBip322 } from "./bip322.js";
-import { TEST_PRIVATE_KEY_HEX, TEST_P2WPKH_ADDRESS } from "../test-utils.js";
+import { TEST_PRIVATE_KEY_HEX, TEST_P2WPKH_ADDRESS, TEST_P2TR_ADDRESS } from "../test-utils.js";
 
 describe("signBip322", () => {
   it("signs a message and produces a verifiable BIP322 signature", () => {
@@ -76,5 +76,18 @@ describe("signBip322", () => {
     const wrongAddress = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
     const isValid = Verifier.verifySignature(wrongAddress, message, signature);
     expect(isValid).toBe(false);
+  });
+
+  it("signs and verifies with a P2TR address (ordinal delist path)", () => {
+    const message = "delist-request-id-ordinal";
+    const signature = signBip322(
+      TEST_PRIVATE_KEY_HEX,
+      TEST_P2TR_ADDRESS,
+      message,
+    );
+
+    expect(
+      Verifier.verifySignature(TEST_P2TR_ADDRESS, message, signature),
+    ).toBe(true);
   });
 });
