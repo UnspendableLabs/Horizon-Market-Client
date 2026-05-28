@@ -3,7 +3,8 @@ import { requestBuyQuote } from "../api/buy-quotes.js";
 import { purchaseSwaps } from "../api/atomic-swaps.js";
 import { assertBuyQuoteParams } from "../buy-params.js";
 import type { Signer } from "../crypto/signer.js";
-import type { BuyQuoteParams, PendingSale } from "../types/index.js";
+import type { BuyQuoteParams, PendingSale, WorkflowOptions } from "../types/index.js";
+import { WorkflowProgressReporter } from "./progress.js";
 
 export interface FillSwapsParams {
   swapIds: string[];
@@ -20,6 +21,8 @@ export interface FillSwapsParams {
   detach?: boolean;
 }
 
+const FILL_SWAPS_TOTAL_STEPS = 4;
+
 /**
  * fillSwaps — quote → sign → submit purchase
  *
@@ -32,49 +35,68 @@ export async function fillSwaps(
   params: FillSwapsParams,
   http: HttpClient,
   signer: Signer,
+  options?: WorkflowOptions,
 ): Promise<PendingSale[]> {
-  const addresses = signer.getAddresses();
-  const buyerAddress = params.buyerAddress ?? addresses.p2wpkh;
+  const progress = new WorkflowProgressReporter(
+    "fillSwaps",
+    options?.onProgress,
+    FILL_SWAPS_TOTAL_STEPS,
+  );
 
-  assertBuyQuoteParams({
-    swapIds: params.swapIds,
-    buyerAddress,
-    buyerTaprootAddress: params.buyerTaprootAddress,
-    satsPerVbyte: params.satsPerVbyte,
-    fundingUtxoIds: params.fundingUtxoIds,
-    autoSelect: params.autoSelect,
-    detach: params.detach,
+  const { buyerAddress, quoteParams } = progress.runSync("validateParams", () => {
+    const addresses = signer.getAddresses();
+    const resolvedBuyerAddress = params.buyerAddress ?? addresses.p2wpkh;
+
+    assertBuyQuoteParams({
+      swapIds: params.swapIds,
+      buyerAddress: resolvedBuyerAddress,
+      buyerTaprootAddress: params.buyerTaprootAddress,
+      satsPerVbyte: params.satsPerVbyte,
+      fundingUtxoIds: params.fundingUtxoIds,
+      autoSelect: params.autoSelect,
+      detach: params.detach,
+    });
+
+    if (
+      params.buyerTaprootAddress !== undefined &&
+      params.swapIds.length !== 1
+    ) {
+      throw new Error(
+        "Ordinal buys require exactly one swapId (got " +
+          params.swapIds.length +
+          ")",
+      );
+    }
+
+    const resolvedQuoteParams: BuyQuoteParams = {
+      swapIds: params.swapIds,
+      buyerAddress: resolvedBuyerAddress,
+      buyerTaprootAddress: params.buyerTaprootAddress,
+      satsPerVbyte: params.satsPerVbyte,
+      fundingUtxoIds: params.fundingUtxoIds,
+      autoSelect: params.autoSelect,
+      detach: params.detach ?? true,
+    };
+
+    return {
+      buyerAddress: resolvedBuyerAddress,
+      quoteParams: resolvedQuoteParams,
+    };
   });
 
-  // Ordinal buys: exactly one swap id and a taproot receive address are required
-  if (params.buyerTaprootAddress !== undefined && params.swapIds.length !== 1) {
-    throw new Error(
-      "Ordinal buys require exactly one swapId (got " +
-        params.swapIds.length +
-        ")",
-    );
-  }
+  const quote = await progress.runAsync("requestBuyQuote", () =>
+    requestBuyQuote(http, quoteParams),
+  );
 
-  const quoteParams: BuyQuoteParams = {
-    swapIds: params.swapIds,
-    buyerAddress,
-    buyerTaprootAddress: params.buyerTaprootAddress,
-    satsPerVbyte: params.satsPerVbyte,
-    fundingUtxoIds: params.fundingUtxoIds,
-    autoSelect: params.autoSelect,
-    detach: params.detach ?? true,
-  };
+  const signedPsbtHex = progress.runSync("signBuyerPsbt", () =>
+    signer.signPsbtHex(quote.psbt, quote.inputsToSign),
+  );
 
-  // Step 1: Request buy quote
-  const quote = await requestBuyQuote(http, quoteParams);
-
-  // Step 2: Sign buyer PSBT — preserve input order (detach OP_RETURN keyed on input 0)
-  const signedPsbtHex = signer.signPsbtHex(quote.psbt, quote.inputsToSign);
-
-  // Step 3: Submit purchase
-  return purchaseSwaps(http, {
-    swapIds: params.swapIds,
-    buyerAddress,
-    psbtHex: signedPsbtHex,
-  });
+  return progress.runAsync("submitPurchase", () =>
+    purchaseSwaps(http, {
+      swapIds: params.swapIds,
+      buyerAddress,
+      psbtHex: signedPsbtHex,
+    }),
+  );
 }

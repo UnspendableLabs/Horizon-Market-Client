@@ -4,6 +4,7 @@ import { HttpClient, HorizonMarketApiError } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import { signPsbtHex } from "../crypto/psbt-signer.js";
 import { openSellOrder } from "./sell.js";
+import type { WorkflowProgressEvent } from "../types/progress.js";
 import {
   TEST_PRIVATE_KEY_HEX,
   FIXTURE_PSBT_HEX,
@@ -706,5 +707,128 @@ describe("openSellOrder", () => {
     ];
     const body = JSON.parse(createInit.body as string);
     expect(body.reveal_tx_hex).toBe("0200000001reveal...");
+  });
+
+  it("emits progress events for standard sell (5 steps)", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_SELL_QUOTE } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    await openSellOrder(
+      {
+        assetUtxoId: "utxo:0",
+        assetName: "RAREPEPE",
+        assetQuantity: 1n,
+        priceSats: 250000,
+        listingType: "counterparty",
+      },
+      http,
+      makeSigner(),
+      "mainnet",
+      btc.networks.bitcoin,
+      { onProgress: (e) => events.push(e) },
+    );
+
+    const startSteps = events
+      .filter((e) => e.phase === "start")
+      .map((e) => e.step);
+    expect(startSteps).toEqual([
+      "validateParams",
+      "requestSellQuote",
+      "signSwapPsbt",
+      "signFeePsbt",
+      "createSwap",
+    ]);
+    expect(events.at(-1)?.phase).toBe("complete");
+    expect(events.at(-1)?.step).toBe("createSwap");
+    expect(events.every((e) => e.workflow === "openSellOrder")).toBe(true);
+    expect(events.filter((e) => e.phase === "complete").at(-1)?.totalSteps).toBe(
+      5,
+    );
+  });
+
+  it("emits prep sign/finalize steps when prep_psbt is present (7 steps)", async () => {
+    const quoteWithPrep = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      reveal_tx_hex: "0200000001reveal...",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithPrep } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: (hex, indices) =>
+        hex === FIXTURE_PSBT_HEX
+          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+          : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+      { onProgress: (e) => events.push(e) },
+    );
+
+    const startSteps = events
+      .filter((e) => e.phase === "start")
+      .map((e) => e.step);
+    expect(startSteps).toEqual([
+      "validateParams",
+      "requestSellQuote",
+      "signPrepPsbt",
+      "finalizePrepPsbt",
+      "signSwapPsbt",
+      "signFeePsbt",
+      "createSwap",
+    ]);
+    expect(events.filter((e) => e.phase === "complete").at(-1)?.totalSteps).toBe(
+      7,
+    );
+  });
+
+  it("omits fee step from progress when fee_psbt is null (4 steps)", async () => {
+    const quoteNoFee = { ...WIRE_SELL_QUOTE, fee_psbt: null, fee_inputs_to_sign: [] };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteNoFee } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    await openSellOrder(
+      { assetUtxoId: "utxo:0", assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+      http,
+      makeSigner(),
+      "mainnet",
+      btc.networks.bitcoin,
+      { onProgress: (e) => events.push(e) },
+    );
+
+    const startSteps = events
+      .filter((e) => e.phase === "start")
+      .map((e) => e.step);
+    expect(startSteps).toEqual([
+      "validateParams",
+      "requestSellQuote",
+      "signSwapPsbt",
+      "createSwap",
+    ]);
+    expect(events.filter((e) => e.phase === "complete").at(-1)?.totalSteps).toBe(
+      4,
+    );
   });
 });

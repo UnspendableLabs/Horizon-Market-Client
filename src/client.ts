@@ -45,6 +45,7 @@ import type {
   RequestOptions,
   SellQuote,
   SellQuoteParams,
+  WorkflowOptions,
 } from "./types/index.js";
 
 export type { OpenSellOrderParams } from "./workflows/sell.js";
@@ -239,6 +240,7 @@ export class HorizonMarketClient {
    */
   openSellOrder(
     params: OpenSellOrderParams,
+    options?: WorkflowOptions,
   ): Promise<{ swap: AtomicSwap; created: boolean }> {
     return workflowOpenSellOrder(
       params,
@@ -246,6 +248,7 @@ export class HorizonMarketClient {
       this.signer,
       this.network,
       this.btcNetwork,
+      options,
     );
   }
 
@@ -255,14 +258,17 @@ export class HorizonMarketClient {
    * Returns an array of pending sales. Poll `getPendingPurchaseTxIds` for confirmation.
    * Note: purchases are NOT idempotent — do not retry on network errors.
    */
-  fillSwaps(params: FillSwapsParams): Promise<PendingSale[]> {
-    return workflowFillSwaps(params, this.http, this.signer);
+  fillSwaps(
+    params: FillSwapsParams,
+    options?: WorkflowOptions,
+  ): Promise<PendingSale[]> {
+    return workflowFillSwaps(params, this.http, this.signer, options);
   }
 
   /**
    * Delist a swap: start → sign (BIP322) → confirm.
    */
-  delistSwap(swapId: string): Promise<void> {
-    return workflowDelistSwap(swapId, this.http, this.signer);
+  delistSwap(swapId: string, options?: WorkflowOptions): Promise<void> {
+    return workflowDelistSwap(swapId, this.http, this.signer, options);
   }
 }

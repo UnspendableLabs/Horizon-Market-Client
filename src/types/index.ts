@@ -272,3 +272,14 @@ export interface BuyQuoteParams {
   /** Counterparty only; default `true` on server. Ignored for zeld. */
   detach?: boolean;
 }
+
+export type {
+  DelistSwapStep,
+  FillSwapsStep,
+  OpenSellOrderStep,
+  WorkflowName,
+  WorkflowOptions,
+  WorkflowProgressEvent,
+  WorkflowProgressPhase,
+  WorkflowStep,
+} from "./progress.js";

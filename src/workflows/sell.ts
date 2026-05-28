@@ -2,11 +2,13 @@ import type { HttpClient } from "../api/http.js";
 import { requestSellQuote } from "../api/sell-quotes.js";
 import { createSwap } from "../api/atomic-swaps.js";
 import type { Signer } from "../crypto/signer.js";
-import { signAndFinalizeSellPrep } from "./sell-prep.js";
+import { buildSellPrepResult, type SignedSellPrepResult } from "./sell-prep.js";
+import { WorkflowProgressReporter } from "./progress.js";
 import type {
   AtomicSwap,
   AtomicSwapCreateRequest,
   ListingType,
+  WorkflowOptions,
 } from "../types/index.js";
 import {
   assertOrdinalSellerAddress,
@@ -61,65 +63,84 @@ export async function openSellOrder(
   signer: Signer,
   network: "mainnet" | "testnet",
   btcNetwork: btc.Network,
+  options?: WorkflowOptions,
 ): Promise<{ swap: AtomicSwap; created: boolean }> {
-  assertZeldMainnet(params.listingType, network);
-  assertSellListingParams(params);
-
-  // Resolve seller address
-  const addresses = signer.getAddresses();
-  const sellerAddress = resolveSellerAddress(params, addresses);
-  assertOrdinalSellerAddress(params.listingType, sellerAddress);
-
-  const sellerPubkey = resolveSellerPubkey(
-    sellerAddress,
-    params.sellerPubkey,
-    addresses,
+  const progress = new WorkflowProgressReporter(
+    "openSellOrder",
+    options?.onProgress,
   );
-  assertTaprootSellerPubkey(sellerAddress, sellerPubkey);
 
-  // Serialize expiresAt
-  let expiresAt: string | null | undefined;
-  if (params.expiresAt !== undefined) {
-    expiresAt =
-      params.expiresAt instanceof Date
-        ? params.expiresAt.toISOString()
-        : params.expiresAt;
+  const { sellerAddress, sellerPubkey, expiresAt } = progress.runSync(
+    "validateParams",
+    () => {
+      assertZeldMainnet(params.listingType, network);
+      assertSellListingParams(params);
+
+      const addresses = signer.getAddresses();
+      const resolvedSellerAddress = resolveSellerAddress(params, addresses);
+      assertOrdinalSellerAddress(params.listingType, resolvedSellerAddress);
+
+      const resolvedSellerPubkey = resolveSellerPubkey(
+        resolvedSellerAddress,
+        params.sellerPubkey,
+        addresses,
+      );
+      assertTaprootSellerPubkey(resolvedSellerAddress, resolvedSellerPubkey);
+
+      let resolvedExpiresAt: string | null | undefined;
+      if (params.expiresAt !== undefined) {
+        resolvedExpiresAt =
+          params.expiresAt instanceof Date
+            ? params.expiresAt.toISOString()
+            : params.expiresAt;
+      }
+
+      return {
+        sellerAddress: resolvedSellerAddress,
+        sellerPubkey: resolvedSellerPubkey,
+        expiresAt: resolvedExpiresAt,
+      };
+    },
+  );
+
+  const quote = await progress.runAsync("requestSellQuote", () =>
+    requestSellQuote(http, {
+      price: params.priceSats,
+      sellerAddress,
+      sellerPubkey,
+      listingType: params.listingType,
+      assetUtxoId: params.assetUtxoId,
+      assetName: params.assetName,
+      assetQuantity: params.assetQuantity,
+      satsPerVbyte: params.satsPerVbyte,
+      feeUtxoIds: params.feeUtxoIds,
+      autoSelectFeeUtxos: params.autoSelectFeeUtxos,
+    }),
+  );
+
+  // Base: validateParams + requestSellQuote + signSwapPsbt + createSwap
+  progress.setTotalSteps(
+    4 + (quote.prepPsbt ? 2 : 0) + (quote.feePsbt ? 1 : 0),
+  );
+
+  let prep: SignedSellPrepResult | undefined;
+  if (quote.prepPsbt) {
+    const signedPrepHex = progress.runSync("signPrepPsbt", () =>
+      signer.signPsbtHex(quote.prepPsbt!, quote.prepInputsToSign),
+    );
+    prep = progress.runSync("finalizePrepPsbt", () =>
+      buildSellPrepResult(quote, signedPrepHex, btcNetwork),
+    );
   }
 
-  // Step 1: Request sell quote
-  const quote = await requestSellQuote(http, {
-    price: params.priceSats,
-    sellerAddress,
-    sellerPubkey,
-    listingType: params.listingType,
-    assetUtxoId: params.assetUtxoId,
-    assetName: params.assetName,
-    assetQuantity: params.assetQuantity,
-    satsPerVbyte: params.satsPerVbyte,
-    feeUtxoIds: params.feeUtxoIds,
-    autoSelectFeeUtxos: params.autoSelectFeeUtxos,
-  });
-
-  // Step 2: Handle prep PSBT (if present)
-  const prep = signAndFinalizeSellPrep(quote, signer, btcNetwork);
-  const fundingTxHex = prep?.fundingTxHex;
-  const revealTxHex = prep?.revealTxHex;
-  const zeldPayment = prep?.zeldPayment;
-
-  // Step 3: Sign swap PSBT (do NOT finalize)
-  const signedSwapPsbt = signer.signPsbtHex(
-    quote.swapPsbt,
-    quote.swapInputsToSign,
+  const signedSwapPsbt = progress.runSync("signSwapPsbt", () =>
+    signer.signPsbtHex(quote.swapPsbt, quote.swapInputsToSign),
   );
 
-  // Step 4: Sign fee PSBT if present (do NOT finalize)
-  let feePayment:
-    | { psbtHex: string; feePaymentId: string }
-    | undefined;
+  let feePayment: { psbtHex: string; feePaymentId: string } | undefined;
   if (quote.feePsbt && quote.feePaymentId) {
-    const signedFeePsbt = signer.signPsbtHex(
-      quote.feePsbt,
-      quote.feeInputsToSign,
+    const signedFeePsbt = progress.runSync("signFeePsbt", () =>
+      signer.signPsbtHex(quote.feePsbt!, quote.feeInputsToSign),
     );
     feePayment = {
       psbtHex: signedFeePsbt,
@@ -127,7 +148,6 @@ export async function openSellOrder(
     };
   }
 
-  // Step 5: Build create request using quote-derived asset UTXO values
   const createReq: AtomicSwapCreateRequest = {
     assetUtxoId: quote.assetUtxoId,
     assetUtxoValue: quote.assetUtxoValue,
@@ -139,13 +159,14 @@ export async function openSellOrder(
     assetQuantity: params.assetQuantity,
     expiresAt,
     feePayment,
-    zeldPayment,
-    fundingTxHex,
-    revealTxHex,
+    zeldPayment: prep?.zeldPayment,
+    fundingTxHex: prep?.fundingTxHex,
+    revealTxHex: prep?.revealTxHex,
   };
 
-  // Step 6: Create the swap
-  const result = await createSwap(http, createReq);
+  const result = await progress.runAsync("createSwap", () =>
+    createSwap(http, createReq),
+  );
 
   return {
     swap: result.swap,

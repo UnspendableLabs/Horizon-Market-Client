@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { HttpClient } from "../api/http.js";
 import { fillSwaps } from "./buy.js";
+import type { WorkflowProgressEvent } from "../types/progress.js";
 import { makeSequentialFetch, makeSigner } from "../test-utils.js";
 
 const WIRE_BUY_QUOTE = {
@@ -14,37 +15,6 @@ const WIRE_BUY_QUOTE = {
 const WIRE_PENDING_SALES = [
   { tx_id: "txid_abc", buyer_address: "bc1qbuyer", atomic_swap: { id: "swap_abc" } },
 ];
-
-const WIRE_SWAP_COUNTERPARTY = {
-  id: "swap_abc",
-  listing_type: "counterparty",
-  seller_address: "bc1qseller",
-  buyer_address: null,
-  asset_utxo_id: "utxo:0",
-  asset_utxo_value: 600,
-  asset_name: "RAREPEPE",
-  asset_quantity: "1",
-  price: 250000,
-  price_per_unit: 250000,
-  psbt_hex: "70736274ff",
-  tx_id: null,
-  block_index: null,
-  funded: true,
-  filled: false,
-  confirmed: true,
-  delisted: false,
-  seller_delisted: false,
-  expired: false,
-  pending: false,
-  anomalous: false,
-  royalty: null,
-  expires_at: null,
-  created_at: "2024-01-01T00:00:00.000Z",
-  updated_at: "2024-01-01T00:00:00.000Z",
-  on_chain_payment: null,
-};
-
-const WIRE_SWAP_ORDINAL = { ...WIRE_SWAP_COUNTERPARTY, id: "swap_ordinal", listing_type: "ordinal" };
 
 // buy.test.ts uses a buyer address, override the default signer address
 const buyerSigner = () =>
@@ -199,5 +169,35 @@ describe("fillSwaps", () => {
     ];
     const body = JSON.parse(quoteInit.body as string);
     expect(body.buyer_taproot_address).toBe("bc1pinscription");
+  });
+
+  it("emits progress events for all 4 steps", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_BUY_QUOTE } },
+      { status: 200, body: { data: WIRE_PENDING_SALES } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    await fillSwaps(
+      { swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" },
+      http,
+      makeSigner(),
+      { onProgress: (e) => events.push(e) },
+    );
+
+    const startSteps = events
+      .filter((e) => e.phase === "start")
+      .map((e) => e.step);
+    expect(startSteps).toEqual([
+      "validateParams",
+      "requestBuyQuote",
+      "signBuyerPsbt",
+      "submitPurchase",
+    ]);
+    expect(events).toHaveLength(8);
+    expect(events.at(-1)?.phase).toBe("complete");
+    expect(events.every((e) => e.totalSteps === 4)).toBe(true);
+    expect(events.every((e) => e.workflow === "fillSwaps")).toBe(true);
   });
 });

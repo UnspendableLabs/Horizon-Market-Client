@@ -29,12 +29,25 @@ export function signAndFinalizeSellPrep(
   btcNetwork: btc.Network,
 ): SignedSellPrepResult | undefined {
   if (!quote.prepPsbt) return undefined;
-
   const signedPrepHex = signer.signPsbtHex(
     quote.prepPsbt,
     quote.prepInputsToSign,
   );
+  return buildSellPrepResult(quote, signedPrepHex, btcNetwork);
+}
 
+/**
+ * Finalize a signed prep PSBT and assemble the create-swap fields.
+ *
+ * Internal: callers must have already signed the prep PSBT (`signedPrepHex` is
+ * a fully-signed-but-not-finalized PSBT hex). Exported for the staged workflow
+ * in `sell.ts` which signs and finalizes as two separate progress steps.
+ */
+export function buildSellPrepResult(
+  quote: SellQuote,
+  signedPrepHex: string,
+  btcNetwork: btc.Network,
+): SignedSellPrepResult {
   if (quote.prepKind === "attach") {
     const { txHex } = finalizePsbtHex(signedPrepHex, btcNetwork);
     return {

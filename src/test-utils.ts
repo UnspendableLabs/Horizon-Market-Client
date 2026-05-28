@@ -1,5 +1,5 @@
 import * as btc from "bitcoinjs-lib";
-import { vi } from "vitest";
+import { vi, type MockedFunction } from "vitest";
 import type { Signer } from "./crypto/signer.js";
 import { ECPair } from "./crypto/ecc.js";
 
@@ -70,7 +70,7 @@ export function makeFetch(
 
 export function makeSequentialFetch(
   ...responses: Array<{ status: number; body: unknown }>
-): typeof globalThis.fetch {
+): MockedFunction<typeof globalThis.fetch> {
   let call = 0;
   return vi.fn().mockImplementation(() => {
     const { status, body } =

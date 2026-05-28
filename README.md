@@ -47,6 +47,32 @@ Use the high-level workflow methods (`openSellOrder`, `fillSwaps`, `delistSwap`)
 
 For manual sell flows, `signAndFinalizeSellPrep(quote, signer, network)` signs and finalizes attach or zeld transfer prep PSBTs from a sell quote.
 
+## Progress callbacks
+
+Pass an optional second argument to `openSellOrder`, `fillSwaps`, or `delistSwap` to receive step-by-step progress events (useful for progress bars and status text):
+
+```ts
+await client.openSellOrder(params, {
+  onProgress: ({ stepIndex, totalSteps, message, phase, step }) => {
+    if (phase === "start" && totalSteps != null) {
+      setProgress(stepIndex / totalSteps);
+    }
+    setStatus(message);
+    console.log(step, phase, message);
+  },
+});
+```
+
+Each step emits `phase: "start"` before work begins and `phase: "complete"` when done. On failure, `phase: "error"` is emitted for the failing step before the error is re-thrown.
+
+| Workflow | Steps |
+|----------|-------|
+| `openSellOrder` | `validateParams` → `requestSellQuote` → `signPrepPsbt`* → `finalizePrepPsbt`* → `signSwapPsbt` → `signFeePsbt`* → `createSwap` |
+| `fillSwaps` | `validateParams` → `requestBuyQuote` → `signBuyerPsbt` → `submitPurchase` |
+| `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` |
+
+\* omitted when not applicable (no prep PSBT / no fee PSBT). `totalSteps` is `null` on the first `openSellOrder` events until the sell quote is received and the step plan is known.
+
 ## Quick Start
 
 ```ts

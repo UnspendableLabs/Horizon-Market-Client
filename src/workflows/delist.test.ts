@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { HttpClient } from "../api/http.js";
 import { delistSwap } from "./delist.js";
+import type { WorkflowProgressEvent } from "../types/progress.js";
 import { makeSequentialFetch, makeSigner } from "../test-utils.js";
 
 describe("delistSwap", () => {
@@ -53,5 +54,31 @@ describe("delistSwap", () => {
     const http = new HttpClient({ baseUrl: "https://example.com", fetch });
     const result = await delistSwap("swap_abc", http, makeSigner());
     expect(result).toBeUndefined();
+  });
+
+  it("emits progress events for all 3 steps", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 201, body: { data: { id: "dr_1", atomic_swap: { id: "swap_abc", seller_address: "bc1q" } } } },
+      { status: 201, body: { data: { id: "dr_1", signature: "sig" } } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    await delistSwap("swap_abc", http, makeSigner(), {
+      onProgress: (e) => events.push(e),
+    });
+
+    const startSteps = events
+      .filter((e) => e.phase === "start")
+      .map((e) => e.step);
+    expect(startSteps).toEqual([
+      "startDelist",
+      "signDelistMessage",
+      "confirmDelist",
+    ]);
+    expect(events).toHaveLength(6);
+    expect(events.at(-1)?.phase).toBe("complete");
+    expect(events.every((e) => e.totalSteps === 3)).toBe(true);
+    expect(events.every((e) => e.workflow === "delistSwap")).toBe(true);
   });
 });

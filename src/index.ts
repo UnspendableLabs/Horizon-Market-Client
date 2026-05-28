@@ -35,6 +35,14 @@ export type {
   SellQuote,
   SellQuoteParams,
   ZeldPayment,
+  DelistSwapStep,
+  FillSwapsStep,
+  OpenSellOrderStep,
+  WorkflowName,
+  WorkflowOptions,
+  WorkflowProgressEvent,
+  WorkflowProgressPhase,
+  WorkflowStep,
 } from "./types/index.js";
 
 // Config
