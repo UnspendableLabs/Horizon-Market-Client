@@ -1,0 +1,17 @@
+import tseslint from "typescript-eslint";
+
+export default tseslint.config(
+  tseslint.configs.recommended,
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-console": "warn",
+      "no-debugger": "error",
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    ignores: ["dist/**", "node_modules/**"],
+  },
+);
