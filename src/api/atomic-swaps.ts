@@ -55,6 +55,8 @@ interface WireAtomicSwap {
   user?: { id: string } | null;
   image_url?: string | null;
   thumbnail_url?: string | null;
+  inscription_number?: number | null;
+  asset_divisibility?: boolean | null;
 }
 
 interface WirePagination {
@@ -66,7 +68,6 @@ interface WirePagination {
 interface WireListSwapsResult {
   count: number;
   atomic_swaps: WireAtomicSwap[];
-  asset_media: Record<string, unknown>;
   pagination: WirePagination;
 }
 
@@ -159,6 +160,8 @@ function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     user: wire.user ?? undefined,
     imageUrl: wire.image_url ?? null,
     thumbnailUrl: wire.thumbnail_url ?? null,
+    inscriptionNumber: wire.inscription_number ?? null,
+    assetDivisibility: wire.asset_divisibility ?? null,
   };
 }
 
@@ -209,7 +212,6 @@ export async function listSwaps(
   return {
     count: wire.count,
     atomicSwaps: wire.atomic_swaps.map(mapAtomicSwap),
-    assetMedia: wire.asset_media,
     pagination: mapPagination(wire.pagination),
   };
 }

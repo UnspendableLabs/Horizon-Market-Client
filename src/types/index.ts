@@ -91,13 +91,14 @@ export interface AtomicSwap {
   user?: { id: string } | null;
   imageUrl: string | null;
   thumbnailUrl: string | null;
+  inscriptionNumber: number | null;
+  assetDivisibility: boolean | null;
 }
 
 /** Result of `listSwaps`. `count` mirrors `pagination.total`. */
 export interface ListSwapsResult {
   count: number;
   atomicSwaps: AtomicSwap[];
-  assetMedia: Record<string, unknown>;
   pagination: Pagination;
 }
 

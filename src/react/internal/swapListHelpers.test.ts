@@ -41,6 +41,8 @@ function swap(
     onChainPayment: null,
     imageUrl: null,
     thumbnailUrl: null,
+    inscriptionNumber: null,
+    assetDivisibility: null,
     ...overrides,
   };
 }

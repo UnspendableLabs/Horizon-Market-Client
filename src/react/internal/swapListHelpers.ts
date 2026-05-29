@@ -22,6 +22,33 @@ export function swapThumbnailUrl(swap: AtomicSwap): string | null {
   return swap.thumbnailUrl ?? swap.imageUrl;
 }
 
+export function swapDisplayName(swap: AtomicSwap): string {
+  if (swap.listingType === "ordinal") {
+    return swap.inscriptionNumber !== null
+      ? `#${swap.inscriptionNumber}`
+      : (swap.assetName ?? "—");
+  }
+  return swap.assetName ?? "—";
+}
+
+export function formatQuantity(quantity: bigint, divisible: boolean): string {
+  if (!divisible) return quantity.toLocaleString();
+  const SAT = BigInt("100000000");
+  const whole = quantity / SAT;
+  const remainder = quantity % SAT;
+  if (remainder === 0n) return whole.toLocaleString();
+  const dec = remainder.toString().padStart(8, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString()}.${dec}`;
+}
+
+export function swapDisplayQuantity(swap: AtomicSwap): string | null {
+  if (swap.listingType === "ordinal") return null;
+  if (swap.assetQuantity === null) return null;
+  const divisible =
+    swap.listingType === "zeld" || swap.assetDivisibility === true;
+  return formatQuantity(swap.assetQuantity, divisible);
+}
+
 export function mergeSwapsById(lists: AtomicSwap[][]): AtomicSwap[] {
   const seen = new Set<string>();
   const merged: AtomicSwap[] = [];

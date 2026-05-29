@@ -2,7 +2,11 @@ import type { CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import type { SwapListView } from "../hooks/useSwapList.js";
 import { cx } from "./format.js";
-import { swapThumbnailUrl } from "./swapListHelpers.js";
+import {
+  swapThumbnailUrl,
+  swapDisplayName,
+  swapDisplayQuantity,
+} from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
 
@@ -122,6 +126,11 @@ export function SwapListItem({
       : { ...ws.swapItemList, ...style };
 
   const thumbnail = swapThumbnailUrl(swap);
+  const displayName = swapDisplayName(swap);
+  const displayQuantity = swapDisplayQuantity(swap);
+  const showMeta =
+    swap.listingType !== "ordinal" &&
+    (displayQuantity !== null || swap.pricePerUnit !== null);
 
   if (view === "grid") {
     return (
@@ -137,11 +146,20 @@ export function SwapListItem({
         />
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span className={classNames?.name} style={nameStyle}>
-            {swap.assetName ?? "—"}
+            {displayName}
           </span>
           <span className={classNames?.price} style={priceStyle}>
             {swap.price.toLocaleString()} sats
           </span>
+          {showMeta && (
+            <span className={classNames?.meta} style={ws.mutedText}>
+              {displayQuantity !== null && swap.pricePerUnit !== null
+                ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
+                : displayQuantity !== null
+                  ? `Qty: ${displayQuantity}`
+                  : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -159,11 +177,6 @@ export function SwapListItem({
     );
   }
 
-  const showUnitPrice =
-    swap.listingType === "counterparty" &&
-    swap.assetQuantity !== null &&
-    swap.pricePerUnit !== null;
-
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
       <ThumbnailOrPlaceholder
@@ -177,16 +190,19 @@ export function SwapListItem({
       />
       <div style={infoColStyle}>
         <span className={classNames?.name} style={nameStyle}>
-          {swap.assetName ?? "—"}
+          {displayName}
         </span>
         <div style={metaRowStyle}>
           <span className={classNames?.badge} style={badgeStyle}>
             {swap.listingType}
           </span>
-          {showUnitPrice && (
+          {showMeta && (
             <span className={classNames?.meta} style={ws.mutedText}>
-              {swap.assetQuantity!.toLocaleString()} ×{" "}
-              {swap.pricePerUnit!.toLocaleString()} sats/unit
+              {displayQuantity !== null && swap.pricePerUnit !== null
+                ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
+                : displayQuantity !== null
+                  ? `Qty: ${displayQuantity}`
+                  : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
             </span>
           )}
         </div>

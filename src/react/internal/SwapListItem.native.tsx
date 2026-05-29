@@ -14,7 +14,11 @@ import type { AtomicSwap } from "../../types/index.js";
 import type { SwapListView } from "../hooks/useSwapList.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
-import { swapThumbnailUrl } from "./swapListHelpers.js";
+import {
+  swapThumbnailUrl,
+  swapDisplayName,
+  swapDisplayQuantity,
+} from "./swapListHelpers.js";
 import type { ResolvedTheme } from "../theme.js";
 
 const LISTING_INITIAL: Record<string, string> = {
@@ -124,11 +128,20 @@ export function SwapListItem({
 
   const actionLabel = isMySwap ? "Delist" : "Buy";
   const thumbnail = swapThumbnailUrl(swap);
+  const displayName = swapDisplayName(swap);
+  const displayQuantity = swapDisplayQuantity(swap);
+  const showMeta =
+    swap.listingType !== "ordinal" &&
+    (displayQuantity !== null || swap.pricePerUnit !== null);
 
-  const showUnitPrice =
-    swap.listingType === "counterparty" &&
-    swap.assetQuantity !== null &&
-    swap.pricePerUnit !== null;
+  const metaText =
+    displayQuantity !== null && swap.pricePerUnit !== null
+      ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
+      : displayQuantity !== null
+        ? `Qty: ${displayQuantity}`
+        : swap.pricePerUnit !== null
+          ? `${swap.pricePerUnit.toLocaleString()} sats/unit`
+          : null;
 
   if (view === "grid") {
     return (
@@ -146,11 +159,16 @@ export function SwapListItem({
           style={[common.swapItemName, stylesProp?.name]}
           numberOfLines={1}
         >
-          {swap.assetName ?? "—"}
+          {displayName}
         </Text>
         <Text style={[common.muted, stylesProp?.price]}>
           {swap.price.toLocaleString()} sats
         </Text>
+        {showMeta && metaText !== null && (
+          <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
+            {metaText}
+          </Text>
+        )}
         <Pressable
           onPress={onAction}
           style={[
@@ -188,16 +206,15 @@ export function SwapListItem({
           style={[common.swapItemName, stylesProp?.name]}
           numberOfLines={1}
         >
-          {swap.assetName ?? "—"}
+          {displayName}
         </Text>
         <View style={sheet.infoRow}>
           <Text style={[common.swapItemBadge, stylesProp?.badge]}>
             {swap.listingType}
           </Text>
-          {showUnitPrice && (
+          {showMeta && metaText !== null && (
             <Text style={[common.muted, stylesProp?.meta]}>
-              {swap.assetQuantity!.toLocaleString()} ×{" "}
-              {swap.pricePerUnit!.toLocaleString()} sats/unit
+              {metaText}
             </Text>
           )}
         </View>

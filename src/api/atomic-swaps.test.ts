@@ -69,6 +69,8 @@ const DOMAIN_SWAP = {
   onChainPayment: null,
   imageUrl: null,
   thumbnailUrl: null,
+  inscriptionNumber: null,
+  assetDivisibility: null,
 };
 
 describe("getSwap", () => {
@@ -174,7 +176,6 @@ describe("listSwaps", () => {
     expect(result.count).toBe(1);
     expect(result.atomicSwaps).toHaveLength(1);
     expect(result.atomicSwaps[0]).toEqual(DOMAIN_SWAP);
-    expect(result.assetMedia).toEqual({ RAREPEPE: { url: "https://example.com/img.png" } });
     expect(result.pagination).toEqual({ total: 1, offset: 0, limit: null });
   });
 
