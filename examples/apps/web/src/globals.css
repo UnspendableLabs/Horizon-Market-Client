@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* ── Fonts ────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Montserrat";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/Montserrat.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Lato-400-latin.woff2") format("woff2");
+}
+
+/* ── Design tokens (Horizon Market brand) ─────────────────── */
+
+@theme {
+  --font-sans: "Montserrat", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-data: "Lato", system-ui, sans-serif;
+
+  /* Core palette */
+  --color-background: #0b0b15;
+  --color-background-secondary: #161624;
+  --color-foreground: #fefbf9;
+  --color-primary: #1ee7c5;
+  --color-primary-secondary: #9de7cf;
+  --color-purple: #a689f6;
+  --color-yellow: #fee79a;
+  --color-off-white: #dee4e8;
+
+  /* Transparent surfaces */
+  --color-surface: rgba(254, 251, 249, 0.04);
+  --color-surface-hover: rgba(254, 251, 249, 0.08);
+  --color-surface-active: rgba(254, 251, 249, 0.16);
+  --color-muted: rgba(254, 251, 249, 0.33);
+  --color-muted-strong: rgba(254, 251, 249, 0.66);
+  --color-border: rgba(254, 251, 249, 0.16);
+  --color-border-subtle: rgba(254, 251, 249, 0.08);
+
+  /* Semantic */
+  --color-success: #1ee7c5;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+
+  /* Radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Header height — used for sticky toolbar offset */
+  --header-height: 70px;
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-background);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-foreground);
+  background: linear-gradient(224deg, #0b0b15 52.98%, #161624 81.99%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}

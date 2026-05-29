@@ -30,6 +30,8 @@ export interface SwapConfirmationProps {
   onBuySuccess?: (sales: PendingSale[]) => void;
   onDelistSuccess?: () => void;
   onError?: (error: Error) => void;
+  /** Called when the user dismisses the result screen (clicks "Done"). */
+  onComplete?: () => void;
   className?: string;
   classNames?: SwapConfirmationClassNames;
   style?: CSSProperties;
@@ -45,6 +47,7 @@ export function SwapConfirmation({
   onBuySuccess,
   onDelistSuccess,
   onError,
+  onComplete,
   className,
   classNames,
   style,
@@ -61,6 +64,7 @@ export function SwapConfirmation({
     error,
     confirmPurchase,
     delist,
+    isSubmitting,
     retry,
     reset,
   } = useSwapConfirmation({
@@ -119,13 +123,20 @@ export function SwapConfirmation({
         </div>
         <button
           type="button"
+          disabled={isSubmitting}
           onClick={() =>
             mode === "buy" ? void confirmPurchase(fillParams) : void delist()
           }
           className={classNames?.button}
-          style={ws.primaryButton}
+          style={ws.withDisabled(ws.primaryButton, isSubmitting)}
         >
-          {mode === "buy" ? "Confirm Purchase" : "Delist"}
+          {isSubmitting
+            ? mode === "buy"
+              ? "Confirming…"
+              : "Delisting…"
+            : mode === "buy"
+              ? "Confirm Purchase"
+              : "Delist"}
         </button>
       </div>
     );
@@ -168,7 +179,7 @@ export function SwapConfirmation({
         isError={status === "error"}
         onBack={reset}
         onRetry={retry}
-        onComplete={reset}
+        onComplete={() => { reset(); onComplete?.(); }}
         completeLabel="Done"
         classNames={{
           button: classNames?.button,

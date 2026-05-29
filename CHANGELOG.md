@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Optional progress callbacks on workflow methods (`openSellOrder`, `fillSwaps`, `delistSwap`) via a second `WorkflowOptions` argument with `onProgress`
 - Exported progress types: `WorkflowProgressEvent`, `WorkflowOptions`, `OpenSellOrderStep`, `FillSwapsStep`, `DelistSwapStep`
+- React / React Native UI layer (`@unspendablelabs/horizon-market-client/react`): `HorizonMarketProvider`, headless hooks, and platform components (`LoginPanel`, `SwapList`, `SellOrderForm`, `SwapConfirmation`, `WorkflowProgress`)
+- `SwapList` / `useSwapList`: browse funded listings with filters, sort, pagination, and integrated buy/delist flows
+- `AtomicSwap.imageUrl` and `AtomicSwap.thumbnailUrl` mapped from the API
+
+### Fixed
+
+- Removed the package-root `react-native` field so Metro resolves the core client from the main entry; use the `./react` export for UI on React Native
 
 ## [0.1.0-rc.1] - 2026-05-28
 

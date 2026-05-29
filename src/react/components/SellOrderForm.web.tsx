@@ -56,6 +56,7 @@ export function SellOrderForm({
     setFormValues,
     submitForm,
     confirmAndSell,
+    isSubmitting,
     goBack,
     retry,
     reset,
@@ -110,6 +111,16 @@ export function SellOrderForm({
               <option value={assetKey(assets.zeldOption)}>ZELD</option>
             </optgroup>
             <optgroup label="Counterparty">
+              {assets.isSearching && (
+                <option disabled value="">
+                  Searching…
+                </option>
+              )}
+              {assets.counterpartyError && (
+                <option disabled value="">
+                  Search failed: {assets.counterpartyError.message}
+                </option>
+              )}
               {assets.counterpartyAssets.map((a) => {
                 const k = assetKey(a);
                 return (
@@ -120,6 +131,16 @@ export function SellOrderForm({
               })}
             </optgroup>
             <optgroup label="Ordinals">
+              {assets.isLoadingOrdinals && (
+                <option disabled value="">
+                  Loading ordinals…
+                </option>
+              )}
+              {assets.ordinalsError && (
+                <option disabled value="">
+                  Ordinals unavailable: {assets.ordinalsError.message}
+                </option>
+              )}
               {assets.ordinals.map((a) => {
                 const k = assetKey(a);
                 return (
@@ -208,10 +229,14 @@ export function SellOrderForm({
           <button
             type="button"
             onClick={() => void confirmAndSell()}
+            disabled={isSubmitting}
             className={classNames?.button}
-            style={{ ...ws.primaryButton, flex: 1 }}
+            style={ws.withDisabled(
+              { ...ws.primaryButton, flex: 1 },
+              isSubmitting,
+            )}
           >
-            Sell
+            {isSubmitting ? "Selling…" : "Sell"}
           </button>
         </div>
       </div>

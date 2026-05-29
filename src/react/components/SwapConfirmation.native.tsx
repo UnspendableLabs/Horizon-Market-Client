@@ -39,6 +39,8 @@ export interface SwapConfirmationProps {
   onBuySuccess?: (sales: PendingSale[]) => void;
   onDelistSuccess?: () => void;
   onError?: (error: Error) => void;
+  /** Called when the user dismisses the result screen (clicks "Done"). */
+  onComplete?: () => void;
   style?: StyleProp<ViewStyle>;
   styles?: SwapConfirmationStyles;
 }
@@ -51,6 +53,7 @@ export function SwapConfirmation({
   onBuySuccess,
   onDelistSuccess,
   onError,
+  onComplete,
   style,
   styles: stylesProp,
 }: SwapConfirmationProps) {
@@ -67,6 +70,7 @@ export function SwapConfirmation({
     error,
     confirmPurchase,
     delist,
+    isSubmitting,
     retry,
     reset,
   } = useSwapConfirmation({
@@ -129,13 +133,24 @@ export function SwapConfirmation({
           )}
         </View>
         <Pressable
+          disabled={isSubmitting}
           onPress={() =>
             mode === "buy" ? void confirmPurchase(fillParams) : void delist()
           }
-          style={[common.button, stylesProp?.button]}
+          style={[
+            common.button,
+            isSubmitting && common.buttonDisabled,
+            stylesProp?.button,
+          ]}
         >
           <Text style={[common.buttonText, stylesProp?.buttonText]}>
-            {mode === "buy" ? "Confirm Purchase" : "Delist"}
+            {isSubmitting
+              ? mode === "buy"
+                ? "Confirming…"
+                : "Delisting…"
+              : mode === "buy"
+                ? "Confirm Purchase"
+                : "Delist"}
           </Text>
         </Pressable>
       </View>
@@ -179,7 +194,7 @@ export function SwapConfirmation({
         isError={status === "error"}
         onBack={reset}
         onRetry={retry}
-        onComplete={reset}
+        onComplete={() => { reset(); onComplete?.(); }}
         completeLabel="Done"
         sheet={common}
         styles={{

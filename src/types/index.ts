@@ -89,6 +89,8 @@ export interface AtomicSwap {
   updatedAt: string;
   onChainPayment: OnChainPayment | null;
   user?: { id: string } | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
 }
 
 /** Result of `listSwaps`. `count` mirrors `pagination.total`. */

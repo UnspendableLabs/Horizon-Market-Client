@@ -16,6 +16,14 @@ The API never receives your private key. Write operations use **signed PSBTs** (
 npm install @unspendablelabs/horizon-market-client
 ```
 
+For the optional React UI (web or React Native), also install peer dependencies:
+
+```bash
+npm install react
+# React Native apps only:
+npm install react-native
+```
+
 ## Quote → sign → submit
 
 Every write workflow follows the same pattern: the server composes unsigned PSBTs (or a delist message), you sign locally, then submit.
@@ -72,6 +80,47 @@ Each step emits `phase: "start"` before work begins and `phase: "complete"` when
 | `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` |
 
 \* omitted when not applicable (no prep PSBT / no fee PSBT). `totalSteps` is `null` on the first `openSellOrder` events until the sell quote is received and the step plan is known.
+
+## React UI (optional)
+
+Import from `@unspendablelabs/horizon-market-client/react`. Bundlers pick the web or React Native build automatically (`react-native` condition on the `./react` export).
+
+```tsx
+import {
+  HorizonMarketProvider,
+  LoginPanel,
+  SellOrderForm,
+  SwapConfirmation,
+  SwapList,
+} from "@unspendablelabs/horizon-market-client/react";
+
+function App() {
+  return (
+    <HorizonMarketProvider
+      network="mainnet"
+      ordApiBaseUrl="https://ord.example.com"
+      theme={{ colors: { primary: "#3b82f6" } }}
+    >
+      <LoginPanel getPrivateKey={yourWeb3AuthGetPrivateKey} />
+      <SwapList getPrivateKey={yourWeb3AuthGetPrivateKey} />
+      <SellOrderForm onSuccess={(swap) => console.log(swap.id)} />
+    </HorizonMarketProvider>
+  );
+}
+```
+
+| Export | Description |
+|--------|-------------|
+| `HorizonMarketProvider` | Context: client, addresses, `initialize` / `logout`, theme |
+| `useHorizonMarket`, `useTheme` | Access provider state and resolved theme |
+| `useLoginPanel`, `useAssets`, `useSellOrder`, `useSwapConfirmation`, `useSwapList` | Headless hooks (build your own UI) |
+| `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
+| `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
+| `SellOrderForm` | Multi-step sell listing (asset search, confirm, progress) |
+| `SwapConfirmation` | Buy or delist a swap with progress UI |
+| `WorkflowProgress` | Standalone progress list (also used inside the forms) |
+
+On **web**, the provider injects theme CSS variables (`--hm-*`) and falls back to shadcn/ui tokens when present. On **React Native**, pass `styles` overrides per component.
 
 ## Quick Start
 

@@ -53,6 +53,8 @@ interface WireAtomicSwap {
   updated_at: string;
   on_chain_payment: WireOnChainPayment | null;
   user?: { id: string } | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
 }
 
 interface WirePagination {
@@ -155,6 +157,8 @@ function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
       ? mapOnChainPayment(wire.on_chain_payment)
       : null,
     user: wire.user ?? undefined,
+    imageUrl: wire.image_url ?? null,
+    thumbnailUrl: wire.thumbnail_url ?? null,
   };
 }
 

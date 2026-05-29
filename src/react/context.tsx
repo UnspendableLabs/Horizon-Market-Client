@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { resolveFetch } from "../api/resolveFetch.js";
 import { HorizonMarketClient } from "../client.js";
 import { LocalSigner, type Signer } from "../crypto/signer.js";
 import type { Network } from "../types/index.js";
@@ -18,7 +19,7 @@ import {
 export type Addresses = ReturnType<Signer["getAddresses"]>;
 
 export interface HorizonMarketContextValue {
-  client: HorizonMarketClient | null;
+  client: HorizonMarketClient;
   addresses: Addresses | null;
   initialize: (privateKey: string | Uint8Array) => void;
   logout: () => void;
@@ -42,9 +43,9 @@ export interface HorizonMarketProviderProps {
   children: ReactNode;
 }
 
-interface ClientState {
-  client: HorizonMarketClient;
+interface AuthState {
   addresses: Addresses;
+  signer: Signer;
 }
 
 export function HorizonMarketProvider({
@@ -55,34 +56,46 @@ export function HorizonMarketProvider({
   theme,
   children,
 }: HorizonMarketProviderProps) {
-  const [state, setState] = useState<ClientState | null>(null);
+  const [authState, setAuthState] = useState<AuthState | null>(null);
+
+  const anonClient = useMemo(
+    () => new HorizonMarketClient({ network, baseUrl, fetch: fetchImpl }),
+    [network, baseUrl, fetchImpl],
+  );
+
+  const authedClient = useMemo(
+    () =>
+      authState
+        ? new HorizonMarketClient({
+            signer: authState.signer,
+            network,
+            baseUrl,
+            fetch: fetchImpl,
+          })
+        : null,
+    [authState, network, baseUrl, fetchImpl],
+  );
 
   const initialize = useCallback(
     (privateKey: string | Uint8Array) => {
       const signer = new LocalSigner(privateKey, network);
       const addresses = signer.getAddresses();
-      const client = new HorizonMarketClient({
-        signer,
-        network,
-        baseUrl,
-        fetch: fetchImpl,
-      });
-      setState({ client, addresses });
+      setAuthState({ signer, addresses });
     },
-    [network, baseUrl, fetchImpl],
+    [network],
   );
 
   const logout = useCallback(() => {
-    setState(null);
+    setAuthState(null);
   }, []);
 
   const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
-  const resolvedFetch = fetchImpl ?? globalThis.fetch;
+  const resolvedFetch = useMemo(() => resolveFetch(fetchImpl), [fetchImpl]);
 
   const value = useMemo<HorizonMarketContextValue>(
     () => ({
-      client: state?.client ?? null,
-      addresses: state?.addresses ?? null,
+      client: authedClient ?? anonClient,
+      addresses: authState?.addresses ?? null,
       initialize,
       logout,
       network,
@@ -90,7 +103,7 @@ export function HorizonMarketProvider({
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [state, initialize, logout, network, ordApiBaseUrl, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, logout, network, ordApiBaseUrl, resolvedFetch, resolvedTheme],
   );
 
   return (

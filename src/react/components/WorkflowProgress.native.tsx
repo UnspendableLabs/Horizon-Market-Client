@@ -32,6 +32,8 @@ export interface WorkflowProgressProps {
   styles?: WorkflowProgressStyles;
 }
 
+const MAX_PENDING_STEPS = 10;
+
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
     root: {
@@ -91,7 +93,9 @@ export function WorkflowProgress({
   const showPending =
     totalSteps !== null && view.length < totalSteps && status === "loading";
   const remaining =
-    totalSteps !== null ? Math.max(0, totalSteps - view.length) : 0;
+    totalSteps !== null
+      ? Math.min(Math.max(0, totalSteps - view.length), MAX_PENDING_STEPS)
+      : 0;
 
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>

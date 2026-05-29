@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Horizon Market",
+    "slug": "horizon-market",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "horizonmarket",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0b0b15"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.unspendablelabs.horizonmarket"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0b15"
+      },
+      "package": "com.unspendablelabs.horizonmarket"
+    }
+  }
+}

@@ -61,7 +61,7 @@ export type { FillSwapsParams } from "./workflows/buy.js";
  */
 export class HorizonMarketClient {
   private readonly http: HttpClient;
-  private readonly signer: Signer;
+  private readonly signer: Signer | null;
   private readonly network: "mainnet" | "testnet";
   private readonly btcNetwork: btc.Network;
 
@@ -80,10 +80,17 @@ export class HorizonMarketClient {
     } else if (options.privateKey) {
       this.signer = new LocalSigner(options.privateKey, this.network);
     } else {
+      this.signer = null;
+    }
+  }
+
+  private assertSigner(): Signer {
+    if (!this.signer) {
       throw new Error(
-        "HorizonMarketClient requires either `privateKey` or `signer`",
+        "This operation requires authentication. Provide a `privateKey` or `signer`.",
       );
     }
+    return this.signer;
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────
@@ -138,13 +145,14 @@ export class HorizonMarketClient {
     params: SellQuoteParams,
     options?: RequestOptions,
   ): Promise<SellQuote> {
+    const signer = this.assertSigner();
     assertZeldMainnet(params.listingType, this.network);
     assertSellListingParams(params);
     assertOrdinalSellerAddress(params.listingType, params.sellerAddress);
     const sellerPubkey = resolveSellerPubkey(
       params.sellerAddress,
       params.sellerPubkey,
-      this.signer.getAddresses(),
+      signer.getAddresses(),
     );
     assertTaprootSellerPubkey(params.sellerAddress, sellerPubkey);
     return apiRequestSellQuote(
@@ -245,7 +253,7 @@ export class HorizonMarketClient {
     return workflowOpenSellOrder(
       params,
       this.http,
-      this.signer,
+      this.assertSigner(),
       this.network,
       this.btcNetwork,
       options,
@@ -262,13 +270,13 @@ export class HorizonMarketClient {
     params: FillSwapsParams,
     options?: WorkflowOptions,
   ): Promise<PendingSale[]> {
-    return workflowFillSwaps(params, this.http, this.signer, options);
+    return workflowFillSwaps(params, this.http, this.assertSigner(), options);
   }
 
   /**
    * Delist a swap: start → sign (BIP322) → confirm.
    */
   delistSwap(swapId: string, options?: WorkflowOptions): Promise<void> {
-    return workflowDelistSwap(swapId, this.http, this.signer, options);
+    return workflowDelistSwap(swapId, this.http, this.assertSigner(), options);
   }
 }

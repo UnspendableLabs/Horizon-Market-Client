@@ -9,12 +9,19 @@ export type {
 
 export {
   useTheme,
+  useLoginPanel,
   useAssets,
   useSellOrder,
   useSwapConfirmation,
+  useSwapList,
+  SORT_OPTIONS,
+  SORT_OPTION_LABELS,
   zeldOption,
 } from "./hooks/index.js";
 export type {
+  LoginPanelPhase,
+  UseLoginPanelOptions,
+  UseLoginPanelResult,
   AssetOption,
   SellOrderStep,
   SellOrderStatus,
@@ -26,6 +33,13 @@ export type {
   SwapConfirmationStatus,
   UseSwapConfirmationOptions,
   UseSwapConfirmationResult,
+  SwapListOrderBy,
+  SwapListOrder,
+  SwapListingType,
+  SwapListView,
+  SortOption,
+  UseSwapListOptions,
+  UseSwapListResult,
 } from "./hooks/index.js";
 
 export type {
@@ -61,3 +75,9 @@ export type {
   WorkflowProgressProps,
   WorkflowProgressStyles,
 } from "./components/WorkflowProgress.native.js";
+
+export { SwapList } from "./components/SwapList.native.js";
+export type {
+  SwapListProps,
+  SwapListStyles,
+} from "./components/SwapList.native.js";

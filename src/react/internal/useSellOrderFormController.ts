@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAssets } from "../hooks/useAssets.js";
 import {
   useSellOrder,
-  type SellOrderFormValues,
   type UseSellOrderOptions,
   type UseSellOrderResult,
 } from "../hooks/useSellOrder.js";
+import {
+  isSellFormValid,
+  showQuantityForAsset,
+} from "./sellFormValidation.js";
 
 export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
   assets: ReturnType<typeof useAssets>;
@@ -25,32 +28,27 @@ export function useSellOrderFormController(
 ): UseSellOrderFormControllerResult {
   const sellOrder = useSellOrder(options);
   const assets = useAssets();
-  const [search, setSearch] = useState("");
+  const [search, setSearchState] = useState("");
 
+  const setSearch = useCallback(
+    (q: string) => {
+      setSearchState(q);
+      assets.searchCounterparty(q);
+    },
+    [assets.searchCounterparty],
+  );
+
+  // Pre-populate counterparty list when the client first connects.
+  // Uses a ref for the current search value so the effect only re-runs
+  // when searchCounterparty changes (client connects/changes), not on every keystroke.
+  const searchRef = useRef(search);
+  searchRef.current = search;
   useEffect(() => {
-    assets.searchCounterparty(search);
-  }, [search, assets.searchCounterparty]);
+    assets.searchCounterparty(searchRef.current);
+  }, [assets.searchCounterparty]);
 
-  const showQuantity = sellOrder.formValues.asset?.type !== "ordinal";
-  const submitDisabled = !isFormValid(sellOrder.formValues, showQuantity);
+  const showQuantity = showQuantityForAsset(sellOrder.formValues.asset);
+  const submitDisabled = !isSellFormValid(sellOrder.formValues);
 
   return { ...sellOrder, assets, search, setSearch, showQuantity, submitDisabled };
-}
-
-function isFormValid(
-  values: SellOrderFormValues,
-  showQuantity: boolean,
-): boolean {
-  if (!values.asset) return false;
-  const price = Number(values.priceSats);
-  if (!Number.isFinite(price) || price <= 0) return false;
-  if (showQuantity) {
-    if (!values.quantity) return false;
-    try {
-      if (BigInt(values.quantity) <= 0n) return false;
-    } catch {
-      return false;
-    }
-  }
-  return true;
 }

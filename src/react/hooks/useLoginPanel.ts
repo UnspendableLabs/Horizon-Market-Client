@@ -41,6 +41,7 @@ export function useLoginPanel({
 
   const callbacksRef = useRef({ onSuccess, onError });
   callbacksRef.current = { onSuccess, onError };
+  const firedSuccessForRef = useRef<Addresses | null>(null);
 
   const run = useCallback(
     async (probe: boolean) => {
@@ -85,9 +86,16 @@ export function useLoginPanel({
     void run(true);
   }, [autoDetectSession, addresses, run]);
 
+  // Reset to the form when the user logs out.
+  useEffect(() => {
+    if (addresses) return;
+    setPhase("form");
+    setError(null);
+    firedSuccessForRef.current = null;
+  }, [addresses]);
+
   // Fire onSuccess exactly once per success transition, regardless of whether
   // the consumer memoizes the callback.
-  const firedSuccessForRef = useRef<Addresses | null>(null);
   useEffect(() => {
     if (phase !== "success" || !addresses) return;
     if (firedSuccessForRef.current === addresses) return;

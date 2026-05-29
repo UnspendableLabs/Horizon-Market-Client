@@ -26,6 +26,7 @@ export interface WorkflowProgressProps {
 }
 
 const SPIN_KEYFRAMES = "@keyframes hm-spin { to { transform: rotate(360deg); } }";
+const MAX_PENDING_STEPS = 10;
 const KEYFRAMES_STYLE_ID = "hm-workflow-progress-keyframes";
 
 function useSpinKeyframes() {
@@ -54,7 +55,9 @@ export function WorkflowProgress({
   const showPending =
     totalSteps !== null && view.length < totalSteps && status === "loading";
   const remaining =
-    totalSteps !== null ? Math.max(0, totalSteps - view.length) : 0;
+    totalSteps !== null
+      ? Math.min(Math.max(0, totalSteps - view.length), MAX_PENDING_STEPS)
+      : 0;
 
   const rootStyle: CSSProperties = {
     display: "flex",
@@ -71,7 +74,13 @@ export function WorkflowProgress({
   };
 
   return (
-    <div className={cx(classNames?.root, className)} style={rootStyle}>
+    <div
+      className={cx(classNames?.root, className)}
+      style={rootStyle}
+      role="status"
+      aria-live="polite"
+      aria-busy={status === "loading"}
+    >
       {totalSteps !== null && (
         <div
           style={{

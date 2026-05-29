@@ -4,8 +4,9 @@ import type {
   AtomicSwap,
   WorkflowProgressEvent,
 } from "../../types/index.js";
-import type { OpenSellOrderParams } from "../../workflows/sell.js";
 import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
+import { buildSellOrderParams } from "../internal/sellFormValidation.js";
+import type { OpenSellOrderParams } from "../../workflows/sell.js";
 import type { AssetOption } from "./useAssets.js";
 
 export type SellOrderStep = "form" | "confirm" | "progress" | "result";
@@ -50,57 +51,9 @@ export interface UseSellOrderResult {
   steps: WorkflowProgressEvent[];
   totalSteps: number | null;
   status: SellOrderStatus;
+  isSubmitting: boolean;
   result: SellOrderResult | null;
   error: Error | null;
-}
-
-function buildParams(
-  values: SellOrderFormValues,
-  defaultSatsPerVbyte?: number,
-): OpenSellOrderParams {
-  const asset = values.asset;
-  if (!asset) throw new Error("No asset selected");
-
-  const priceSats = Number(values.priceSats);
-  if (!Number.isFinite(priceSats) || priceSats <= 0) {
-    throw new Error("Invalid price");
-  }
-
-  const base = {
-    priceSats,
-    autoSelectFeeUtxos: true,
-    ...(defaultSatsPerVbyte !== undefined
-      ? { satsPerVbyte: defaultSatsPerVbyte }
-      : {}),
-  };
-
-  if (asset.type === "ordinal") {
-    return {
-      ...base,
-      listingType: "ordinal",
-      assetUtxoId: asset.utxoId,
-    };
-  }
-
-  if (!values.quantity) throw new Error("Quantity required");
-  const quantity = BigInt(values.quantity);
-  if (quantity <= 0n) throw new Error("Invalid quantity");
-
-  if (asset.type === "zeld") {
-    return {
-      ...base,
-      listingType: "zeld",
-      assetName: "ZELD",
-      assetQuantity: quantity,
-    };
-  }
-
-  return {
-    ...base,
-    listingType: "counterparty",
-    assetName: asset.assetName,
-    assetQuantity: quantity,
-  };
 }
 
 export function useSellOrder(
@@ -117,77 +70,94 @@ export function useSellOrder(
   const [steps, setSteps] = useState<WorkflowProgressEvent[]>([]);
   const [totalSteps, setTotalSteps] = useState<number | null>(null);
   const [status, setStatus] = useState<SellOrderStatus>("idle");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<SellOrderResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
+
+  const submittingRef = useRef(false);
+  const confirmedParamsRef = useRef<OpenSellOrderParams | null>(null);
 
   const setFormValues = useCallback<UseSellOrderResult["setFormValues"]>(
     (update) => {
       setFormValuesState((prev) =>
         typeof update === "function" ? update(prev) : { ...prev, ...update },
       );
+      setError(null);
     },
     [],
   );
 
   const submitForm = useCallback(() => {
+    let params: OpenSellOrderParams;
     try {
-      buildParams(formValues);
+      params = buildSellOrderParams(
+        formValues,
+        optsRef.current?.defaultSatsPerVbyte,
+      );
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
       return;
     }
+    confirmedParamsRef.current = params;
     setError(null);
     setStep("confirm");
   }, [formValues]);
 
   const confirmAndSell = useCallback(async () => {
-    if (!client) {
-      const err = new Error(CLIENT_NOT_INITIALIZED);
-      setError(err);
-      setStatus("error");
-      setStep("result");
-      optsRef.current?.onError?.(err);
-      return;
-    }
-
-    let params: OpenSellOrderParams;
-    try {
-      params = buildParams(formValues, optsRef.current?.defaultSatsPerVbyte);
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
-      setStatus("error");
-      setStep("result");
-      optsRef.current?.onError?.(e);
-      return;
-    }
-
-    setSteps([]);
-    setTotalSteps(null);
-    setError(null);
-    setResult(null);
-    setStatus("loading");
-    setStep("progress");
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
 
     try {
-      const res = await client.openSellOrder(params, {
-        onProgress: (event) => {
-          setSteps((prev) => [...prev, event]);
-          if (event.totalSteps !== null) setTotalSteps(event.totalSteps);
-        },
-      });
-      setResult(res);
-      setStatus("success");
-      setStep("result");
-      optsRef.current?.onSuccess?.(res.swap, res.created);
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
-      setStatus("error");
-      setStep("result");
-      optsRef.current?.onError?.(e);
+      if (!client) {
+        const err = new Error(CLIENT_NOT_INITIALIZED);
+        setError(err);
+        setStatus("error");
+        setStep("result");
+        optsRef.current?.onError?.(err);
+        return;
+      }
+
+      const params = confirmedParamsRef.current;
+      if (!params) {
+        const e = new Error("Form not submitted");
+        setError(e);
+        setStatus("error");
+        setStep("result");
+        optsRef.current?.onError?.(e);
+        return;
+      }
+
+      setSteps([]);
+      setTotalSteps(null);
+      setError(null);
+      setResult(null);
+      setStatus("loading");
+      setStep("progress");
+
+      try {
+        const res = await client.openSellOrder(params, {
+          onProgress: (event) => {
+            setSteps((prev) => [...prev, event]);
+            if (event.totalSteps !== null) setTotalSteps(event.totalSteps);
+          },
+        });
+        setResult(res);
+        setStatus("success");
+        setStep("result");
+        optsRef.current?.onSuccess?.(res.swap, res.created);
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err));
+        setError(e);
+        setStatus("error");
+        setStep("result");
+        optsRef.current?.onError?.(e);
+      }
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
-  }, [client, formValues]);
+  }, [client]);
 
   const goBack = useCallback(() => {
     if (step === "confirm") {
@@ -209,6 +179,9 @@ export function useSellOrder(
     setSteps([]);
     setTotalSteps(null);
     setStatus("idle");
+    setIsSubmitting(false);
+    submittingRef.current = false;
+    confirmedParamsRef.current = null;
     setResult(null);
     setError(null);
   }, []);
@@ -225,6 +198,7 @@ export function useSellOrder(
     steps,
     totalSteps,
     status,
+    isSubmitting,
     result,
     error,
   };

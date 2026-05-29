@@ -104,6 +104,7 @@ export function SellOrderForm({
     setFormValues,
     submitForm,
     confirmAndSell,
+    isSubmitting,
     goBack,
     retry,
     reset,
@@ -203,7 +204,7 @@ export function SellOrderForm({
               style={[StyleSheet.absoluteFill, sheet.modalBackdrop]}
               onPress={() => setPickerOpen(false)}
             />
-            <View style={sheet.modalSheet}>
+            <View style={sheet.modalSheet} onStartShouldSetResponder={() => true}>
               <TextInput
                 value={search}
                 onChangeText={setSearch}
@@ -211,9 +212,30 @@ export function SellOrderForm({
                 placeholderTextColor={theme.colors.textMuted}
                 style={[common.input, stylesProp?.input]}
               />
+              {assets.isSearching && (
+                <Text style={[common.muted, stylesProp?.label]}>
+                  Searching…
+                </Text>
+              )}
+              {assets.counterpartyError && (
+                <Text style={[common.error, stylesProp?.error]}>
+                  {assets.counterpartyError.message}
+                </Text>
+              )}
+              {assets.isLoadingOrdinals && (
+                <Text style={[common.muted, stylesProp?.label]}>
+                  Loading ordinals…
+                </Text>
+              )}
+              {assets.ordinalsError && (
+                <Text style={[common.error, stylesProp?.error]}>
+                  Ordinals: {assets.ordinalsError.message}
+                </Text>
+              )}
               <SectionList
                 sections={sections}
                 keyExtractor={(item) => assetKey(item)}
+                keyboardShouldPersistTaps="handled"
                 renderSectionHeader={({ section }) => (
                   <Text style={sheet.sectionHeader}>{section.title}</Text>
                 )}
@@ -282,11 +304,17 @@ export function SellOrderForm({
             </Text>
           </Pressable>
           <Pressable
+            disabled={isSubmitting}
             onPress={() => void confirmAndSell()}
-            style={[common.button, common.flex1, stylesProp?.button]}
+            style={[
+              common.button,
+              common.flex1,
+              isSubmitting && common.buttonDisabled,
+              stylesProp?.button,
+            ]}
           >
             <Text style={[common.buttonText, stylesProp?.buttonText]}>
-              Sell
+              {isSubmitting ? "Selling…" : "Sell"}
             </Text>
           </Pressable>
         </View>

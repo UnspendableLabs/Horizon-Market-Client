@@ -1,0 +1,319 @@
+import type { CSSProperties, ReactNode } from "react";
+import type { AtomicSwap } from "../../types/index.js";
+import {
+  useSwapList,
+  SORT_OPTIONS,
+  SORT_OPTION_LABELS,
+  type UseSwapListOptions,
+  type SortOption,
+} from "../hooks/useSwapList.js";
+import { cx } from "../internal/format.js";
+import { FILTER_TABS } from "../internal/swapListConstants.js";
+import {
+  SwapListItem,
+  type SwapListItemClassNames,
+} from "../internal/SwapListItem.web.js";
+import * as ws from "../internal/styles.web.js";
+import { webTokens } from "../theme.js";
+import type { LoginPanelClassNames } from "./LoginPanel.web.js";
+import { LoginPanel } from "./LoginPanel.web.js";
+import type { SwapConfirmationClassNames } from "./SwapConfirmation.web.js";
+import { SwapConfirmation } from "./SwapConfirmation.web.js";
+
+export type { SwapListingType, SortOption, SwapListView } from "../hooks/useSwapList.js";
+
+export interface SwapListClassNames {
+  root?: string;
+  toolbar?: string;
+  filterTabs?: string;
+  sortSelect?: string;
+  viewToggle?: string;
+  mySwapsToggle?: string;
+  grid?: string;
+  list?: string;
+  item?: SwapListItemClassNames;
+  pagination?: string;
+  error?: string;
+  empty?: string;
+  loginPanel?: LoginPanelClassNames;
+  confirmation?: SwapConfirmationClassNames;
+}
+
+export interface SwapListProps extends UseSwapListOptions {
+  /**
+   * Platform-specific function to obtain the wallet private key.
+   * Required for the login modal shown when an unauthenticated user clicks Buy.
+   */
+  getPrivateKey: (email: string) => Promise<string>;
+  onSwapSelect?: (swap: AtomicSwap) => void;
+  className?: string;
+  classNames?: SwapListClassNames;
+  style?: CSSProperties;
+}
+
+const rootStyle: CSSProperties = { ...ws.cardRoot, position: "relative" };
+
+function ModalPanel({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={ws.modalOverlay}
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        style={modalPanelStyle}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          style={ws.modalClose}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const toolbarRightStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: webTokens.spacingSm,
+  marginLeft: "auto",
+};
+
+const paginationStyle: CSSProperties = {
+  ...ws.actionsRow,
+  justifyContent: "center",
+  alignItems: "center",
+};
+
+const modalPanelStyle: CSSProperties = {
+  position: "relative",
+  maxHeight: "90vh",
+  overflowY: "auto",
+};
+
+const pageInfoStyle: CSSProperties = {
+  ...ws.mutedText,
+  minWidth: 80,
+  textAlign: "center",
+};
+
+export function SwapList({
+  getPrivateKey,
+  onSwapSelect,
+  className,
+  classNames,
+  style,
+  ...hookOptions
+}: SwapListProps) {
+  const {
+    swaps,
+    isLoading,
+    error,
+    listingType,
+    setListingType,
+    sortOption,
+    setSortOption,
+    view,
+    setView,
+    showMySwaps,
+    setShowMySwaps,
+    canShowMySwaps,
+    page,
+    setPage,
+    totalPages,
+    refetch,
+    isItemMySwap,
+    pendingSwap,
+    loginModalOpen,
+    confirmationModalOpen,
+    confirmationMode,
+    onItemAction,
+    closeLoginModal,
+    closeConfirmationModal,
+    handleLoginSuccess,
+  } = useSwapList(hookOptions);
+
+  const root: CSSProperties = { ...rootStyle, ...style };
+
+  return (
+    <div className={cx(classNames?.root, className)} style={root}>
+      {/* Toolbar */}
+      <div
+        className={classNames?.toolbar}
+        style={{ ...ws.swapListToolbar, justifyContent: "space-between" }}
+      >
+        {/* Filter tabs */}
+        <div
+          className={classNames?.filterTabs}
+          style={{ ...ws.actionsRow, flexWrap: "wrap" as const }}
+        >
+          {FILTER_TABS.map(({ key, label }) => (
+            <button
+              key={key ?? "all"}
+              type="button"
+              onClick={() => setListingType(key)}
+              style={ws.filterTab(listingType === key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={toolbarRightStyle}>
+          {/* Sort */}
+          <select
+            className={classNames?.sortSelect}
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as SortOption)}
+            style={ws.input}
+          >
+            {SORT_OPTIONS.map((key) => (
+              <option key={key} value={key}>
+                {SORT_OPTION_LABELS[key]}
+              </option>
+            ))}
+          </select>
+
+          {/* My swaps toggle */}
+          {canShowMySwaps && (
+            <button
+              type="button"
+              className={classNames?.mySwapsToggle}
+              onClick={() => setShowMySwaps(!showMySwaps)}
+              style={ws.filterTab(showMySwaps)}
+            >
+              {showMySwaps ? "All swaps" : "My swaps"}
+            </button>
+          )}
+
+          {/* View toggle */}
+          <div className={classNames?.viewToggle} style={ws.actionsRow}>
+            <button
+              type="button"
+              aria-label="Grid view"
+              onClick={() => setView("grid")}
+              style={
+                view === "grid"
+                  ? ws.filterTab(true)
+                  : ws.iconButton
+              }
+            >
+              ⊞
+            </button>
+            <button
+              type="button"
+              aria-label="List view"
+              onClick={() => setView("list")}
+              style={
+                view === "list"
+                  ? ws.filterTab(true)
+                  : ws.iconButton
+              }
+            >
+              ≡
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div style={ws.mutedText}>Loading…</div>
+      ) : error ? (
+        <div className={classNames?.error} style={ws.errorText}>
+          {error.message}
+        </div>
+      ) : swaps.length === 0 ? (
+        <div className={classNames?.empty} style={ws.mutedText}>
+          No swaps found.
+        </div>
+      ) : (
+        <div
+          className={view === "grid" ? classNames?.grid : classNames?.list}
+          style={view === "grid" ? ws.swapGrid : ws.swapListColumn}
+        >
+          {swaps.map((swap) => (
+            <SwapListItem
+              key={swap.id}
+              swap={swap}
+              view={view}
+              isMySwap={isItemMySwap(swap)}
+              onAction={() => {
+                onSwapSelect?.(swap);
+                onItemAction(swap);
+              }}
+              classNames={classNames?.item}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className={classNames?.pagination} style={paginationStyle}>
+          <button
+            type="button"
+            disabled={page === 0}
+            onClick={() => setPage(page - 1)}
+            style={ws.withDisabled(ws.secondaryButton, page === 0)}
+          >
+            ←
+          </button>
+          <span style={pageInfoStyle}>
+            {page + 1} / {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(page + 1)}
+            style={ws.withDisabled(
+              ws.secondaryButton,
+              page >= totalPages - 1,
+            )}
+          >
+            →
+          </button>
+        </div>
+      )}
+
+      {/* Login modal */}
+      {loginModalOpen && (
+        <ModalPanel onClose={closeLoginModal}>
+          <LoginPanel
+            getPrivateKey={getPrivateKey}
+            autoDetectSession={false}
+            onSuccess={handleLoginSuccess}
+            classNames={classNames?.loginPanel}
+          />
+        </ModalPanel>
+      )}
+
+      {/* Swap confirmation modal */}
+      {confirmationModalOpen && pendingSwap && (
+        <ModalPanel onClose={closeConfirmationModal}>
+          <SwapConfirmation
+            swap={pendingSwap}
+            mode={confirmationMode}
+            onBuySuccess={() => refetch()}
+            onDelistSuccess={() => refetch()}
+            onComplete={closeConfirmationModal}
+            classNames={classNames?.confirmation}
+          />
+        </ModalPanel>
+      )}
+    </div>
+  );
+}

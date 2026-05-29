@@ -61,7 +61,12 @@ export function useAssets(options?: {
 
   const searchCounterparty = useCallback(
     (query: string) => {
-      if (!client) return;
+      if (!client) {
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        setIsSearching(false);
+        setCounterpartyAssets([]);
+        return;
+      }
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       const seq = ++searchSeqRef.current;
       setIsSearching(true);

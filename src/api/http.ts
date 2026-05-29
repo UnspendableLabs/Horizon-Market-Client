@@ -1,3 +1,5 @@
+import { resolveFetch } from "./resolveFetch.js";
+
 export class HorizonMarketApiError extends Error {
   readonly status: number;
   readonly error: string;
@@ -32,7 +34,7 @@ export class HttpClient {
 
   constructor(options: { baseUrl: string; fetch?: typeof fetch }) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
-    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.fetchFn = resolveFetch(options.fetch);
   }
 
   async request<T>(
