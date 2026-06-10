@@ -11,6 +11,7 @@ import type {
   Pagination,
   PendingSale,
   ListingType,
+  KontorAssetKind,
   RequestOptions,
 } from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
@@ -25,7 +26,7 @@ interface WireOnChainPayment {
   to_address?: string;
 }
 
-interface WireAtomicSwap {
+export interface WireAtomicSwap {
   id: string;
   listing_type: ListingType;
   seller_address: string;
@@ -57,6 +58,9 @@ interface WireAtomicSwap {
   thumbnail_url?: string | null;
   inscription_number?: number | null;
   asset_divisibility?: boolean | null;
+  kontor_offer_blob?: string | null;
+  kontor_asset_kind?: KontorAssetKind | null;
+  kontor_contract_address?: string | null;
 }
 
 interface WirePagination {
@@ -122,7 +126,7 @@ function mapPagination(wire: WirePagination): Pagination {
   };
 }
 
-function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
+export function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
   let assetQuantity: bigint | null = null;
   if (wire.asset_quantity !== null && wire.asset_quantity !== undefined) {
     assetQuantity = BigInt(wire.asset_quantity);
@@ -162,6 +166,9 @@ function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     thumbnailUrl: wire.thumbnail_url ?? null,
     inscriptionNumber: wire.inscription_number ?? null,
     assetDivisibility: wire.asset_divisibility ?? null,
+    kontorOfferBlob: wire.kontor_offer_blob ?? null,
+    kontorAssetKind: wire.kontor_asset_kind ?? null,
+    kontorContractAddress: wire.kontor_contract_address ?? null,
   };
 }
 

@@ -14,12 +14,25 @@ import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
 import { requestFeeQuote as apiRequestFeeQuote, type FeeQuoteParams } from "./api/fee-quotes.js";
 import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from "./api/delist.js";
 import { LocalSigner, type Signer } from "./crypto/signer.js";
-import { openSellOrder as workflowOpenSellOrder, type OpenSellOrderParams } from "./workflows/sell.js";
+import {
+  openSellOrder as workflowOpenSellOrder,
+  type OpenSellOrderParams,
+  type PsbtSellOrderParams,
+} from "./workflows/sell.js";
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
+import { openKontorSellOrder } from "./workflows/sell-kontor.js";
+import { fillKontorSwap } from "./workflows/buy-kontor.js";
+import { delistKontorSwap } from "./workflows/delist-kontor.js";
+import { resolveKontorChain } from "./kontor/chain.js";
+import type { KontorContext } from "./kontor/context.js";
 import type { HorizonMarketClientOptions } from "./config.js";
-import { DEFAULT_BASE_URL } from "./config.js";
-import { assertBuyQuoteParams, assertP2WpkhBuyerAddress } from "./buy-params.js";
+import { DEFAULT_BASE_URL, DEFAULT_KONTOR_INDEXER_URL } from "./config.js";
+import {
+  assertNonEmptySwapIds,
+  assertBuyQuoteParams,
+  assertP2WpkhBuyerAddress,
+} from "./buy-params.js";
 import {
   assertOrdinalSellerAddress,
   assertSellListingParams,
@@ -45,11 +58,18 @@ import type {
   RequestOptions,
   SellQuote,
   SellQuoteParams,
+  KontorFunding,
   WorkflowOptions,
 } from "./types/index.js";
 
 export type { OpenSellOrderParams } from "./workflows/sell.js";
 export type { FillSwapsParams } from "./workflows/buy.js";
+
+/** Options for `delistSwap`. Kontor delists may carry `fundingUtxos` for the on-chain revoke. */
+export interface DelistSwapOptions extends WorkflowOptions {
+  /** Funding UTXOs for the on-chain revoke (Kontor only). Omitted = auto-fetch. */
+  fundingUtxos?: KontorFunding;
+}
 
 /**
  * HorizonMarketClient — entry point for the Horizon Market Atomic Swap API.
@@ -64,11 +84,16 @@ export class HorizonMarketClient {
   private readonly signer: Signer | null;
   private readonly network: "mainnet" | "testnet";
   private readonly btcNetwork: btc.Network;
+  private readonly kontorNetwork?: "signet";
+  private readonly kontorIndexerUrl: string;
 
   constructor(options: HorizonMarketClientOptions = {}) {
     this.network = options.network ?? "mainnet";
     this.btcNetwork =
       this.network === "mainnet" ? btc.networks.bitcoin : btc.networks.testnet;
+    this.kontorNetwork = options.kontorNetwork;
+    this.kontorIndexerUrl =
+      options.kontorIndexerUrl ?? DEFAULT_KONTOR_INDEXER_URL;
 
     this.http = new HttpClient({
       baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
@@ -91,6 +116,31 @@ export class HorizonMarketClient {
       );
     }
     return this.signer;
+  }
+
+  /**
+   * Resolve the Kontor runtime context, or throw a clear error if Kontor is not
+   * usable with the current configuration. Kontor is signet-only today, and
+   * signet uses testnet address params, so the client `network` must be "testnet".
+   */
+  private resolveKontorCtx(): KontorContext {
+    const chain = resolveKontorChain(this.kontorNetwork);
+    if (!chain) {
+      throw new Error(
+        'Kontor is only available on signet today. Pass kontorNetwork: "signet" to the client.',
+      );
+    }
+    if (this.network !== "testnet") {
+      throw new Error(
+        'Kontor (signet) requires the client network to be "testnet" so taproot ' +
+          "addresses use signet/testnet params.",
+      );
+    }
+    return {
+      chain,
+      indexerUrl: this.kontorIndexerUrl,
+      btcNetwork: this.btcNetwork,
+    };
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────
@@ -250,8 +300,17 @@ export class HorizonMarketClient {
     params: OpenSellOrderParams,
     options?: WorkflowOptions,
   ): Promise<{ swap: AtomicSwap; created: boolean }> {
+    if (params.listingType === "kontor") {
+      return openKontorSellOrder(
+        params,
+        this.http,
+        this.assertSigner(),
+        this.resolveKontorCtx(),
+        options,
+      );
+    }
     return workflowOpenSellOrder(
-      params,
+      params as PsbtSellOrderParams,
       this.http,
       this.assertSigner(),
       this.network,
@@ -266,17 +325,57 @@ export class HorizonMarketClient {
    * Returns an array of pending sales. Poll `getPendingPurchaseTxIds` for confirmation.
    * Note: purchases are NOT idempotent — do not retry on network errors.
    */
-  fillSwaps(
+  async fillSwaps(
     params: FillSwapsParams,
     options?: WorkflowOptions,
   ): Promise<PendingSale[]> {
+    // Only probe the swap type when Kontor is configured — non-Kontor clients
+    // keep the original single-round-trip behavior.
+    if (this.kontorNetwork) {
+      assertNonEmptySwapIds(params.swapIds);
+      const first = await this.getSwap(params.swapIds[0]);
+      if (first.listingType === "kontor") {
+        if (params.swapIds.length !== 1) {
+          throw new Error(
+            "Kontor purchases must target exactly one swapId (got " +
+              params.swapIds.length +
+              ")",
+          );
+        }
+        return fillKontorSwap(
+          first,
+          { kontorFundingUtxos: params.kontorFundingUtxos },
+          this.http,
+          this.assertSigner(),
+          this.resolveKontorCtx(),
+          options,
+        );
+      }
+    }
     return workflowFillSwaps(params, this.http, this.assertSigner(), options);
   }
 
   /**
    * Delist a swap: start → sign (BIP322) → confirm.
+   *
+   * Kontor swaps additionally revoke the on-chain offer first to reclaim the
+   * escrowed asset; pass `options.fundingUtxos` to fund that revoke (auto-fetched
+   * otherwise).
    */
-  delistSwap(swapId: string, options?: WorkflowOptions): Promise<void> {
+  async delistSwap(swapId: string, options?: DelistSwapOptions): Promise<void> {
+    if (this.kontorNetwork) {
+      const swap = await this.getSwap(swapId);
+      if (swap.listingType === "kontor") {
+        return delistKontorSwap(
+          swap,
+          { fundingUtxos: options?.fundingUtxos },
+          this.http,
+          this.assertSigner(),
+          this.resolveKontorCtx(),
+          options,
+        );
+      }
+    }
     return workflowDelistSwap(swapId, this.http, this.assertSigner(), options);
   }
 }

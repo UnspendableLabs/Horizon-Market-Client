@@ -16,10 +16,33 @@
  * New attach-prep or zeld transfer-prep listings may stay `funded: false` until
  * the prep tx confirms — poll {@link AtomicSwap} via `getSwap` before `fillSwaps`.
  */
-export type ListingType = "counterparty" | "ordinal" | "zeld";
+export type ListingType = "counterparty" | "ordinal" | "zeld" | "kontor";
+
+/** Kind of Kontor asset escrowed in a `listingType: "kontor"` swap. */
+export type KontorAssetKind = "token" | "nft";
 
 /** Prep transaction kind returned by sell-quotes when `prepPsbt` is present. */
 export type PrepKind = "attach" | "zeld_transfer" | null;
+
+/**
+ * Spendable taproot UTXO used to fund a Kontor on-chain transaction (the seller's
+ * attach reveal or the buyer's commit). `bigint`-free so consumers never import
+ * `@kontor/sdk` types. Omit `scriptPubKey` to have the client derive it from the
+ * funding taproot address.
+ */
+export interface KontorUtxoInput {
+  txid: string;
+  vout: number;
+  /** Value in sats. */
+  value: number;
+  /** P2TR scriptPubKey hex. Derived from the taproot address when omitted. */
+  scriptPubKey?: string;
+}
+
+/** A static list of funding UTXOs, or a fetcher re-queried on each on-chain submit. */
+export type KontorFunding =
+  | KontorUtxoInput[]
+  | (() => Promise<KontorUtxoInput[]>);
 
 /** Bitcoin network for address derivation and PSBT signing. */
 export type Network = "mainnet" | "testnet";
@@ -93,6 +116,12 @@ export interface AtomicSwap {
   thumbnailUrl: string | null;
   inscriptionNumber: number | null;
   assetDivisibility: boolean | null;
+  /** Kontor offer blob (signed attach reveal + seller-signed detach PSBT). Only set when `listingType === "kontor"`. */
+  kontorOfferBlob: string | null;
+  /** `"token"` (KOR) or `"nft"`. Only set when `listingType === "kontor"`. */
+  kontorAssetKind: KontorAssetKind | null;
+  /** Kontor contract address (`name@height.txIndex`). Only set when `listingType === "kontor"`. */
+  kontorContractAddress: string | null;
 }
 
 /** Result of `listSwaps`. `count` mirrors `pagination.total`. */

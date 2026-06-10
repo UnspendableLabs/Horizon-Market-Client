@@ -71,6 +71,9 @@ const DOMAIN_SWAP = {
   thumbnailUrl: null,
   inscriptionNumber: null,
   assetDivisibility: null,
+  kontorOfferBlob: null,
+  kontorAssetKind: null,
+  kontorContractAddress: null,
 };
 
 describe("getSwap", () => {

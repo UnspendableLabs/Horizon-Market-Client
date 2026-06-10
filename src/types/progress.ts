@@ -12,20 +12,28 @@ export type OpenSellOrderStep =
   | "finalizePrepPsbt"
   | "signSwapPsbt"
   | "signFeePsbt"
-  | "createSwap";
+  | "createSwap"
+  // Kontor (listingType: "kontor")
+  | "reserveKontorFee"
+  | "composeKontorOffer";
 
 /** Steps emitted during `fillSwaps`. */
 export type FillSwapsStep =
   | "validateParams"
   | "requestBuyQuote"
   | "signBuyerPsbt"
-  | "submitPurchase";
+  | "submitPurchase"
+  // Kontor
+  | "inspectKontorOffer"
+  | "acceptKontorOffer";
 
 /** Steps emitted during `delistSwap`. */
 export type DelistSwapStep =
   | "startDelist"
   | "signDelistMessage"
-  | "confirmDelist";
+  | "confirmDelist"
+  // Kontor
+  | "revokeKontorOffer";
 
 export type WorkflowStep =
   | OpenSellOrderStep

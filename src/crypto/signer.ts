@@ -12,6 +12,16 @@ export interface Signer {
   };
   signPsbtHex(psbtHex: string, inputIndices: number[]): string;
   signMessage(address: string, message: string): string;
+  /**
+   * Optional: produce a Kontor SDK `Signing` for the given `@kontor/sdk` Chain.
+   * Implemented by {@link LocalSigner} (reuses its in-memory private key via
+   * `LocalKey.fromPrivateKey` — the key never leaves the client). Custom signers
+   * that don't implement this cannot perform Kontor operations.
+   *
+   * Typed `unknown` so this interface stays free of a hard `@kontor/sdk` import;
+   * the Kontor modules cast to the real `Chain`/`Signing` types at the boundary.
+   */
+  getKontorSigning?(chain: unknown): Promise<unknown>;
 }
 
 /**
@@ -88,5 +98,20 @@ export class LocalSigner implements Signer {
 
   signMessage(address: string, message: string): string {
     return signBip322(this.privateKeyHex, address, message);
+  }
+
+  /**
+   * Build a Kontor SDK `Signing` from this signer's in-memory private key.
+   *
+   * The key is handed straight to `LocalKey.fromPrivateKey` and never serialized,
+   * logged, or sent over the network — the Kontor SDK signs transactions locally
+   * and only broadcasts the signed result. `chain` is a `@kontor/sdk` `Chain`.
+   */
+  async getKontorSigning(chain: unknown): Promise<unknown> {
+    const { LocalKey } = await import("@kontor/sdk");
+    return LocalKey.fromPrivateKey({
+      privateKey: this.privateKeyHex,
+      chain: chain as never,
+    });
   }
 }

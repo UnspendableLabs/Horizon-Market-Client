@@ -10,6 +10,7 @@ import type {
   ListingType,
   WorkflowOptions,
 } from "../types/index.js";
+import type { KontorSellParams } from "./sell-kontor.js";
 import {
   assertOrdinalSellerAddress,
   assertSellListingParams,
@@ -19,7 +20,8 @@ import {
 } from "../sell-params.js";
 import * as btc from "bitcoinjs-lib";
 
-export interface OpenSellOrderParams {
+/** Sell params for the PSBT asset types (counterparty / ordinal / zeld). */
+export interface PsbtSellOrderParams {
   /** Asset UTXO id in `{txid}:{vout}` format. Omit for counterparty attach prep or zeld transfer prep (server-composed). */
   assetUtxoId?: string;
   /** Asset name (required for counterparty/zeld; optional display name for ordinals). */
@@ -33,7 +35,7 @@ export interface OpenSellOrderParams {
   /** 32-byte x-only seller pubkey for P2TR sellers. Auto-filled from signer when omitted. */
   sellerPubkey?: string;
   /** Listing type. */
-  listingType: ListingType;
+  listingType: Exclude<ListingType, "kontor">;
   /** Optional listing expiry. Accepts Date (converted to ISO string) or ISO string. */
   expiresAt?: Date | string;
   /** Sat/vByte fee rate for the sell-quotes request. */
@@ -43,6 +45,13 @@ export interface OpenSellOrderParams {
   /** Ask server to auto-select fee UTXOs. Mutually exclusive with feeUtxoIds. */
   autoSelectFeeUtxos?: boolean;
 }
+
+/**
+ * Parameters for `openSellOrder`. Discriminated on `listingType`: pass
+ * `listingType: "kontor"` with {@link KontorSellParams} for KOR/NFT, or one of
+ * counterparty/ordinal/zeld with {@link PsbtSellOrderParams}.
+ */
+export type OpenSellOrderParams = PsbtSellOrderParams | KontorSellParams;
 
 /**
  * openSellOrder — quote → sign → submit
@@ -58,7 +67,7 @@ export interface OpenSellOrderParams {
  * HTTP 409 → throws `HorizonMarketApiError` (`Conflicting zeld listing`).
  */
 export async function openSellOrder(
-  params: OpenSellOrderParams,
+  params: PsbtSellOrderParams,
   http: HttpClient,
   signer: Signer,
   network: "mainnet" | "testnet",
@@ -175,7 +184,7 @@ export async function openSellOrder(
 }
 
 function resolveSellerAddress(
-  params: OpenSellOrderParams,
+  params: PsbtSellOrderParams,
   addresses: ReturnType<Signer["getAddresses"]>,
 ): string {
   if (params.sellerAddress !== undefined) {

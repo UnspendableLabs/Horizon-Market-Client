@@ -3,7 +3,12 @@ import { requestBuyQuote } from "../api/buy-quotes.js";
 import { purchaseSwaps } from "../api/atomic-swaps.js";
 import { assertBuyQuoteParams } from "../buy-params.js";
 import type { Signer } from "../crypto/signer.js";
-import type { BuyQuoteParams, PendingSale, WorkflowOptions } from "../types/index.js";
+import type {
+  BuyQuoteParams,
+  KontorFunding,
+  PendingSale,
+  WorkflowOptions,
+} from "../types/index.js";
 import { WorkflowProgressReporter } from "./progress.js";
 
 export interface FillSwapsParams {
@@ -19,6 +24,12 @@ export interface FillSwapsParams {
   autoSelect?: boolean;
   /** Detach the asset from the UTXO (counterparty only; default true). */
   detach?: boolean;
+  /**
+   * Funding UTXOs for a Kontor buyer commit (only used when the target swap is
+   * `listingType: "kontor"`). Static list, fetcher, or omitted to auto-fetch the
+   * buyer's confirmed taproot UTXOs from Horizon.
+   */
+  kontorFundingUtxos?: KontorFunding;
 }
 
 const FILL_SWAPS_TOTAL_STEPS = 4;

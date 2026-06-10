@@ -43,6 +43,9 @@ function swap(
     thumbnailUrl: null,
     inscriptionNumber: null,
     assetDivisibility: null,
+    kontorOfferBlob: null,
+    kontorAssetKind: null,
+    kontorContractAddress: null,
     ...overrides,
   };
 }

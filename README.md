@@ -170,6 +170,63 @@ const sales = await client.fillSwaps({
 await client.delistSwap("swap_abc");
 ```
 
+## Kontor (KOR token + NFT)
+
+Kontor assets use the same `openSellOrder` / `fillSwaps` / `delistSwap` methods — just
+pass `listingType: "kontor"`. Unlike the PSBT asset types (where the server composes an
+unsigned PSBT and the client signs it), Kontor atomic swaps are composed, signed, and
+broadcast entirely client-side by the embedded `@kontor/sdk`. **Your private key never
+leaves the client** — only signed transactions, the offer blob, and public addresses are
+ever sent to the API.
+
+Kontor is **signet-only** today, so construct the client with `network: "testnet"`
+(signet shares testnet address params) and `kontorNetwork: "signet"`:
+
+```ts
+const client = new HorizonMarketClient({
+  privateKey: "your-private-key-hex",
+  network: "testnet",
+  kontorNetwork: "signet",
+});
+
+// --- Sell KOR (fungible token) ---
+const { swap } = await client.openSellOrder({
+  listingType: "kontor",
+  kontorAssetKind: "token",
+  korAmount: "100.5",        // decimal string
+  priceSats: 50_000,
+});
+
+// --- Sell a Kontor NFT ---
+await client.openSellOrder({
+  listingType: "kontor",
+  kontorAssetKind: "nft",
+  nftId: "my-nft-id",
+  nftContractAddress: "nft@307992.5",
+  priceSats: 250_000,
+});
+
+// --- Buy a Kontor swap (exactly one swapId) ---
+await client.fillSwaps({ swapIds: ["swap_kontor_abc"] });
+
+// --- Delist (revokes the on-chain offer, then BIP322-confirms) ---
+await client.delistSwap("swap_kontor_abc");
+```
+
+**Funding UTXOs.** Kontor transactions are funded by your taproot UTXOs. By default the
+client auto-fetches your confirmed taproot UTXOs from Horizon (only your public address is
+sent). To supply them yourself — or use a dedicated funding address — pass `fundingUtxos`
+on sell, `kontorFundingUtxos` on buy, or `fundingUtxos` in `delistSwap` options (a
+`KontorUtxoInput[]` or a `() => Promise<KontorUtxoInput[]>` fetcher).
+
+**Orphan protection.** The attach reveal is broadcast on-chain *before* the listing is
+recorded. If the recording POST fails, `openSellOrder` throws
+`KontorListingNotRecordedError` carrying `{ offerBlob, createRequest }` so you can retry the
+POST without re-broadcasting (or revoke to reclaim the escrowed asset).
+
+> Requires a `LocalSigner` (i.e. construct with `privateKey`). Custom signers must
+> implement the optional `getKontorSigning(chain)` capability to support Kontor.
+
 ## Locked asset UTXOs
 
 Before listing, check which `asset_utxo_id` values are already locked in active listings for your seller address(es). This avoids double-listing or picking UTXOs that collide with fee inputs.
@@ -198,6 +255,8 @@ new HorizonMarketClient({
   network?: "mainnet" | "testnet",   // default: "mainnet"
   baseUrl?: string,                  // default: "https://horizon.market"
   fetch?: typeof globalThis.fetch,   // injectable fetch (for tests / custom runtimes)
+  kontorNetwork?: "signet",          // enable Kontor ops (signet-only today; requires network: "testnet")
+  kontorIndexerUrl?: string,         // default: public signet indexer; set for self-hosting / browser CORS
 })
 ```
 

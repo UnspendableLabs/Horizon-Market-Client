@@ -1,6 +1,20 @@
 // Main client
 export { HorizonMarketClient } from "./client.js";
-export type { OpenSellOrderParams, FillSwapsParams } from "./client.js";
+export type {
+  OpenSellOrderParams,
+  FillSwapsParams,
+  DelistSwapOptions,
+} from "./client.js";
+
+// Kontor (KOR token + NFT) sell params and orphan-recovery error
+export type {
+  KontorSellParams,
+  KontorTokenSellParams,
+  KontorNftSellParams,
+} from "./workflows/sell-kontor.js";
+export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
+export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
+export type { PsbtSellOrderParams } from "./workflows/sell.js";
 
 // Error class
 export { HorizonMarketApiError } from "./api/http.js";
@@ -22,6 +36,9 @@ export type {
   FeePayment,
   FeeQuoteBtc,
   FeeQuoteZeldTransferPrep,
+  KontorAssetKind,
+  KontorFunding,
+  KontorUtxoInput,
   ListingType,
   ListSwapsParams,
   ListSwapsResult,

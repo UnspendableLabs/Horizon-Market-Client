@@ -58,6 +58,16 @@ const STEP_MESSAGES: AllStepMessages = {
       complete: "Listing created",
       error: "Listing creation failed",
     },
+    reserveKontorFee: {
+      start: "Reserving Kontor listing fee…",
+      complete: "Kontor listing fee reserved",
+      error: "Kontor fee reservation failed",
+    },
+    composeKontorOffer: {
+      start: "Escrowing asset and composing offer…",
+      complete: "Kontor offer composed",
+      error: "Kontor offer composition failed",
+    },
   },
   fillSwaps: {
     validateParams: {
@@ -80,6 +90,16 @@ const STEP_MESSAGES: AllStepMessages = {
       complete: "Purchase submitted",
       error: "Purchase submission failed",
     },
+    inspectKontorOffer: {
+      start: "Inspecting Kontor offer…",
+      complete: "Kontor offer valid",
+      error: "Kontor offer inspection failed",
+    },
+    acceptKontorOffer: {
+      start: "Accepting offer and broadcasting swap…",
+      complete: "Kontor swap broadcast",
+      error: "Kontor swap acceptance failed",
+    },
   },
   delistSwap: {
     startDelist: {
@@ -96,6 +116,11 @@ const STEP_MESSAGES: AllStepMessages = {
       start: "Confirming delist…",
       complete: "Delist confirmed",
       error: "Delist confirmation failed",
+    },
+    revokeKontorOffer: {
+      start: "Revoking Kontor offer and reclaiming asset…",
+      complete: "Kontor offer revoked",
+      error: "Kontor offer revocation failed",
     },
   },
 };
