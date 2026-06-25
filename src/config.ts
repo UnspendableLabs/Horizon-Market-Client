@@ -18,6 +18,14 @@ export interface HorizonMarketClientOptions {
   /** Injectable fetch for tests or custom runtimes. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
   /**
+   * Reuse an existing NextAuth session-token across processes (skips
+   * `signInWithWallet`). Stored under the origin-correct cookie name
+   * (`__Secure-authjs.session-token` for an HTTPS `baseUrl`, `authjs.session-token`
+   * otherwise) and attached to fee-related requests so the server waives the
+   * platform fee (credits / subscription).
+   */
+  sessionToken?: string;
+  /**
    * Enables Kontor (KOR token + NFT) operations. Only "signet" is supported by
    * `@kontor/sdk` today. When set, the client `network` must be "testnet" (signet
    * shares testnet address params). Required for any `listingType: "kontor"` op.

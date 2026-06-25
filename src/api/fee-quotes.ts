@@ -21,7 +21,15 @@ interface WireFeeQuoteZeldResponse {
 }
 
 export type FeeQuoteParams =
-  | { address: string; utxoSetIds: string[]; satsPerVbyte?: number }
+  | {
+      address: string;
+      utxoSetIds: string[];
+      /**
+       * Feerate target for the PSBT (counterparty / ordinal) variant. Required —
+       * the server has no default and returns `400` when it is omitted.
+       */
+      satsPerVbyte: number;
+    }
   | { type: "zeld"; address: string };
 
 /**

@@ -68,6 +68,13 @@ export type { HorizonMarketClientOptions } from "./config.js";
 // Advanced (fee-quotes)
 export type { FeeQuoteParams } from "./api/fee-quotes.js";
 
+// Authentication (wallet sign-in for platform-fee credits)
+export type {
+  WalletChallenge,
+  WalletSignInParams,
+  SessionInfo,
+} from "./api/auth.js";
+
 // Manual sell workflow helper (quote → sign → submit)
 export {
   signAndFinalizeSellPrep,

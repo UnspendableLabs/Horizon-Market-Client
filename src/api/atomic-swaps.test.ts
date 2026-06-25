@@ -74,6 +74,8 @@ const DOMAIN_SWAP = {
   kontorOfferBlob: null,
   kontorAssetKind: null,
   kontorContractAddress: null,
+  kontorNftId: null,
+  kontorAmount: null,
 };
 
 describe("getSwap", () => {
@@ -135,6 +137,55 @@ describe("getSwap", () => {
     });
     const swap = await getSwap(http, "swap_abc123");
     expect(swap.user).toEqual({ id: "user_abc" });
+  });
+
+  it("maps kontor_nft_id and kontor_amount for kontor listings", async () => {
+    const wire = {
+      ...WIRE_SWAP,
+      listing_type: "kontor",
+      asset_name: null,
+      kontor_offer_blob: "{\"offer\":1}",
+      kontor_asset_kind: "nft",
+      kontor_contract_address: "nftcontract@1.2",
+      kontor_nft_id: "my-nft-id",
+      kontor_amount: null,
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.kontorNftId).toBe("my-nft-id");
+    expect(swap.kontorAmount).toBeNull();
+    expect(swap.kontorContractAddress).toBe("nftcontract@1.2");
+  });
+
+  it("maps kontor_amount for token listings", async () => {
+    const wire = {
+      ...WIRE_SWAP,
+      listing_type: "kontor",
+      kontor_asset_kind: "token",
+      kontor_contract_address: "token@0.0",
+      kontor_amount: "100.5",
+      kontor_nft_id: null,
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.kontorAmount).toBe("100.5");
+    expect(swap.kontorNftId).toBeNull();
+  });
+
+  it("defaults kontor_nft_id and kontor_amount to null when absent", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: WIRE_SWAP }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.kontorNftId).toBeNull();
+    expect(swap.kontorAmount).toBeNull();
   });
 
   it("maps on_chain_payment correctly", async () => {

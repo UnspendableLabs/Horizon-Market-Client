@@ -61,6 +61,8 @@ export interface WireAtomicSwap {
   kontor_offer_blob?: string | null;
   kontor_asset_kind?: KontorAssetKind | null;
   kontor_contract_address?: string | null;
+  kontor_nft_id?: string | null;
+  kontor_amount?: string | null;
 }
 
 interface WirePagination {
@@ -169,6 +171,8 @@ export function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     kontorOfferBlob: wire.kontor_offer_blob ?? null,
     kontorAssetKind: wire.kontor_asset_kind ?? null,
     kontorContractAddress: wire.kontor_contract_address ?? null,
+    kontorNftId: wire.kontor_nft_id ?? null,
+    kontorAmount: wire.kontor_amount ?? null,
   };
 }
 

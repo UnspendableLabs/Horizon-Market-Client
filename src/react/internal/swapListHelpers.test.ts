@@ -46,6 +46,8 @@ function swap(
     kontorOfferBlob: null,
     kontorAssetKind: null,
     kontorContractAddress: null,
+    kontorNftId: null,
+    kontorAmount: null,
     ...overrides,
   };
 }

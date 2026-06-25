@@ -25,6 +25,9 @@ interface WireSellQuoteResponse {
   reveal_tx_hex?: string;
   payment_address?: string;
   payment_amount?: number;
+  listing_fee_sats?: number | null;
+  attach_fee_sats?: number | null;
+  network_fee_sats?: number | null;
 }
 
 interface WireSellQuoteBody {
@@ -38,6 +41,7 @@ interface WireSellQuoteBody {
   sats_per_vbyte?: number;
   fee_utxo_ids?: string[];
   auto_select_fee_utxos?: boolean;
+  preview?: boolean;
 }
 
 /** POST /api/atomic-swaps/sell-quotes — compose unsigned sell PSBTs. */
@@ -62,6 +66,7 @@ export async function requestSellQuote(
   if (params.feeUtxoIds !== undefined) body.fee_utxo_ids = params.feeUtxoIds;
   if (params.autoSelectFeeUtxos !== undefined)
     body.auto_select_fee_utxos = params.autoSelectFeeUtxos;
+  if (params.preview !== undefined) body.preview = params.preview;
 
   const wire = await http.request<WireSellQuoteResponse>(
     "POST",
@@ -85,5 +90,8 @@ export async function requestSellQuote(
     revealTxHex: wire.reveal_tx_hex,
     paymentAddress: wire.payment_address,
     paymentAmount: wire.payment_amount,
+    listingFeeSats: wire.listing_fee_sats ?? null,
+    attachFeeSats: wire.attach_fee_sats ?? null,
+    networkFeeSats: wire.network_fee_sats ?? null,
   };
 }

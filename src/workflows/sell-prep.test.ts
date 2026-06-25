@@ -18,6 +18,9 @@ const BASE_QUOTE: SellQuote = {
   prepPsbt: null,
   prepInputsToSign: [],
   prepKind: null,
+  listingFeeSats: null,
+  attachFeeSats: null,
+  networkFeeSats: null,
 };
 
 function hybridSigner(): Signer {

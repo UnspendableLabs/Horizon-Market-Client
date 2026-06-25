@@ -84,6 +84,35 @@ export function makeSequentialFetch(
   });
 }
 
+/** Build a mock Response with a real Headers instance (supports Set-Cookie). */
+export function mockResponse(
+  status: number,
+  body: unknown,
+  setCookies: string[] = [],
+): Response {
+  const headers = new Headers();
+  for (const cookie of setCookies) headers.append("set-cookie", cookie);
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    statusText: "OK",
+    headers,
+    json: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+/** Mock fetch returning successive {@link mockResponse} values (cookie-aware). */
+export function makeFetchResponses(
+  ...responses: Response[]
+): MockedFunction<typeof globalThis.fetch> {
+  let call = 0;
+  return vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(responses[call++] ?? responses[responses.length - 1]),
+    );
+}
+
 // ─── Mock signer ──────────────────────────────────────────────────────────────
 
 export function makeSigner(

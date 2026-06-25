@@ -55,7 +55,73 @@ describe("requestSellQuote", () => {
       revealTxHex: undefined,
       paymentAddress: undefined,
       paymentAmount: undefined,
+      listingFeeSats: null,
+      attachFeeSats: null,
+      networkFeeSats: null,
     });
+  });
+
+  it("maps the fee breakdown fields when present", async () => {
+    const wire = {
+      ...WIRE_SELL_QUOTE_NO_PREP,
+      listing_fee_sats: 5000,
+      attach_fee_sats: 1200,
+      network_fee_sats: 300,
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const quote = await requestSellQuote(http, {
+      price: 250000,
+      sellerAddress: "bc1qseller",
+      listingType: "counterparty",
+      assetName: "RAREPEPE",
+      assetQuantity: 1n,
+    });
+    expect(quote.listingFeeSats).toBe(5000);
+    expect(quote.attachFeeSats).toBe(1200);
+    expect(quote.networkFeeSats).toBe(300);
+  });
+
+  it("defaults the fee breakdown fields to null when absent", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: WIRE_SELL_QUOTE_NO_PREP }),
+    });
+    const quote = await requestSellQuote(http, {
+      price: 250000,
+      sellerAddress: "bc1qseller",
+    });
+    expect(quote.listingFeeSats).toBeNull();
+    expect(quote.attachFeeSats).toBeNull();
+    expect(quote.networkFeeSats).toBeNull();
+  });
+
+  it("forwards preview in the request body when set", async () => {
+    const fetchFn = makeFetch(200, { data: WIRE_SELL_QUOTE_NO_PREP });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await requestSellQuote(http, {
+      price: 250000,
+      sellerAddress: "bc1qseller",
+      preview: true,
+    });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(init.body as string).preview).toBe(true);
+  });
+
+  it("omits preview from the request body when unset", async () => {
+    const fetchFn = makeFetch(200, { data: WIRE_SELL_QUOTE_NO_PREP });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await requestSellQuote(http, { price: 250000, sellerAddress: "bc1qseller" });
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect("preview" in JSON.parse(init.body as string)).toBe(false);
   });
 
   it("maps wire response with prep (zeld_transfer) to domain SellQuote", async () => {

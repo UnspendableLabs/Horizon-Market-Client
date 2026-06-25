@@ -64,7 +64,7 @@ export interface OnChainPayment {
   id: string;
   confirmed: boolean;
   txid: string | null;
-  /** Present in live responses; not listed in apiary but safe to parse. */
+  /** Present on the single-swap detail's full `OnChainPayment`; absent from the reduced `OnChainPaymentSummary` in the create response. */
   sats?: number;
   toAddress?: string;
 }
@@ -122,6 +122,10 @@ export interface AtomicSwap {
   kontorAssetKind: KontorAssetKind | null;
   /** Kontor contract address (`name@height.txIndex`). Only set when `listingType === "kontor"`. */
   kontorContractAddress: string | null;
+  /** Kontor NFT id. Only set for `listingType === "kontor"` NFT listings. */
+  kontorNftId: string | null;
+  /** KOR token amount as a positive decimal string. Only set for `listingType === "kontor"` token listings. */
+  kontorAmount: string | null;
 }
 
 /** Result of `listSwaps`. `count` mirrors `pagination.total`. */
@@ -177,6 +181,12 @@ export interface SellQuote {
   paymentAddress?: string;
   /** ZELD transfer prep only. */
   paymentAmount?: number;
+  /** Platform fee in sats. Null when waived. */
+  listingFeeSats: number | null;
+  /** Miner fee of the prep tx in sats. Null when an existing UTXO is reused. */
+  attachFeeSats: number | null;
+  /** Miner fee of the standalone platform-fee tx in sats. Null when folded into the prep tx or waived. */
+  networkFeeSats: number | null;
 }
 
 /** Response from `POST /api/atomic-swaps/buy-quotes`. */
@@ -289,6 +299,12 @@ export interface SellQuoteParams {
   /** Mutually exclusive with `autoSelectFeeUtxos`. */
   feeUtxoIds?: string[];
   autoSelectFeeUtxos?: boolean;
+  /**
+   * Compute the cost breakdown (`listingFeeSats` / `attachFeeSats` /
+   * `networkFeeSats`) **without** persisting an `OnChainPayment`. PSBTs returned
+   * by a preview quote must not be signed or submitted.
+   */
+  preview?: boolean;
 }
 
 /** Params for `requestBuyQuote` / buy-quotes. Buyer address must be P2WPKH. */

@@ -13,6 +13,12 @@ import { requestSellQuote as apiRequestSellQuote } from "./api/sell-quotes.js";
 import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
 import { requestFeeQuote as apiRequestFeeQuote, type FeeQuoteParams } from "./api/fee-quotes.js";
 import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from "./api/delist.js";
+import {
+  requestWalletChallenge as apiRequestWalletChallenge,
+  completeWalletSignIn as apiCompleteWalletSignIn,
+  getSession as apiGetSession,
+  type SessionInfo,
+} from "./api/auth.js";
 import { LocalSigner, type Signer } from "./crypto/signer.js";
 import {
   openSellOrder as workflowOpenSellOrder,
@@ -100,6 +106,10 @@ export class HorizonMarketClient {
       fetch: options.fetch,
     });
 
+    if (options.sessionToken) {
+      this.http.setSessionToken(options.sessionToken);
+    }
+
     if (options.signer) {
       this.signer = options.signer;
     } else if (options.privateKey) {
@@ -141,6 +151,68 @@ export class HorizonMarketClient {
       indexerUrl: this.kontorIndexerUrl,
       btcNetwork: this.btcNetwork,
     };
+  }
+
+  // ─── Authentication (platform-fee credits) ──────────────────────────────────
+
+  /**
+   * Sign in with the configured wallet to attach a Horizon Market account to
+   * subsequent requests. An authenticated account gets free monthly credits (or a
+   * subscription), so the server waives the platform fee — `requestSellQuote` then
+   * returns `feeWaived: true` / `feePsbt: null` and `openSellOrder` lists without an
+   * on-chain fee payment.
+   *
+   * Flow: request a BIP322 challenge → sign it with the signer → complete the
+   * NextAuth credentials sign-in. The session cookie is stored on the client.
+   *
+   * **Node / server contexts only** — the sign-in callback is not CORS-open. In a
+   * same-origin browser app, rely on the website's existing session (or pass a
+   * `sessionToken` to the constructor).
+   *
+   * @param opts.address Wallet address to authenticate as. Defaults to the signer's
+   *   P2WPKH address.
+   * @param opts.taprootAddress P2TR address to link. Defaults to the signer's P2TR.
+   * @param opts.walletProvider Provider label recorded server-side. Defaults to
+   *   `"horizon-market-client"`.
+   */
+  async signInWithWallet(opts?: {
+    address?: string;
+    taprootAddress?: string;
+    walletProvider?: string;
+  }): Promise<void> {
+    const signer = this.assertSigner();
+    const addresses = signer.getAddresses();
+    const address = opts?.address ?? addresses.p2wpkh;
+    const taprootAddress = opts?.taprootAddress ?? addresses.p2tr;
+
+    const { nonce, message } = await apiRequestWalletChallenge(
+      this.http,
+      address,
+    );
+    const signature = signer.signMessage(address, message);
+
+    await apiCompleteWalletSignIn(this.http, {
+      address,
+      signature,
+      nonce,
+      walletProvider: opts?.walletProvider ?? "horizon-market-client",
+      taprootAddress,
+    });
+  }
+
+  /** Read the current authenticated session, or `null` when signed out. */
+  getSession(): Promise<SessionInfo | null> {
+    return apiGetSession(this.http);
+  }
+
+  /** True once a session cookie has been established (via sign-in or `sessionToken`). */
+  get isAuthenticated(): boolean {
+    return this.http.hasSessionCookie();
+  }
+
+  /** Clear the stored session (and any other cookies). */
+  signOut(): void {
+    this.http.clearCookies();
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────
