@@ -1,6 +1,31 @@
-import { HorizonMarketProvider, SwapList } from "@unspendablelabs/horizon-market-client/react";
+import { HorizonMarketProvider, SwapList, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
+import { useEffect, useRef } from "react";
 import { Header } from "./components/Header.js";
 import { getPrivateKey } from "./lib/web3auth.js";
+
+/**
+ * Restores an existing Web3Auth session on app startup — crucially after the
+ * email-passwordless *redirect* returns to the app (URL ends in `#b64Params=…`).
+ * The login modals (Header / SwapList) only mount their session probe while
+ * open, so without this the returning session would never be picked up and
+ * nothing would happen after entering the OTP code.
+ */
+function SessionRestorer() {
+  const { initialize, addresses } = useHorizonMarket();
+  const ranRef = useRef(false);
+
+  useEffect(() => {
+    if (ranRef.current || addresses) return;
+    ranRef.current = true;
+    getPrivateKey("")
+      .then((key) => {
+        if (key) initialize(key);
+      })
+      .catch((err) => console.error("Web3Auth session restore failed:", err));
+  }, [initialize, addresses]);
+
+  return null;
+}
 
 const HORIZON_THEME = {
   colors: {
@@ -32,6 +57,7 @@ export default function App() {
       baseUrl={import.meta.env.VITE_HORIZON_MARKET_URL}
       theme={HORIZON_THEME}
     >
+      <SessionRestorer />
       <Header />
       <main
         style={{

@@ -7,7 +7,7 @@ import {
   LoginPanel,
   SellOrderForm,
 } from "@unspendablelabs/horizon-market-client/react";
-import { getPrivateKey } from "../lib/web3auth.js";
+import { getPrivateKey, logout as web3authLogout } from "../lib/web3auth.js";
 import { cn } from "../lib/utils.js";
 
 /* ── Logo SVG ──────────────────────────────────────────────── */
@@ -171,6 +171,18 @@ export function Header() {
     setSellOpen(true);
   };
 
+  // Disconnect must clear *both* sessions: Horizon Market's local state (hides
+  // the wallet icon) and the Web3Auth session (persisted across refreshes).
+  // Skipping the latter lets App.tsx's startup probe silently reconnect.
+  const handleLogout = async () => {
+    try {
+      await web3authLogout();
+    } catch (err) {
+      console.error("Web3Auth logout failed:", err);
+    }
+    logout();
+  };
+
   return (
     <>
       <header
@@ -269,7 +281,7 @@ export function Header() {
 
                   <DropdownMenu.Item asChild>
                     <button
-                      onClick={logout}
+                      onClick={handleLogout}
                       className="flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors"
                       style={{ color: "var(--color-error)" }}
                     >
