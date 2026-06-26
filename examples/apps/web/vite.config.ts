@@ -4,6 +4,12 @@ import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfil
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // A WASM-backed dependency uses top-level await, which is unavailable in
+    // Vite's default build target (es2020). Target modern browsers that support
+    // it so the production build (and the Vercel deploy) succeeds.
+    target: "esnext",
+  },
   optimizeDeps: {
     esbuildOptions: {
       define: {
