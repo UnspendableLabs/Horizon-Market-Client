@@ -6,6 +6,7 @@ export const FILTER_TABS: Array<{ key: SwapListingType | null; label: string }> 
     { key: "counterparty", label: "Counterparty" },
     { key: "ordinal", label: "Ordinals" },
     { key: "zeld", label: "ZELD" },
+    { key: "kontor", label: "Kontor" },
   ];
 
 /** Max rows fetched per seller address when merging multi-address "My swaps". */

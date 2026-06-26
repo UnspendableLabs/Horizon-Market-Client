@@ -215,9 +215,9 @@ const styles = StyleSheet.create({
   },
 
   tagline: {
-    fontSize: 10,
-    color: colors.muted,
-    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.foreground,
+    fontFamily: fonts.sansSemiBold,
     letterSpacing: 0.2,
   },
 

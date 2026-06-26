@@ -52,7 +52,17 @@ export interface SwapListProps extends UseSwapListOptions {
   style?: CSSProperties;
 }
 
-const rootStyle: CSSProperties = { ...ws.cardRoot, position: "relative" };
+// Page-like container (no card chrome) so the grid sits directly on the page
+// background, matching the Horizon Market home layout.
+const rootStyle: CSSProperties = {
+  position: "relative",
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingLg,
+  color: webTokens.text,
+  fontFamily: webTokens.fontFamily,
+  fontSize: webTokens.fontSizeBase,
+};
 
 const toolbarRightStyle: CSSProperties = {
   display: "flex",
@@ -94,6 +104,7 @@ export function SwapList({
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
+    kontorUnavailable,
     page,
     setPage,
     totalPages,
@@ -121,14 +132,14 @@ export function SwapList({
         {/* Filter tabs */}
         <div
           className={classNames?.filterTabs}
-          style={{ ...ws.actionsRow, flexWrap: "wrap" as const }}
+          style={{ ...ws.actionsRow, alignItems: "flex-end", flexWrap: "wrap" as const }}
         >
           {FILTER_TABS.map(({ key, label }) => (
             <button
               key={key ?? "all"}
               type="button"
               onClick={() => setListingType(key)}
-              style={ws.filterTab(listingType === key)}
+              style={ws.metaTab(listingType === key)}
             >
               {label}
             </button>
@@ -193,7 +204,11 @@ export function SwapList({
       </div>
 
       {/* Content */}
-      {isLoading ? (
+      {kontorUnavailable ? (
+        <div className={classNames?.empty} style={ws.mutedText}>
+          Kontor listings are only available on the signet network.
+        </div>
+      ) : isLoading ? (
         <div style={ws.mutedText}>Loading…</div>
       ) : error ? (
         <div className={classNames?.error} style={ws.errorText}>

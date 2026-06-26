@@ -24,6 +24,8 @@ export interface HorizonMarketContextValue {
   initialize: (privateKey: string | Uint8Array) => void;
   logout: () => void;
   network: Network;
+  /** Set to `"signet"` when Kontor (KOR token + NFT) listings are enabled. */
+  kontorNetwork: "signet" | undefined;
   ordApiBaseUrl: string | undefined;
   fetch: typeof globalThis.fetch;
   theme: ResolvedTheme;
@@ -36,6 +38,12 @@ const HorizonMarketContext = createContext<HorizonMarketContextValue | null>(
 export interface HorizonMarketProviderProps {
   network?: Network;
   baseUrl?: string;
+  /**
+   * Enables Kontor (KOR token + NFT) listings. Only `"signet"` is supported.
+   * When unset, the Kontor filter shows a "signet only" notice instead of
+   * querying. Pair with `network="testnet"` (signet shares testnet params).
+   */
+  kontorNetwork?: "signet";
   ordApiBaseUrl?: string;
   /** Custom fetch — forwarded to the client and used for ord API calls. */
   fetch?: typeof globalThis.fetch;
@@ -51,6 +59,7 @@ interface AuthState {
 export function HorizonMarketProvider({
   network = "mainnet",
   baseUrl,
+  kontorNetwork,
   ordApiBaseUrl,
   fetch: fetchImpl,
   theme,
@@ -59,8 +68,9 @@ export function HorizonMarketProvider({
   const [authState, setAuthState] = useState<AuthState | null>(null);
 
   const anonClient = useMemo(
-    () => new HorizonMarketClient({ network, baseUrl, fetch: fetchImpl }),
-    [network, baseUrl, fetchImpl],
+    () =>
+      new HorizonMarketClient({ network, baseUrl, kontorNetwork, fetch: fetchImpl }),
+    [network, baseUrl, kontorNetwork, fetchImpl],
   );
 
   const authedClient = useMemo(
@@ -70,10 +80,11 @@ export function HorizonMarketProvider({
             signer: authState.signer,
             network,
             baseUrl,
+            kontorNetwork,
             fetch: fetchImpl,
           })
         : null,
-    [authState, network, baseUrl, fetchImpl],
+    [authState, network, baseUrl, kontorNetwork, fetchImpl],
   );
 
   const initialize = useCallback(
@@ -99,11 +110,12 @@ export function HorizonMarketProvider({
       initialize,
       logout,
       network,
+      kontorNetwork,
       ordApiBaseUrl,
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, logout, network, ordApiBaseUrl, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, ordApiBaseUrl, resolvedFetch, resolvedTheme],
   );
 
   return (

@@ -88,6 +88,7 @@ export function SwapList({
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
+    kontorUnavailable,
     page,
     setPage,
     totalPages,
@@ -106,18 +107,22 @@ export function SwapList({
   const contentAndPagination = (
     <>
       {/* Content */}
-      {isLoading ? (
+      {kontorUnavailable ? (
+        <Text style={common.muted}>
+          Kontor listings are only available on the signet network.
+        </Text>
+      ) : isLoading ? (
         <Text style={common.muted}>Loading…</Text>
       ) : error ? (
         <Text style={common.error}>{error.message}</Text>
       ) : swaps.length === 0 ? (
         <Text style={common.muted}>No swaps found.</Text>
       ) : view === "grid" ? (
-        <View style={[{ gap: 8 }, stylesProp?.grid]}>
+        <View style={[{ gap: 24 }, stylesProp?.grid]}>
           {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
             swaps.slice(i * 2, i * 2 + 2),
           ).map((row, i) => (
-            <View key={i} style={{ flexDirection: "row", gap: 8 }}>
+            <View key={i} style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>
               {row.map((swap) => (
                 <SwapListItem
                   key={swap.id}
@@ -185,7 +190,17 @@ export function SwapList({
   );
 
   return (
-    <View style={[common.root, scrollable && { flex: 1 }, style, stylesProp?.root]}>
+    <View
+      style={[
+        common.root,
+        // Page-like container (no card chrome) so the grid sits directly on the
+        // screen background, matching the Horizon Market home layout.
+        { backgroundColor: "transparent", borderWidth: 0, borderRadius: 0, padding: 12 },
+        scrollable && { flex: 1 },
+        style,
+        stylesProp?.root,
+      ]}
+    >
       {/* Toolbar */}
       <View style={[common.swapToolbar, stylesProp?.toolbar]}>
         {/* Filter tabs */}
@@ -200,13 +215,13 @@ export function SwapList({
               <TouchableOpacity
                 key={key ?? "all"}
                 onPress={() => setListingType(key)}
-                style={active ? common.filterTabActive : common.filterTabInactive}
+                style={active ? common.metaTabActive : common.metaTabInactive}
               >
                 <Text
                   style={
                     active
-                      ? common.filterTabTextActive
-                      : common.filterTabTextInactive
+                      ? common.metaTabTextActive
+                      : common.metaTabTextInactive
                   }
                 >
                   {label}

@@ -1,5 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
 
@@ -8,8 +9,37 @@ import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfil
 // this app's node_modules.
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
+// @scure/bip39's wordlist files (e.g. wordlists/english.js) end with a
+// `//# sourceMappingURL=english.js.map` comment, but the package ships no .map
+// files. @kontor/sdk deep-imports `@scure/bip39/wordlists/english.js`, and since
+// the SDK is excluded from pre-bundling (see optimizeDeps below) it's served
+// raw — so Vite's dev server reads the wordlist off disk, follows the dangling
+// sourcemap reference, fails to find the .map, and logs "Failed to load source
+// map" on every startup. Vite only extracts a file's sourcemap on the fs-read
+// fallback path (loadAndTransform): if a `load` hook returns the code, it takes
+// the branch that never calls extractSourcemapFromFile. So we serve the wordlist
+// ourselves with the dangling comment stripped, skipping the warning entirely.
+// (Targeting the subpath via optimizeDeps.include doesn't work: the app's own
+// @scure/bip39 copy is a newer version whose exports map omits the `.js`
+// specifier, so Vite throws "Missing specifier" at startup.)
+function stripBip39WordlistSourcemaps(): Plugin {
+  return {
+    name: "strip-bip39-wordlist-sourcemaps",
+    enforce: "pre",
+    async load(id) {
+      const file = id.split("?")[0];
+      if (!/@scure[\\/]bip39[\\/]wordlists[\\/].+\.js$/.test(file)) return null;
+      const code = await readFile(file, "utf8");
+      return {
+        code: code.replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, ""),
+        map: null,
+      };
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [stripBip39WordlistSourcemaps(), react()],
   server: {
     fs: {
       // This app has its own package-lock.json, so Vite infers the workspace
@@ -36,11 +66,12 @@ export default defineConfig({
     // .wasm sits right next to the module and resolves correctly.
     exclude: ["@kontor/sdk"],
     // @scure/bip39 ships `//# sourceMappingURL=` comments but no .map files, so
-    // serving it directly makes Vite try to read the missing maps and log
-    // "Failed to load source map" on every startup. Force it to be pre-bundled
-    // by esbuild — the bundled output drops those dangling references, silencing
-    // the warning. (It's a transitive dep of @kontor/sdk, which is excluded
-    // above, so it would otherwise be served straight from node_modules.)
+    // serving its main entry raw would make Vite try to read the missing maps.
+    // Force it to be pre-bundled by esbuild — the bundled output drops those
+    // dangling references. (It's a transitive dep of @kontor/sdk, which is
+    // excluded above, so it would otherwise be served straight from node_modules.)
+    // The deep wordlist subpaths can't be pre-bundled this way (see
+    // stripBip39WordlistSourcemaps above) — that plugin handles them instead.
     include: ["@scure/bip39"],
     esbuildOptions: {
       // The dev server pre-bundles deps with esbuild's default target

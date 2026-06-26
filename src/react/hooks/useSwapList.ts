@@ -65,6 +65,12 @@ export interface UseSwapListResult {
   showMySwaps: boolean;
   setShowMySwaps: (v: boolean) => void;
   canShowMySwaps: boolean;
+  /**
+   * True when the Kontor filter is selected but Kontor is not enabled
+   * (no `kontorNetwork="signet"` on the provider). Kontor is signet-only, so
+   * the list is empty and the UI should show a "signet only" notice instead.
+   */
+  kontorUnavailable: boolean;
   page: number;
   setPage: (p: number) => void;
   totalPages: number;
@@ -83,7 +89,7 @@ export interface UseSwapListResult {
 const DEFAULT_LIMIT = 24;
 
 export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult {
-  const { client, addresses } = useHorizonMarket();
+  const { client, addresses, kontorNetwork } = useHorizonMarket();
   const {
     defaultListingType = null,
     defaultSortOption = "latest",
@@ -116,6 +122,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   );
 
   const fetchSeqRef = useRef(0);
+
+  // Kontor is signet-only. Without `kontorNetwork="signet"` on the provider, a
+  // `listingType: "kontor"` query returns nothing, so skip it and let the UI
+  // show a "signet only" notice instead.
+  const kontorUnavailable =
+    listingType === "kontor" && kontorNetwork !== "signet";
 
   const setListingType = useCallback((t: SwapListingType | null) => {
     setListingTypeState(t);
@@ -152,6 +164,15 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
   useEffect(() => {
     const seq = ++fetchSeqRef.current;
+
+    if (kontorUnavailable) {
+      setIsLoading(false);
+      setError(null);
+      setSwaps([]);
+      setTotal(0);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -233,6 +254,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     page,
     limit,
     refreshKey,
+    kontorUnavailable,
   ]);
 
   const isItemMySwap = useCallback(
@@ -296,6 +318,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps: addresses !== null,
+    kontorUnavailable,
     page,
     setPage,
     totalPages,

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Image,
   Pressable,
@@ -20,12 +20,6 @@ import {
   swapDisplayQuantity,
 } from "./swapListHelpers.js";
 import type { ResolvedTheme } from "../theme.js";
-
-const LISTING_INITIAL: Record<string, string> = {
-  counterparty: "C",
-  ordinal: "O",
-  zeld: "Z",
-};
 
 export interface SwapListItemStyles {
   root?: StyleProp<ViewStyle>;
@@ -50,50 +44,73 @@ export interface SwapListItemProps {
 
 function ThumbnailOrPlaceholder({
   thumbnailUrl,
-  listingType,
   imageStyle,
   placeholderStyle,
-  placeholderTextStyle,
+  iconStyle,
+  labelStyle,
   imageOverride,
   placeholderOverride,
+  resizeMode = "cover",
+  showLabel,
 }: {
   thumbnailUrl: string | null;
-  listingType: string;
   imageStyle: StyleProp<ImageStyle>;
   placeholderStyle: StyleProp<ViewStyle>;
-  placeholderTextStyle: StyleProp<TextStyle>;
+  iconStyle: StyleProp<TextStyle>;
+  labelStyle: StyleProp<TextStyle>;
   imageOverride?: StyleProp<ImageStyle>;
   placeholderOverride?: StyleProp<ViewStyle>;
+  resizeMode?: "cover" | "contain";
+  showLabel: boolean;
 }) {
-  if (thumbnailUrl) {
+  const [errored, setErrored] = useState(false);
+  if (thumbnailUrl && !errored) {
     return (
       <Image
         source={{ uri: thumbnailUrl }}
         style={[imageStyle, imageOverride]}
-        resizeMode="cover"
+        resizeMode={resizeMode}
+        onError={() => setErrored(true)}
       />
     );
   }
   return (
     <View style={[placeholderStyle, placeholderOverride]}>
-      <Text style={placeholderTextStyle}>
-        {LISTING_INITIAL[listingType] ?? "?"}
-      </Text>
+      {/* Picture-frame glyph (mountain + sun) as the "no image" pictogram. */}
+      <Text style={iconStyle}>🖼️</Text>
+      {showLabel && <Text style={labelStyle}>No image available</Text>}
     </View>
   );
 }
 
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
-    imageGrid: {
+    // Square panel behind the artwork: subtle background, square corners, and
+    // padding that insets the (contained) artwork from the panel edges.
+    imageGridPanel: {
       width: "100%",
       aspectRatio: 1,
-      borderRadius: theme.radii.sm,
+      borderRadius: 0,
+      // Dark panel behind the artwork, matching Horizon Market's
+      // `bg-transpBlack-33`.
+      backgroundColor: "rgba(0, 0, 0, 0.33)",
+      padding: 24,
     },
-    placeholderText: {
+    // The artwork/placeholder fills the padded panel.
+    imageGrid: {
+      width: "100%",
+      height: "100%",
+    },
+    noImageIconGrid: {
+      fontSize: 40,
+    },
+    noImageIconSmall: {
+      fontSize: 20,
+    },
+    noImageLabel: {
       color: theme.colors.textMuted,
-      fontSize: theme.typography.fontSizeLg,
-      fontWeight: "600",
+      fontSize: theme.typography.fontSizeSm,
+      marginTop: theme.spacing.xs,
     },
     infoRow: {
       flexDirection: "row",
@@ -106,10 +123,16 @@ function createSheet(theme: ResolvedTheme) {
       gap: 2,
     },
     actionButton: {
-      marginTop: theme.spacing.xs,
+      // Pin to the bottom of the equal-height tile so buttons align across the
+      // grid row.
+      marginTop: "auto",
+      // Match the header "Sell" button height: the shared `button` style uses
+      // spacing.md (12px) vertical padding, the header uses 8px.
+      paddingVertical: theme.spacing.sm,
     },
     actionButtonSecondary: {
-      marginTop: theme.spacing.xs,
+      marginTop: "auto",
+      paddingVertical: theme.spacing.sm,
     },
   });
 }
@@ -146,15 +169,19 @@ export function SwapListItem({
   if (view === "grid") {
     return (
       <View style={[common.swapItemCard, style, stylesProp?.root]}>
-        <ThumbnailOrPlaceholder
-          thumbnailUrl={thumbnail}
-          listingType={swap.listingType}
-          imageStyle={[sheet.imageGrid as ImageStyle]}
-          placeholderStyle={[common.swapItemPlaceholder, sheet.imageGrid]}
-          placeholderTextStyle={sheet.placeholderText}
-          imageOverride={stylesProp?.image}
-          placeholderOverride={stylesProp?.placeholder}
-        />
+        <View style={sheet.imageGridPanel}>
+          <ThumbnailOrPlaceholder
+            thumbnailUrl={thumbnail}
+            imageStyle={[sheet.imageGrid as ImageStyle]}
+            placeholderStyle={[common.swapItemPlaceholder, sheet.imageGrid]}
+            iconStyle={sheet.noImageIconGrid}
+            labelStyle={sheet.noImageLabel}
+            imageOverride={stylesProp?.image}
+            placeholderOverride={stylesProp?.placeholder}
+            resizeMode="contain"
+            showLabel
+          />
+        </View>
         <Text
           style={[common.swapItemName, stylesProp?.name]}
           numberOfLines={1}
@@ -194,12 +221,13 @@ export function SwapListItem({
     <View style={[common.swapItemRow, style, stylesProp?.root]}>
       <ThumbnailOrPlaceholder
         thumbnailUrl={thumbnail}
-        listingType={swap.listingType}
         imageStyle={common.swapItemImageSmall as ImageStyle}
         placeholderStyle={common.swapItemPlaceholderSmall}
-        placeholderTextStyle={sheet.placeholderText}
+        iconStyle={sheet.noImageIconSmall}
+        labelStyle={sheet.noImageLabel}
         imageOverride={stylesProp?.image}
         placeholderOverride={stylesProp?.placeholder}
+        showLabel={false}
       />
       <View style={sheet.infoCol}>
         <Text

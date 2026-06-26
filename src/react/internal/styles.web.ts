@@ -104,8 +104,14 @@ export const swapListToolbar: CSSProperties = {
 
 export const swapGrid: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-  gap: webTokens.spacingMd,
+  // ~5 tiles per row on a desktop-width container (wider min => fewer, larger
+  // tiles), collapsing responsively on narrower screens.
+  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+  // Equal-height rows: every tile in the grid is the same height regardless of
+  // how much text it carries (mirrors the Horizon Market home grid).
+  gridAutoRows: "1fr",
+  columnGap: 40,
+  rowGap: 48,
 };
 
 export const swapListColumn: CSSProperties = {
@@ -115,13 +121,17 @@ export const swapListColumn: CSSProperties = {
 };
 
 export const swapItemGrid: CSSProperties = {
+  // Borderless, transparent tile (Horizon Market style): just the artwork panel
+  // and the text below it, no card chrome. height:100% lets the tile fill its
+  // equal-height grid row so the action button can pin to the bottom.
   display: "flex",
   flexDirection: "column",
-  gap: webTokens.spacingXs,
-  padding: webTokens.spacingSm,
-  background: webTokens.background,
-  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
-  borderRadius: webTokens.radiusMd,
+  gap: webTokens.spacingSm,
+  height: "100%",
+  background: "transparent",
+  border: "none",
+  borderRadius: 0,
+  padding: 0,
 };
 
 export const swapItemList: CSSProperties = {
@@ -137,8 +147,16 @@ export const swapItemList: CSSProperties = {
 export const swapItemImageFull: CSSProperties = {
   width: "100%",
   aspectRatio: "1",
-  objectFit: "cover",
-  borderRadius: webTokens.radiusSm,
+  // Show the full artwork on a subtle square panel (like the Horizon Market
+  // home), square corners, no rounding. Padding insets the artwork from the
+  // panel edges (object-fit:contain fits inside the padding box; the background
+  // fills the whole border box).
+  objectFit: "contain",
+  // Dark panel behind the artwork, matching Horizon Market's `bg-transpBlack-33`.
+  background: "rgba(0, 0, 0, 0.33)",
+  borderRadius: 0,
+  padding: 32,
+  boxSizing: "border-box",
   display: "block",
 };
 
@@ -154,15 +172,20 @@ export const swapItemImageSmall: CSSProperties = {
 export const swapItemPlaceholder: CSSProperties = {
   width: "100%",
   aspectRatio: "1",
-  background: webTokens.surface,
-  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
-  borderRadius: webTokens.radiusSm,
+  background: "rgba(0, 0, 0, 0.33)",
+  border: "none",
+  borderRadius: 0,
   display: "flex",
+  flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
+  gap: webTokens.spacingSm,
   color: webTokens.textMuted,
-  fontSize: webTokens.fontSizeLg,
-  fontWeight: 600,
+};
+
+export const noImageText: CSSProperties = {
+  fontSize: webTokens.fontSizeSm,
+  color: webTokens.textMuted,
 };
 
 export const swapItemPlaceholderSmall: CSSProperties = {
@@ -211,6 +234,27 @@ export function filterTab(active: boolean): CSSProperties {
     cursor: "pointer",
     fontSize: webTokens.fontSizeSm,
     fontWeight: active ? 600 : 400,
+  };
+}
+
+/**
+ * Underline "tab" used for the metaprotocol filter (All / Counterparty / …),
+ * mirroring the Horizon Market token-explorer tabs: a bottom border that
+ * lights up on the active tab, bold label, no pill chrome.
+ */
+export function metaTab(active: boolean): CSSProperties {
+  return {
+    padding: `0 ${webTokens.spacingSm} ${webTokens.spacingSm}`,
+    background: "transparent",
+    color: active ? webTokens.text : webTokens.textMuted,
+    border: "none",
+    borderBottom: `2px solid ${active ? webTokens.primary : "transparent"}`,
+    borderRadius: 0,
+    cursor: "pointer",
+    fontSize: webTokens.fontSizeBase,
+    fontWeight: 700,
+    fontFamily: "inherit",
+    whiteSpace: "nowrap",
   };
 }
 

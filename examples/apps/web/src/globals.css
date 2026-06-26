@@ -56,8 +56,12 @@
   --radius-xl: 1.5rem;
   --radius-full: 9999px;
 
-  /* Header height — used for sticky toolbar offset */
-  --header-height: 70px;
+  /* Header height — used for sticky toolbar offset.
+     = brand block (~48px) + 24px top/bottom padding to match the 24px sides. */
+  --header-height: 96px;
+
+  /* Max content width — keep in sync with the centered <main> */
+  --content-max-width: 1440px;
 }
 
 /* ── Base ─────────────────────────────────────────────────── */
@@ -84,4 +88,19 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+/* ── Full-bleed sticky filter bar ─────────────────────────────
+   The sticky toolbar lives inside the centered <main> (max-width:
+   --content-max-width), so its background would stop at the centering
+   margins. This breaks it out to span the full viewport width while keeping
+   the filters aligned with the centered content column:
+   - width:100vw + negative margin pulls the box out to the screen edges;
+   - the horizontal padding re-insets the filters back to the column's edge
+     (24px gutter on screens narrower than the column).                      */
+.toolbar-fullbleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  padding-left: max(24px, calc((100vw - var(--content-max-width)) / 2 + 24px));
+  padding-right: max(24px, calc((100vw - var(--content-max-width)) / 2 + 24px));
 }

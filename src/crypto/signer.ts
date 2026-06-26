@@ -1,3 +1,4 @@
+import { LocalKey } from "@kontor/sdk";
 import * as btc from "bitcoinjs-lib";
 import { ECPair } from "./ecc.js";
 import { signPsbtHex as signPsbtHexImpl } from "./psbt-signer.js";
@@ -108,7 +109,6 @@ export class LocalSigner implements Signer {
    * and only broadcasts the signed result. `chain` is a `@kontor/sdk` `Chain`.
    */
   async getKontorSigning(chain: unknown): Promise<unknown> {
-    const { LocalKey } = await import("@kontor/sdk");
     return LocalKey.fromPrivateKey({
       privateKey: this.privateKeyHex,
       chain: chain as never,

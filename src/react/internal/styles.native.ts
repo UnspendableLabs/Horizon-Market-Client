@@ -84,11 +84,12 @@ export function commonSheet(theme: ResolvedTheme) {
       fontSize: theme.typography.fontSizeSm,
     },
     swapItemCard: {
-      padding: theme.spacing.sm,
-      backgroundColor: theme.colors.background,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radii.md,
+      // Borderless, transparent tile (Horizon Market style): artwork panel +
+      // text below, no card chrome.
+      padding: 0,
+      backgroundColor: "transparent",
+      borderWidth: 0,
+      borderRadius: 0,
       gap: theme.spacing.xs,
     },
     swapItemRow: {
@@ -107,10 +108,10 @@ export function commonSheet(theme: ResolvedTheme) {
       borderRadius: theme.radii.sm,
     },
     swapItemPlaceholder: {
-      backgroundColor: theme.colors.surface,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radii.sm,
+      // Transparent: the surrounding imageGridPanel provides the dark panel bg.
+      backgroundColor: "transparent",
+      borderWidth: 0,
+      borderRadius: 0,
       alignItems: "center" as const,
       justifyContent: "center" as const,
     },
@@ -172,6 +173,32 @@ export function commonSheet(theme: ResolvedTheme) {
     filterTabTextInactive: {
       color: theme.colors.textMuted,
       fontSize: theme.typography.fontSizeSm,
+    },
+    // Underline "tab" for the metaprotocol filter (All / Counterparty / …),
+    // mirroring the Horizon Market token-explorer tabs.
+    metaTabActive: {
+      paddingHorizontal: theme.spacing.sm,
+      paddingBottom: theme.spacing.sm,
+      backgroundColor: "transparent",
+      borderBottomWidth: 2,
+      borderBottomColor: theme.colors.primary,
+    },
+    metaTabInactive: {
+      paddingHorizontal: theme.spacing.sm,
+      paddingBottom: theme.spacing.sm,
+      backgroundColor: "transparent",
+      borderBottomWidth: 2,
+      borderBottomColor: "transparent",
+    },
+    metaTabTextActive: {
+      color: theme.colors.text,
+      fontSize: theme.typography.fontSizeBase,
+      fontWeight: "700" as const,
+    },
+    metaTabTextInactive: {
+      color: theme.colors.textMuted,
+      fontSize: theme.typography.fontSizeBase,
+      fontWeight: "700" as const,
     },
     iconButton: {
       padding: theme.spacing.xs,
