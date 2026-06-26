@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import {
   useSwapList,
@@ -19,6 +19,7 @@ import type { LoginPanelClassNames } from "./LoginPanel.web.js";
 import { LoginPanel } from "./LoginPanel.web.js";
 import type { SwapConfirmationClassNames } from "./SwapConfirmation.web.js";
 import { SwapConfirmation } from "./SwapConfirmation.web.js";
+import { Modal } from "./Modal.web.js";
 
 export type { SwapListingType, SortOption, SwapListView } from "../hooks/useSwapList.js";
 
@@ -53,38 +54,6 @@ export interface SwapListProps extends UseSwapListOptions {
 
 const rootStyle: CSSProperties = { ...ws.cardRoot, position: "relative" };
 
-function ModalPanel({
-  onClose,
-  children,
-}: {
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      style={ws.modalOverlay}
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        style={modalPanelStyle}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          style={ws.modalClose}
-          aria-label="Close"
-        >
-          ✕
-        </button>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 const toolbarRightStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -96,12 +65,6 @@ const paginationStyle: CSSProperties = {
   ...ws.actionsRow,
   justifyContent: "center",
   alignItems: "center",
-};
-
-const modalPanelStyle: CSSProperties = {
-  position: "relative",
-  maxHeight: "90vh",
-  overflowY: "auto",
 };
 
 const pageInfoStyle: CSSProperties = {
@@ -290,20 +253,18 @@ export function SwapList({
       )}
 
       {/* Login modal */}
-      {loginModalOpen && (
-        <ModalPanel onClose={closeLoginModal}>
-          <LoginPanel
-            getPrivateKey={getPrivateKey}
-            autoDetectSession={false}
-            onSuccess={handleLoginSuccess}
-            classNames={classNames?.loginPanel}
-          />
-        </ModalPanel>
-      )}
+      <Modal open={loginModalOpen} onClose={closeLoginModal}>
+        <LoginPanel
+          getPrivateKey={getPrivateKey}
+          autoDetectSession={false}
+          onSuccess={handleLoginSuccess}
+          classNames={classNames?.loginPanel}
+        />
+      </Modal>
 
       {/* Swap confirmation modal */}
       {confirmationModalOpen && pendingSwap && (
-        <ModalPanel onClose={closeConfirmationModal}>
+        <Modal open onClose={closeConfirmationModal}>
           <SwapConfirmation
             swap={pendingSwap}
             mode={confirmationMode}
@@ -312,7 +273,7 @@ export function SwapList({
             onComplete={closeConfirmationModal}
             classNames={classNames?.confirmation}
           />
-        </ModalPanel>
+        </Modal>
       )}
     </div>
   );

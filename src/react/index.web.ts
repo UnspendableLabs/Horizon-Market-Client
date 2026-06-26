@@ -50,6 +50,9 @@ export type {
 } from "./theme.js";
 export { defaultTheme, resolveTheme, themeToCssVars, webTokens } from "./theme.js";
 
+export { Modal } from "./components/Modal.web.js";
+export type { ModalProps } from "./components/Modal.web.js";
+
 export { LoginPanel } from "./components/LoginPanel.web.js";
 export type {
   LoginPanelProps,
