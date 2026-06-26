@@ -11,7 +11,6 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
-import type { SwapListView } from "../hooks/useSwapList.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
 import {
@@ -27,7 +26,6 @@ export interface SwapListItemStyles {
   placeholder?: StyleProp<ViewStyle>;
   name?: StyleProp<TextStyle>;
   price?: StyleProp<TextStyle>;
-  badge?: StyleProp<TextStyle>;
   meta?: StyleProp<TextStyle>;
   button?: StyleProp<ViewStyle>;
   buttonText?: StyleProp<TextStyle>;
@@ -35,7 +33,6 @@ export interface SwapListItemStyles {
 
 export interface SwapListItemProps {
   swap: AtomicSwap;
-  view: SwapListView;
   isMySwap: boolean;
   onAction: () => void;
   style?: StyleProp<ViewStyle>;
@@ -104,23 +101,10 @@ function createSheet(theme: ResolvedTheme) {
     noImageIconGrid: {
       fontSize: 40,
     },
-    noImageIconSmall: {
-      fontSize: 20,
-    },
     noImageLabel: {
       color: theme.colors.textMuted,
       fontSize: theme.typography.fontSizeSm,
       marginTop: theme.spacing.xs,
-    },
-    infoRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: theme.spacing.xs,
-      flexWrap: "wrap",
-    },
-    infoCol: {
-      flex: 1,
-      gap: 2,
     },
     actionButton: {
       // Pin to the bottom of the equal-height tile so buttons align across the
@@ -130,16 +114,11 @@ function createSheet(theme: ResolvedTheme) {
       // spacing.md (12px) vertical padding, the header uses 8px.
       paddingVertical: theme.spacing.sm,
     },
-    actionButtonSecondary: {
-      marginTop: "auto",
-      paddingVertical: theme.spacing.sm,
-    },
   });
 }
 
 export function SwapListItem({
   swap,
-  view,
   isMySwap,
   onAction,
   style,
@@ -166,96 +145,40 @@ export function SwapListItem({
           ? `${swap.pricePerUnit.toLocaleString()} sats/unit`
           : null;
 
-  if (view === "grid") {
-    return (
-      <View style={[common.swapItemCard, style, stylesProp?.root]}>
-        <View style={sheet.imageGridPanel}>
-          <ThumbnailOrPlaceholder
-            thumbnailUrl={thumbnail}
-            imageStyle={[sheet.imageGrid as ImageStyle]}
-            placeholderStyle={[common.swapItemPlaceholder, sheet.imageGrid]}
-            iconStyle={sheet.noImageIconGrid}
-            labelStyle={sheet.noImageLabel}
-            imageOverride={stylesProp?.image}
-            placeholderOverride={stylesProp?.placeholder}
-            resizeMode="contain"
-            showLabel
-          />
-        </View>
-        <Text
-          style={[common.swapItemName, stylesProp?.name]}
-          numberOfLines={1}
-        >
-          {displayName}
-        </Text>
-        <Text style={[common.muted, stylesProp?.price]}>
-          {swap.price.toLocaleString()} sats
-        </Text>
-        {showMeta && metaText !== null && (
-          <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
-            {metaText}
-          </Text>
-        )}
-        <Pressable
-          onPress={onAction}
-          style={[
-            isMySwap ? common.buttonSecondary : common.button,
-            sheet.actionButton,
-            stylesProp?.button,
-          ]}
-        >
-          <Text
-            style={[
-              isMySwap ? common.buttonSecondaryText : common.buttonText,
-              stylesProp?.buttonText,
-            ]}
-          >
-            {actionLabel}
-          </Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
-    <View style={[common.swapItemRow, style, stylesProp?.root]}>
-      <ThumbnailOrPlaceholder
-        thumbnailUrl={thumbnail}
-        imageStyle={common.swapItemImageSmall as ImageStyle}
-        placeholderStyle={common.swapItemPlaceholderSmall}
-        iconStyle={sheet.noImageIconSmall}
-        labelStyle={sheet.noImageLabel}
-        imageOverride={stylesProp?.image}
-        placeholderOverride={stylesProp?.placeholder}
-        showLabel={false}
-      />
-      <View style={sheet.infoCol}>
-        <Text
-          style={[common.swapItemName, stylesProp?.name]}
-          numberOfLines={1}
-        >
-          {displayName}
-        </Text>
-        <View style={sheet.infoRow}>
-          <Text style={[common.swapItemBadge, stylesProp?.badge]}>
-            {swap.listingType}
-          </Text>
-          {showMeta && metaText !== null && (
-            <Text style={[common.muted, stylesProp?.meta]}>
-              {metaText}
-            </Text>
-          )}
-        </View>
+    <View style={[common.swapItemCard, style, stylesProp?.root]}>
+      <View style={sheet.imageGridPanel}>
+        <ThumbnailOrPlaceholder
+          thumbnailUrl={thumbnail}
+          imageStyle={[sheet.imageGrid as ImageStyle]}
+          placeholderStyle={[common.swapItemPlaceholder, sheet.imageGrid]}
+          iconStyle={sheet.noImageIconGrid}
+          labelStyle={sheet.noImageLabel}
+          imageOverride={stylesProp?.image}
+          placeholderOverride={stylesProp?.placeholder}
+          resizeMode="contain"
+          showLabel
+        />
       </View>
-      <View>
-        <Text style={[common.swapItemPrice, stylesProp?.price]}>
-          {swap.price.toLocaleString()} sats
+      <Text
+        style={[common.swapItemName, stylesProp?.name]}
+        numberOfLines={1}
+      >
+        {displayName}
+      </Text>
+      <Text style={[common.muted, stylesProp?.price]}>
+        {swap.price.toLocaleString()} sats
+      </Text>
+      {showMeta && metaText !== null && (
+        <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
+          {metaText}
         </Text>
-      </View>
+      )}
       <Pressable
         onPress={onAction}
         style={[
           isMySwap ? common.buttonSecondary : common.button,
+          sheet.actionButton,
           stylesProp?.button,
         ]}
       >

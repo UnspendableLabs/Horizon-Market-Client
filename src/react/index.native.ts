@@ -36,7 +36,6 @@ export type {
   SwapListOrderBy,
   SwapListOrder,
   SwapListingType,
-  SwapListView,
   SortOption,
   UseSwapListOptions,
   UseSwapListResult,

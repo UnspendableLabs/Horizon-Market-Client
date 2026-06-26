@@ -1,6 +1,5 @@
 import { useState, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
-import type { SwapListView } from "../hooks/useSwapList.js";
 import { cx } from "./format.js";
 import {
   swapThumbnailUrl,
@@ -16,14 +15,12 @@ export interface SwapListItemClassNames {
   placeholder?: string;
   name?: string;
   price?: string;
-  badge?: string;
   meta?: string;
   button?: string;
 }
 
 export interface SwapListItemProps {
   swap: AtomicSwap;
-  view: SwapListView;
   isMySwap: boolean;
   onAction: () => void;
   className?: string;
@@ -44,21 +41,6 @@ const priceStyle: CSSProperties = {
   fontSize: webTokens.fontSizeBase,
   color: webTokens.text,
   fontWeight: 600,
-};
-
-const badgeStyle: CSSProperties = {
-  fontSize: webTokens.fontSizeSm,
-  color: webTokens.textMuted,
-  background: webTokens.surface,
-  padding: `2px ${webTokens.spacingXs}`,
-  borderRadius: webTokens.radiusSm,
-};
-
-const metaRowStyle: CSSProperties = {
-  display: "flex",
-  gap: webTokens.spacingSm,
-  alignItems: "center",
-  flexWrap: "wrap",
 };
 
 /** Mountain + sun "no image" pictogram (matches the common image-placeholder icon). */
@@ -122,17 +104,8 @@ function ThumbnailOrPlaceholder({
   );
 }
 
-const infoColStyle: CSSProperties = {
-  flex: 1,
-  display: "flex",
-  flexDirection: "column",
-  gap: 2,
-  minWidth: 0,
-};
-
 export function SwapListItem({
   swap,
-  view,
   isMySwap,
   onAction,
   className,
@@ -141,10 +114,7 @@ export function SwapListItem({
 }: SwapListItemProps) {
   const actionLabel = isMySwap ? "Delist" : "Buy";
   const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
-  const itemStyle =
-    view === "grid"
-      ? { ...ws.swapItemGrid, ...style }
-      : { ...ws.swapItemList, ...style };
+  const itemStyle = { ...ws.swapItemGrid, ...style };
 
   const thumbnail = swapThumbnailUrl(swap);
   const displayName = swapDisplayName(swap);
@@ -153,99 +123,52 @@ export function SwapListItem({
     swap.listingType !== "ordinal" &&
     (displayQuantity !== null || swap.pricePerUnit !== null);
 
-  if (view === "grid") {
-    return (
-      <div className={cx(classNames?.root, className)} style={itemStyle}>
-        <ThumbnailOrPlaceholder
-          thumbnailUrl={thumbnail}
-          assetName={swap.assetName}
-          imageStyle={ws.swapItemImageFull}
-          placeholderStyle={ws.swapItemPlaceholder}
-          imageClassName={classNames?.image}
-          placeholderClassName={classNames?.placeholder}
-          iconSize={44}
-          showLabel
-        />
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span className={classNames?.name} style={nameStyle}>
-            {displayName}
-          </span>
-          <span className={classNames?.price} style={priceStyle}>
-            {swap.price.toLocaleString()} sats
-          </span>
-          {showMeta && (
-            <span className={classNames?.meta} style={ws.mutedText}>
-              {displayQuantity !== null && swap.pricePerUnit !== null
-                ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
-                : displayQuantity !== null
-                  ? `Qty: ${displayQuantity}`
-                  : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className={classNames?.button}
-          onClick={onAction}
-          style={{
-            ...actionStyle,
-            // Pin to the bottom of the equal-height tile so buttons align
-            // across the whole grid row.
-            marginTop: "auto",
-            // Match the header "Sell" button: same font size (14px), height
-            // (8px vertical padding + 20px line-height = 36px) and corner
-            // radius (lg, the header uses Tailwind's rounded-lg).
-            padding: `${webTokens.spacingSm} ${webTokens.spacingSm}`,
-            fontSize: webTokens.fontSizeBase,
-            lineHeight: "20px",
-            borderRadius: webTokens.radiusLg,
-          }}
-        >
-          {actionLabel}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
       <ThumbnailOrPlaceholder
         thumbnailUrl={thumbnail}
         assetName={swap.assetName}
-        imageStyle={ws.swapItemImageSmall}
-        placeholderStyle={ws.swapItemPlaceholderSmall}
+        imageStyle={ws.swapItemImageFull}
+        placeholderStyle={ws.swapItemPlaceholder}
         imageClassName={classNames?.image}
         placeholderClassName={classNames?.placeholder}
-        iconSize={22}
-        showLabel={false}
+        iconSize={44}
+        showLabel
       />
-      <div style={infoColStyle}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span className={classNames?.name} style={nameStyle}>
           {displayName}
         </span>
-        <div style={metaRowStyle}>
-          <span className={classNames?.badge} style={badgeStyle}>
-            {swap.listingType}
+        <span className={classNames?.price} style={priceStyle}>
+          {swap.price.toLocaleString()} sats
+        </span>
+        {showMeta && (
+          <span className={classNames?.meta} style={ws.mutedText}>
+            {displayQuantity !== null && swap.pricePerUnit !== null
+              ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
+              : displayQuantity !== null
+                ? `Qty: ${displayQuantity}`
+                : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
           </span>
-          {showMeta && (
-            <span className={classNames?.meta} style={ws.mutedText}>
-              {displayQuantity !== null && swap.pricePerUnit !== null
-                ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
-                : displayQuantity !== null
-                  ? `Qty: ${displayQuantity}`
-                  : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
-            </span>
-          )}
-        </div>
+        )}
       </div>
-      <span className={classNames?.price} style={priceStyle}>
-        {swap.price.toLocaleString()} sats
-      </span>
       <button
         type="button"
         className={classNames?.button}
         onClick={onAction}
-        style={actionStyle}
+        style={{
+          ...actionStyle,
+          // Pin to the bottom of the equal-height tile so buttons align
+          // across the whole grid row.
+          marginTop: "auto",
+          // Match the header "Sell" button: same font size (14px), height
+          // (8px vertical padding + 20px line-height = 36px) and corner
+          // radius (lg, the header uses Tailwind's rounded-lg).
+          padding: `${webTokens.spacingSm} ${webTokens.spacingSm}`,
+          fontSize: webTokens.fontSizeBase,
+          lineHeight: "20px",
+          borderRadius: webTokens.radiusLg,
+        }}
       >
         {actionLabel}
       </button>

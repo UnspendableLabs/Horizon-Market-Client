@@ -114,12 +114,6 @@ export const swapGrid: CSSProperties = {
   rowGap: 48,
 };
 
-export const swapListColumn: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: webTokens.spacingSm,
-};
-
 export const swapItemGrid: CSSProperties = {
   // Borderless, transparent tile (Horizon Market style): just the artwork panel
   // and the text below it, no card chrome. height:100% lets the tile fill its
@@ -132,16 +126,6 @@ export const swapItemGrid: CSSProperties = {
   border: "none",
   borderRadius: 0,
   padding: 0,
-};
-
-export const swapItemList: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: webTokens.spacingMd,
-  padding: webTokens.spacingSm,
-  background: webTokens.background,
-  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
-  borderRadius: webTokens.radiusMd,
 };
 
 export const swapItemImageFull: CSSProperties = {
@@ -157,15 +141,6 @@ export const swapItemImageFull: CSSProperties = {
   borderRadius: 0,
   padding: 32,
   boxSizing: "border-box",
-  display: "block",
-};
-
-export const swapItemImageSmall: CSSProperties = {
-  width: 48,
-  height: 48,
-  objectFit: "cover",
-  borderRadius: webTokens.radiusSm,
-  flexShrink: 0,
   display: "block",
 };
 
@@ -186,19 +161,6 @@ export const swapItemPlaceholder: CSSProperties = {
 export const noImageText: CSSProperties = {
   fontSize: webTokens.fontSizeSm,
   color: webTokens.textMuted,
-};
-
-export const swapItemPlaceholderSmall: CSSProperties = {
-  width: 48,
-  height: 48,
-  background: webTokens.surface,
-  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
-  borderRadius: webTokens.radiusSm,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  color: webTokens.textMuted,
-  flexShrink: 0,
 };
 
 export const modalOverlay: CSSProperties = {
@@ -257,14 +219,3 @@ export function metaTab(active: boolean): CSSProperties {
     whiteSpace: "nowrap",
   };
 }
-
-export const iconButton: CSSProperties = {
-  padding: webTokens.spacingXs,
-  background: "transparent",
-  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
-  borderRadius: webTokens.radiusSm,
-  cursor: "pointer",
-  color: webTokens.text,
-  fontSize: webTokens.fontSizeBase,
-  lineHeight: "1",
-};

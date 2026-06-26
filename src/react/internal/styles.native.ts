@@ -92,21 +92,6 @@ export function commonSheet(theme: ResolvedTheme) {
       borderRadius: 0,
       gap: theme.spacing.xs,
     },
-    swapItemRow: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      padding: theme.spacing.sm,
-      backgroundColor: theme.colors.background,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radii.md,
-      gap: theme.spacing.sm,
-    },
-    swapItemImageSmall: {
-      width: 48,
-      height: 48,
-      borderRadius: theme.radii.sm,
-    },
     swapItemPlaceholder: {
       // Transparent: the surrounding imageGridPanel provides the dark panel bg.
       backgroundColor: "transparent",
@@ -115,34 +100,10 @@ export function commonSheet(theme: ResolvedTheme) {
       alignItems: "center" as const,
       justifyContent: "center" as const,
     },
-    swapItemPlaceholderSmall: {
-      width: 48,
-      height: 48,
-      backgroundColor: theme.colors.surface,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radii.sm,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-    },
     swapItemName: {
       color: theme.colors.text,
       fontSize: theme.typography.fontSizeBase,
       fontWeight: "500" as const,
-    },
-    swapItemPrice: {
-      color: theme.colors.text,
-      fontSize: theme.typography.fontSizeBase,
-      fontWeight: "600" as const,
-    },
-    swapItemBadge: {
-      color: theme.colors.textMuted,
-      fontSize: theme.typography.fontSizeSm,
-      backgroundColor: theme.colors.surface,
-      paddingHorizontal: theme.spacing.xs,
-      paddingVertical: 2,
-      borderRadius: theme.radii.sm,
-      alignSelf: "flex-start" as const,
     },
     swapToolbar: {
       flexDirection: "row" as const,
@@ -199,15 +160,6 @@ export function commonSheet(theme: ResolvedTheme) {
       color: theme.colors.textMuted,
       fontSize: theme.typography.fontSizeBase,
       fontWeight: "700" as const,
-    },
-    iconButton: {
-      padding: theme.spacing.xs,
-      backgroundColor: "transparent",
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-      borderRadius: theme.radii.sm,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
     },
   });
 }

@@ -26,14 +26,13 @@ import { LoginPanel } from "./LoginPanel.native.js";
 import type { SwapConfirmationStyles } from "./SwapConfirmation.native.js";
 import { SwapConfirmation } from "./SwapConfirmation.native.js";
 
-export type { SwapListingType, SortOption, SwapListView } from "../hooks/useSwapList.js";
+export type { SwapListingType, SortOption } from "../hooks/useSwapList.js";
 
 export interface SwapListStyles {
   root?: StyleProp<ViewStyle>;
   toolbar?: StyleProp<ViewStyle>;
   filterTabs?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
-  list?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
   pagination?: StyleProp<ViewStyle>;
   loginPanel?: LoginPanelStyles;
@@ -83,8 +82,6 @@ export function SwapList({
     setListingType,
     sortOption,
     setSortOption,
-    view,
-    setView,
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
@@ -117,7 +114,7 @@ export function SwapList({
         <Text style={common.error}>{error.message}</Text>
       ) : swaps.length === 0 ? (
         <Text style={common.muted}>No swaps found.</Text>
-      ) : view === "grid" ? (
+      ) : (
         <View style={[{ gap: 24 }, stylesProp?.grid]}>
           {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
             swaps.slice(i * 2, i * 2 + 2),
@@ -127,7 +124,6 @@ export function SwapList({
                 <SwapListItem
                   key={swap.id}
                   swap={swap}
-                  view={view}
                   isMySwap={isItemMySwap(swap)}
                   onAction={() => {
                     onSwapSelect?.(swap);
@@ -139,22 +135,6 @@ export function SwapList({
               ))}
               {row.length < 2 && <View style={{ flex: 1 }} />}
             </View>
-          ))}
-        </View>
-      ) : (
-        <View style={[{ gap: 8 }, stylesProp?.list]}>
-          {swaps.map((swap) => (
-            <SwapListItem
-              key={swap.id}
-              swap={swap}
-              view={view}
-              isMySwap={isItemMySwap(swap)}
-              onAction={() => {
-                onSwapSelect?.(swap);
-                onItemAction(swap);
-              }}
-              styles={stylesProp?.item}
-            />
           ))}
         </View>
       )}
@@ -230,42 +210,6 @@ export function SwapList({
             );
           })}
         </ScrollView>
-
-        {/* View toggle */}
-        <View style={common.swapToolbar}>
-          <TouchableOpacity
-            onPress={() => setView("grid")}
-            style={
-              view === "grid" ? common.filterTabActive : common.iconButton
-            }
-          >
-            <Text
-              style={
-                view === "grid"
-                  ? common.filterTabTextActive
-                  : common.filterTabTextInactive
-              }
-            >
-              ⊞
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setView("list")}
-            style={
-              view === "list" ? common.filterTabActive : common.iconButton
-            }
-          >
-            <Text
-              style={
-                view === "list"
-                  ? common.filterTabTextActive
-                  : common.filterTabTextInactive
-              }
-            >
-              ≡
-            </Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Sort row */}

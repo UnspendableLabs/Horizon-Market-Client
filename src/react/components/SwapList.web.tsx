@@ -21,17 +21,15 @@ import type { SwapConfirmationClassNames } from "./SwapConfirmation.web.js";
 import { SwapConfirmation } from "./SwapConfirmation.web.js";
 import { Modal } from "./Modal.web.js";
 
-export type { SwapListingType, SortOption, SwapListView } from "../hooks/useSwapList.js";
+export type { SwapListingType, SortOption } from "../hooks/useSwapList.js";
 
 export interface SwapListClassNames {
   root?: string;
   toolbar?: string;
   filterTabs?: string;
   sortSelect?: string;
-  viewToggle?: string;
   mySwapsToggle?: string;
   grid?: string;
-  list?: string;
   item?: SwapListItemClassNames;
   pagination?: string;
   error?: string;
@@ -99,8 +97,6 @@ export function SwapList({
     setListingType,
     sortOption,
     setSortOption,
-    view,
-    setView,
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
@@ -172,34 +168,6 @@ export function SwapList({
               {showMySwaps ? "All swaps" : "My swaps"}
             </button>
           )}
-
-          {/* View toggle */}
-          <div className={classNames?.viewToggle} style={ws.actionsRow}>
-            <button
-              type="button"
-              aria-label="Grid view"
-              onClick={() => setView("grid")}
-              style={
-                view === "grid"
-                  ? ws.filterTab(true)
-                  : ws.iconButton
-              }
-            >
-              ⊞
-            </button>
-            <button
-              type="button"
-              aria-label="List view"
-              onClick={() => setView("list")}
-              style={
-                view === "list"
-                  ? ws.filterTab(true)
-                  : ws.iconButton
-              }
-            >
-              ≡
-            </button>
-          </div>
         </div>
       </div>
 
@@ -219,15 +187,11 @@ export function SwapList({
           No swaps found.
         </div>
       ) : (
-        <div
-          className={view === "grid" ? classNames?.grid : classNames?.list}
-          style={view === "grid" ? ws.swapGrid : ws.swapListColumn}
-        >
+        <div className={classNames?.grid} style={ws.swapGrid}>
           {swaps.map((swap) => (
             <SwapListItem
               key={swap.id}
               swap={swap}
-              view={view}
               isMySwap={isItemMySwap(swap)}
               onAction={() => {
                 onSwapSelect?.(swap);

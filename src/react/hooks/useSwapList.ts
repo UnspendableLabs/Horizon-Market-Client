@@ -14,7 +14,6 @@ import {
 export type SwapListOrderBy = "created_at" | "price" | "price_per_unit";
 export type SwapListOrder = "asc" | "desc";
 export type SwapListingType = ListingType;
-export type SwapListView = "grid" | "list";
 export type SortOption =
   | "latest"
   | "oldest"
@@ -46,7 +45,6 @@ export const SORT_OPTIONS = Object.keys(SORT_MAP) as SortOption[];
 export interface UseSwapListOptions {
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
-  defaultView?: SwapListView;
   defaultShowMySwaps?: boolean;
   limit?: number;
 }
@@ -60,8 +58,6 @@ export interface UseSwapListResult {
   setListingType: (t: SwapListingType | null) => void;
   sortOption: SortOption;
   setSortOption: (o: SortOption) => void;
-  view: SwapListView;
-  setView: (v: SwapListView) => void;
   showMySwaps: boolean;
   setShowMySwaps: (v: boolean) => void;
   canShowMySwaps: boolean;
@@ -93,7 +89,6 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const {
     defaultListingType = null,
     defaultSortOption = "latest",
-    defaultView = "grid",
     defaultShowMySwaps = false,
     limit = DEFAULT_LIMIT,
   } = options;
@@ -104,7 +99,6 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [sortOption, setSortOptionState] = useState<SortOption>(
     defaultSortOption,
   );
-  const [view, setView] = useState<SwapListView>(defaultView);
   const [showMySwaps, setShowMySwapsState] = useState(defaultShowMySwaps);
   const [page, setPageState] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -313,8 +307,6 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     setListingType,
     sortOption,
     setSortOption,
-    view,
-    setView,
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps: addresses !== null,
