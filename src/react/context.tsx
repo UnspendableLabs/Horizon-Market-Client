@@ -27,6 +27,8 @@ export interface HorizonMarketContextValue {
   /** Set to `"signet"` when Kontor (KOR token + NFT) listings are enabled. */
   kontorNetwork: "signet" | undefined;
   ordApiBaseUrl: string | undefined;
+  /** TTL (ms) for the persistent owned-balances cache. Defaults to 1h. */
+  balancesCacheTtlMs: number | undefined;
   fetch: typeof globalThis.fetch;
   theme: ResolvedTheme;
 }
@@ -45,6 +47,14 @@ export interface HorizonMarketProviderProps {
    */
   kontorNetwork?: "signet";
   ordApiBaseUrl?: string;
+  /** Counterparty API v2 base URL (owned balances). Defaults to the public API. */
+  counterpartyApiBaseUrl?: string;
+  /** ZeldHash API base URL (ZELD balance). Defaults to the public API. */
+  zeldApiBaseUrl?: string;
+  /** Kontor NFT contract address used to enumerate owned NFTs (signet). */
+  kontorNftContractAddress?: string;
+  /** TTL (ms) for the persistent owned-balances cache. Defaults to 1h. */
+  balancesCacheTtlMs?: number;
   /** Custom fetch — forwarded to the client and used for ord API calls. */
   fetch?: typeof globalThis.fetch;
   theme?: HorizonMarketTheme;
@@ -61,6 +71,10 @@ export function HorizonMarketProvider({
   baseUrl,
   kontorNetwork,
   ordApiBaseUrl,
+  counterpartyApiBaseUrl,
+  zeldApiBaseUrl,
+  kontorNftContractAddress,
+  balancesCacheTtlMs,
   fetch: fetchImpl,
   theme,
   children,
@@ -69,8 +83,24 @@ export function HorizonMarketProvider({
 
   const anonClient = useMemo(
     () =>
-      new HorizonMarketClient({ network, baseUrl, kontorNetwork, fetch: fetchImpl }),
-    [network, baseUrl, kontorNetwork, fetchImpl],
+      new HorizonMarketClient({
+        network,
+        baseUrl,
+        kontorNetwork,
+        counterpartyApiBaseUrl,
+        zeldApiBaseUrl,
+        kontorNftContractAddress,
+        fetch: fetchImpl,
+      }),
+    [
+      network,
+      baseUrl,
+      kontorNetwork,
+      counterpartyApiBaseUrl,
+      zeldApiBaseUrl,
+      kontorNftContractAddress,
+      fetchImpl,
+    ],
   );
 
   const authedClient = useMemo(
@@ -81,10 +111,22 @@ export function HorizonMarketProvider({
             network,
             baseUrl,
             kontorNetwork,
+            counterpartyApiBaseUrl,
+            zeldApiBaseUrl,
+            kontorNftContractAddress,
             fetch: fetchImpl,
           })
         : null,
-    [authState, network, baseUrl, kontorNetwork, fetchImpl],
+    [
+      authState,
+      network,
+      baseUrl,
+      kontorNetwork,
+      counterpartyApiBaseUrl,
+      zeldApiBaseUrl,
+      kontorNftContractAddress,
+      fetchImpl,
+    ],
   );
 
   const initialize = useCallback(
@@ -112,10 +154,11 @@ export function HorizonMarketProvider({
       network,
       kontorNetwork,
       ordApiBaseUrl,
+      balancesCacheTtlMs,
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, ordApiBaseUrl, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
   );
 
   return (

@@ -1,4 +1,4 @@
-import { KontorSession, HttpTransport } from "@kontor/sdk";
+import { KontorSession, HttpTransport, Identity } from "@kontor/sdk";
 import type { Chain, Signing } from "@kontor/sdk";
 
 type FundingSource = ConstructorParameters<typeof HttpTransport>[0]["funding"];
@@ -38,5 +38,37 @@ export function makeKontorSession(args: MakeKontorSessionArgs): KontorSession {
         funding,
         url: indexerUrl,
       }),
+  });
+}
+
+export interface MakeKontorReadSessionArgs {
+  chain: Chain;
+  /** Taproot x-only pubkey (64 hex chars) of the wallet to read balances for. */
+  xOnlyPubkey: string;
+  /** Kontor indexer URL the read-only `view` calls hit. */
+  indexerUrl: string;
+  /** `fetch` for the session's poller (injected for tests / custom runtimes). */
+  fetch?: typeof globalThis.fetch;
+}
+
+/**
+ * Build a read-only KontorSession — no signing/funding, so only `view` calls
+ * (balance, listNftsByHolder…) work; `submit`/`inspect`/`simulate` throw.
+ *
+ * Ported from the Horizon-Market server's `makeKontorReadSession`: the identity
+ * is derived from the wallet's taproot x-only pubkey via `Identity.fromXOnly`,
+ * and the transport points at the configured indexer URL.
+ */
+export function makeKontorReadSession(
+  args: MakeKontorReadSessionArgs,
+): KontorSession {
+  const { chain, xOnlyPubkey, indexerUrl, fetch: fetchImpl } = args;
+  const identity = Identity.fromXOnly(xOnlyPubkey, chain);
+  return new KontorSession({
+    chain,
+    identity,
+    fetch: fetchImpl,
+    transport: ({ chain: c, identity: id }) =>
+      new HttpTransport({ chain: c, identity: id, url: indexerUrl }),
   });
 }

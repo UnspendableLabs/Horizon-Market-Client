@@ -1,22 +1,85 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
+import {
+  balancesCacheKey,
+  readBalancesCache,
+  writeBalancesCache,
+} from "../internal/balancesCache.js";
 
+/**
+ * An asset the connected wallet actually owns, scoped to the holding `address`
+ * (the same asset can sit on both the P2WPKH and P2TR address → distinct
+ * options). Fungibles carry their balance; ordinals/NFTs are 1-of-1.
+ */
 export type AssetOption =
-  | { type: "zeld" }
-  | { type: "counterparty"; assetName: string }
-  | { type: "ordinal"; inscriptionId: string; utxoId: string };
+  | {
+      type: "counterparty";
+      assetName: string;
+      address: string;
+      balance: bigint;
+      quantityNormalized: string;
+      divisible: boolean;
+    }
+  | {
+      type: "zeld";
+      address: string;
+      balance: bigint;
+      quantityNormalized: string;
+      divisible: true;
+    }
+  | { type: "ordinal"; inscriptionId: string; utxoId: string; address: string }
+  | { type: "kor"; address: string; amount: string }
+  | {
+      type: "kontor-nft";
+      nftId: string;
+      contractAddress: string;
+      address: string;
+    };
 
-export const zeldOption: AssetOption = { type: "zeld" };
-
-interface UseAssetsResult {
-  zeldOption: AssetOption;
-  counterpartyAssets: AssetOption[];
+interface AssetGroups {
+  counterparty: AssetOption[];
+  zeld: AssetOption[];
   ordinals: AssetOption[];
-  isLoadingOrdinals: boolean;
-  ordinalsError: Error | null;
-  searchCounterparty: (query: string) => void;
-  isSearching: boolean;
-  counterpartyError: Error | null;
+  kor: AssetOption[];
+  kontorNfts: AssetOption[];
+}
+
+const EMPTY_GROUPS: AssetGroups = {
+  counterparty: [],
+  zeld: [],
+  ordinals: [],
+  kor: [],
+  kontorNfts: [],
+};
+
+export interface UseAssetsResult {
+  /** XCP + Counterparty assets the wallet holds (mainnet). */
+  counterpartyAssets: AssetOption[];
+  /** ZELD holdings (its own protocol, mainnet only). */
+  zeldAssets: AssetOption[];
+  /** Ordinal inscriptions across both addresses. */
+  ordinals: AssetOption[];
+  /** KOR token balance (signet Kontor). */
+  korAssets: AssetOption[];
+  /** Owned Kontor NFTs (signet, requires a configured contract). */
+  kontorNfts: AssetOption[];
+  /** All owned options, flattened (Counterparty → ZELD → KOR → NFTs → Ordinals). */
+  allAssets: AssetOption[];
+  /** True once every group has loaded and none has any holdings. */
+  isEmpty: boolean;
+  /** Any non-fatal per-group fetch errors (e.g. ZELD >500 UTXOs). */
+  errors: {
+    counterparty: Error | null;
+    zeld: Error | null;
+    ordinals: Error | null;
+    kontor: Error | null;
+  };
+  /** Epoch ms of the last successful fetch (cache or network), or null. */
+  lastFetchedAt: number | null;
+  /** True while a fetch (initial or refresh) is in flight. */
+  isFetching: boolean;
+  /** Re-fetch all sources, bypassing the cache, and update the timestamp. */
+  refresh: () => void;
 }
 
 interface OrdInscriptionWire {
@@ -24,7 +87,7 @@ interface OrdInscriptionWire {
   owner_output: string;
 }
 
-function parseOrdInscriptions(raw: unknown): AssetOption[] {
+function parseOrdInscriptions(raw: unknown, address: string): AssetOption[] {
   if (!Array.isArray(raw)) return [];
   const out: AssetOption[] = [];
   for (const item of raw) {
@@ -32,130 +95,239 @@ function parseOrdInscriptions(raw: unknown): AssetOption[] {
     const { inscription_id, owner_output } = item as Partial<OrdInscriptionWire>;
     if (typeof inscription_id !== "string" || typeof owner_output !== "string")
       continue;
-    out.push({ type: "ordinal", inscriptionId: inscription_id, utxoId: owner_output });
+    out.push({
+      type: "ordinal",
+      inscriptionId: inscription_id,
+      utxoId: owner_output,
+      address,
+    });
   }
   return out;
 }
 
-export function useAssets(options?: {
-  /** Debounce delay for counterparty search in milliseconds (default 250). */
-  debounceMs?: number;
-}): UseAssetsResult {
-  const { client, addresses, ordApiBaseUrl, fetch } = useHorizonMarket();
-  const debounceMs = options?.debounceMs ?? 250;
+function regroup(all: AssetOption[]): AssetGroups {
+  const groups: AssetGroups = {
+    counterparty: [],
+    zeld: [],
+    ordinals: [],
+    kor: [],
+    kontorNfts: [],
+  };
+  for (const a of all) {
+    if (a.type === "counterparty") groups.counterparty.push(a);
+    else if (a.type === "zeld") groups.zeld.push(a);
+    else if (a.type === "ordinal") groups.ordinals.push(a);
+    else if (a.type === "kor") groups.kor.push(a);
+    else if (a.type === "kontor-nft") groups.kontorNfts.push(a);
+  }
+  return groups;
+}
 
-  const [counterpartyAssets, setCounterpartyAssets] = useState<AssetOption[]>(
-    [],
-  );
-  const [isSearching, setIsSearching] = useState(false);
-  const [counterpartyError, setCounterpartyError] = useState<Error | null>(
-    null,
-  );
+function flatten(groups: AssetGroups): AssetOption[] {
+  return [
+    ...groups.counterparty,
+    ...groups.zeld,
+    ...groups.kor,
+    ...groups.kontorNfts,
+    ...groups.ordinals,
+  ];
+}
 
-  const [ordinals, setOrdinals] = useState<AssetOption[]>([]);
-  const [isLoadingOrdinals, setIsLoadingOrdinals] = useState(false);
-  const [ordinalsError, setOrdinalsError] = useState<Error | null>(null);
+type GroupErrors = UseAssetsResult["errors"];
 
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchSeqRef = useRef(0);
+const NO_ERRORS: GroupErrors = {
+  counterparty: null,
+  zeld: null,
+  ordinals: null,
+  kontor: null,
+};
 
-  const searchCounterparty = useCallback(
-    (query: string) => {
-      if (!client) {
-        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-        setIsSearching(false);
-        setCounterpartyAssets([]);
+export function useAssets(): UseAssetsResult {
+  const {
+    client,
+    addresses,
+    network,
+    kontorNetwork,
+    ordApiBaseUrl,
+    fetch,
+    balancesCacheTtlMs,
+  } = useHorizonMarket();
+
+  const [groups, setGroups] = useState<AssetGroups>(EMPTY_GROUPS);
+  const [errors, setErrors] = useState<GroupErrors>(NO_ERRORS);
+  const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+
+  const ttlMs = balancesCacheTtlMs ?? 3_600_000;
+  const seqRef = useRef(0);
+
+  const p2wpkh = addresses?.p2wpkh;
+  const p2tr = addresses?.p2tr;
+
+  const fetchAll = useCallback(
+    async (opts: { force: boolean }) => {
+      if (!client || !p2wpkh) {
+        setGroups(EMPTY_GROUPS);
+        setErrors(NO_ERRORS);
+        setLastFetchedAt(null);
+        setLoadedOnce(false);
         return;
       }
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-      const seq = ++searchSeqRef.current;
-      setIsSearching(true);
-      setCounterpartyError(null);
-      searchTimerRef.current = setTimeout(() => {
-        client
-          .searchAssetNames({
-            query: query || undefined,
-            limit: 20,
-          })
-          .then((res) => {
-            if (seq !== searchSeqRef.current) return;
-            setCounterpartyAssets(
-              res.assetNames.map((name) => ({
-                type: "counterparty" as const,
-                assetName: name,
-              })),
+
+      const fetchAddresses = [p2wpkh, ...(p2tr ? [p2tr] : [])];
+      const cacheKey = balancesCacheKey(network, fetchAddresses);
+
+      // Seed from a fresh cache entry without hitting the network.
+      if (!opts.force) {
+        const cached = readBalancesCache<AssetOption[]>(cacheKey, ttlMs);
+        if (cached) {
+          setGroups(regroup(cached.data));
+          setErrors(NO_ERRORS);
+          setLastFetchedAt(cached.fetchedAt);
+          setLoadedOnce(true);
+          return;
+        }
+      }
+
+      const seq = ++seqRef.current;
+      setIsFetching(true);
+
+      const nextErrors: GroupErrors = {
+        counterparty: null,
+        zeld: null,
+        ordinals: null,
+        kontor: null,
+      };
+
+      const ordRoot = ordApiBaseUrl?.replace(/\/$/, "");
+      const fetchOrdinals = async (): Promise<AssetOption[]> => {
+        if (!ordRoot) return [];
+        const lists = await Promise.all(
+          fetchAddresses.map(async (addr) => {
+            const res = await fetch(
+              `${ordRoot}/address/${encodeURIComponent(addr)}`,
+              { headers: { Accept: "application/json" } },
             );
-          })
-          .catch((err: unknown) => {
-            if (seq !== searchSeqRef.current) return;
-            setCounterpartyError(
-              err instanceof Error ? err : new Error(String(err)),
-            );
-          })
-          .finally(() => {
-            if (seq === searchSeqRef.current) setIsSearching(false);
-          });
-      }, debounceMs);
+            if (!res.ok)
+              throw new Error(
+                `Ord API returned ${res.status}: ${res.statusText}`,
+              );
+            return parseOrdInscriptions((await res.json()) as unknown, addr);
+          }),
+        );
+        return lists.flat();
+      };
+
+      const [cpResult, zeldResult, ordResult, kontorResult] =
+        await Promise.allSettled([
+          client.getCounterpartyBalances(fetchAddresses),
+          client.getZeldBalances(fetchAddresses),
+          fetchOrdinals(),
+          kontorNetwork === "signet"
+            ? client.getKontorHoldings()
+            : Promise.resolve({ kor: null, nfts: [] as const }),
+        ]);
+
+      if (seq !== seqRef.current) return;
+
+      const next: AssetGroups = {
+        counterparty: [],
+        zeld: [],
+        ordinals: [],
+        kor: [],
+        kontorNfts: [],
+      };
+
+      if (cpResult.status === "fulfilled") {
+        next.counterparty = cpResult.value.map((b) => ({
+          type: "counterparty" as const,
+          assetName: b.asset,
+          address: b.address,
+          balance: b.quantity,
+          quantityNormalized: b.quantityNormalized,
+          divisible: b.divisible,
+        }));
+      } else {
+        nextErrors.counterparty = toError(cpResult.reason);
+      }
+
+      if (zeldResult.status === "fulfilled") {
+        next.zeld = zeldResult.value.map((b) => ({
+          type: "zeld" as const,
+          address: b.address,
+          balance: b.balance,
+          quantityNormalized: b.quantityNormalized,
+          divisible: true as const,
+        }));
+      } else {
+        nextErrors.zeld = toError(zeldResult.reason);
+      }
+
+      if (ordResult.status === "fulfilled") {
+        next.ordinals = ordResult.value;
+      } else {
+        nextErrors.ordinals = toError(ordResult.reason);
+      }
+
+      if (kontorResult.status === "fulfilled") {
+        const holdings = kontorResult.value;
+        if (holdings.kor) {
+          next.kor = [
+            {
+              type: "kor" as const,
+              address: holdings.kor.address,
+              amount: holdings.kor.amount,
+            },
+          ];
+        }
+        next.kontorNfts = holdings.nfts.map((n) => ({
+          type: "kontor-nft" as const,
+          nftId: n.nftId,
+          contractAddress: n.contractAddress,
+          address: n.address,
+        }));
+      } else {
+        nextErrors.kontor = toError(kontorResult.reason);
+      }
+
+      const fetchedAt = writeBalancesCache(cacheKey, flatten(next));
+      setGroups(next);
+      setErrors(nextErrors);
+      setLastFetchedAt(fetchedAt);
+      setLoadedOnce(true);
+      setIsFetching(false);
     },
-    [client, debounceMs],
+    [client, p2wpkh, p2tr, network, kontorNetwork, ordApiBaseUrl, fetch, ttlMs],
   );
 
-  // Cancel any pending debounced search on unmount.
+  // Fetch (or seed from cache) when the connected wallet changes.
   useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, []);
+    void fetchAll({ force: false });
+  }, [fetchAll]);
 
-  // Ordinals load from ord API
-  useEffect(() => {
-    const taprootAddr = addresses?.p2tr;
-    if (!taprootAddr || !ordApiBaseUrl) {
-      setOrdinals([]);
-      return;
-    }
-    let cancelled = false;
-    setIsLoadingOrdinals(true);
-    setOrdinalsError(null);
+  const refresh = useCallback(() => {
+    void fetchAll({ force: true });
+  }, [fetchAll]);
 
-    fetch(
-      `${ordApiBaseUrl.replace(/\/$/, "")}/address/${encodeURIComponent(
-        taprootAddr,
-      )}`,
-      { headers: { Accept: "application/json" } },
-    )
-      .then(async (res) => {
-        if (!res.ok)
-          throw new Error(`Ord API returned ${res.status}: ${res.statusText}`);
-        return (await res.json()) as unknown;
-      })
-      .then((raw) => {
-        if (cancelled) return;
-        setOrdinals(parseOrdInscriptions(raw));
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setOrdinalsError(
-          err instanceof Error ? err : new Error(String(err)),
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingOrdinals(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [addresses, ordApiBaseUrl, fetch]);
+  const allAssets = flatten(groups);
+  const isEmpty = loadedOnce && allAssets.length === 0;
 
   return {
-    zeldOption,
-    counterpartyAssets,
-    ordinals,
-    isLoadingOrdinals,
-    ordinalsError,
-    searchCounterparty,
-    isSearching,
-    counterpartyError,
+    counterpartyAssets: groups.counterparty,
+    zeldAssets: groups.zeld,
+    ordinals: groups.ordinals,
+    korAssets: groups.kor,
+    kontorNfts: groups.kontorNfts,
+    allAssets,
+    isEmpty,
+    errors,
+    lastFetchedAt,
+    isFetching,
+    refresh,
   };
+}
+
+function toError(reason: unknown): Error {
+  return reason instanceof Error ? reason : new Error(String(reason));
 }

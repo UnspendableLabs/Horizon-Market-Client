@@ -5,8 +5,8 @@ export type {
   UseLoginPanelOptions,
   UseLoginPanelResult,
 } from "./useLoginPanel.js";
-export { useAssets, zeldOption } from "./useAssets.js";
-export type { AssetOption } from "./useAssets.js";
+export { useAssets } from "./useAssets.js";
+export type { AssetOption, UseAssetsResult } from "./useAssets.js";
 export { useSellOrder } from "./useSellOrder.js";
 export type {
   SellOrderStep,

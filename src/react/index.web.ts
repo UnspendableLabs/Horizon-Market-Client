@@ -14,13 +14,13 @@ export {
   useSwapList,
   SORT_OPTIONS,
   SORT_OPTION_LABELS,
-  zeldOption,
 } from "./hooks/index.js";
 export type {
   LoginPanelPhase,
   UseLoginPanelOptions,
   UseLoginPanelResult,
   AssetOption,
+  UseAssetsResult,
   SellOrderStep,
   SellOrderStatus,
   SellOrderFormValues,

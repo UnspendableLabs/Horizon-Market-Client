@@ -4,6 +4,11 @@ export type {
   OpenSellOrderParams,
   FillSwapsParams,
   DelistSwapOptions,
+  CounterpartyBalance,
+  ZeldBalance,
+  KontorBalance,
+  KontorNftHolding,
+  KontorHoldings,
 } from "./client.js";
 
 // Kontor (KOR token + NFT) sell params and orphan-recovery error
@@ -64,6 +69,12 @@ export type {
 
 // Config
 export type { HorizonMarketClientOptions } from "./config.js";
+export {
+  DEFAULT_BASE_URL,
+  DEFAULT_KONTOR_INDEXER_URL,
+  DEFAULT_COUNTERPARTY_API_BASE_URL,
+  DEFAULT_ZELD_API_BASE_URL,
+} from "./config.js";
 
 // Advanced (fee-quotes)
 export type { FeeQuoteParams } from "./api/fee-quotes.js";

@@ -12,8 +12,13 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
+import type { AssetOption } from "../hooks/useAssets.js";
 import { useTheme } from "../hooks/useTheme.js";
-import { assetKey, describeAsset } from "../internal/format.js";
+import {
+  assetKey,
+  describeAsset,
+  formatRelativeTime,
+} from "../internal/format.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
 import { SummaryRow } from "../internal/SummaryRow.native.js";
@@ -80,6 +85,32 @@ function createSheet(theme: ResolvedTheme) {
       borderBottomWidth: theme.borderWidth,
       borderBottomColor: theme.colors.border,
     },
+    updatedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: theme.spacing.sm,
+    },
+    refreshButton: {
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: theme.spacing.xs,
+      borderWidth: theme.borderWidth,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radii.sm,
+    },
+    refreshText: {
+      color: theme.colors.text,
+      fontSize: theme.typography.fontSizeSm,
+    },
+    maxButton: {
+      marginTop: theme.spacing.xs,
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: theme.spacing.xs,
+      borderWidth: theme.borderWidth,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radii.sm,
+      alignSelf: "flex-start",
+    },
   });
 }
 
@@ -95,10 +126,12 @@ export function SellOrderForm({
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const {
     assets,
-    search,
-    setSearch,
     showQuantity,
     submitDisabled,
+    maxQuantity,
+    lastFetchedAt,
+    isFetching,
+    refresh,
     step,
     formValues,
     setFormValues,
@@ -118,17 +151,52 @@ export function SellOrderForm({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const sections = useMemo(
-    () => [
-      { title: "ZELD", data: [assets.zeldOption] },
-      { title: "Counterparty", data: assets.counterpartyAssets },
-      { title: "Ordinals", data: assets.ordinals },
+    () =>
+      [
+        { title: "Counterparty", data: assets.counterpartyAssets },
+        { title: "ZELD", data: assets.zeldAssets },
+        { title: "KOR", data: assets.korAssets },
+        { title: "Kontor NFTs", data: assets.kontorNfts },
+        { title: "Ordinals", data: assets.ordinals },
+      ].filter((s) => s.data.length > 0),
+    [
+      assets.counterpartyAssets,
+      assets.zeldAssets,
+      assets.korAssets,
+      assets.kontorNfts,
+      assets.ordinals,
     ],
-    [assets.zeldOption, assets.counterpartyAssets, assets.ordinals],
   );
+
+  const nonFatalErrors = [
+    assets.errors.counterparty &&
+      `Counterparty: ${assets.errors.counterparty.message}`,
+    assets.errors.zeld && `ZELD: ${assets.errors.zeld.message}`,
+    assets.errors.ordinals && `Ordinals: ${assets.errors.ordinals.message}`,
+    assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
+  ].filter((m): m is string => Boolean(m));
 
   if (step === "form") {
     return (
       <View style={[common.root, style, stylesProp?.root]}>
+        <View style={sheet.updatedRow}>
+          <Text style={[common.muted, stylesProp?.label]}>
+            Updated {formatRelativeTime(lastFetchedAt)}
+          </Text>
+          <Pressable
+            disabled={isFetching}
+            onPress={refresh}
+            style={[
+              sheet.refreshButton,
+              isFetching && common.buttonDisabled,
+              stylesProp?.buttonSecondary,
+            ]}
+          >
+            <Text style={[sheet.refreshText, stylesProp?.buttonSecondaryText]}>
+              {isFetching ? "Refreshing…" : "Refresh"}
+            </Text>
+          </Pressable>
+        </View>
         <View>
           <Text style={[common.label, stylesProp?.label]}>Asset</Text>
           <Pressable
@@ -144,23 +212,42 @@ export function SellOrderForm({
             >
               {formValues.asset
                 ? describeAsset(formValues.asset)
-                : "Select an asset…"}
+                : assets.isEmpty
+                  ? "No assets to sell"
+                  : "Select an asset…"}
             </Text>
           </Pressable>
         </View>
+        {nonFatalErrors.length > 0 && (
+          <Text style={[common.error, stylesProp?.error]}>
+            {nonFatalErrors.join(" · ")}
+          </Text>
+        )}
         {showQuantity && (
           <View>
             <Text style={[common.label, stylesProp?.label]}>Quantity</Text>
             <TextInput
               value={formValues.quantity}
               onChangeText={(t) =>
-                setFormValues({ quantity: t.replace(/[^0-9]/g, "") })
+                setFormValues({ quantity: t.replace(/[^0-9.]/g, "") })
               }
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               placeholder="0"
               placeholderTextColor={theme.colors.textMuted}
               style={[common.input, stylesProp?.input]}
             />
+            {maxQuantity && (
+              <Pressable
+                onPress={() => setFormValues({ quantity: maxQuantity })}
+                style={[sheet.maxButton, stylesProp?.buttonSecondary]}
+              >
+                <Text
+                  style={[sheet.refreshText, stylesProp?.buttonSecondaryText]}
+                >
+                  Max ({maxQuantity})
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
         <View>
@@ -205,33 +292,6 @@ export function SellOrderForm({
               onPress={() => setPickerOpen(false)}
             />
             <View style={sheet.modalSheet} onStartShouldSetResponder={() => true}>
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search…"
-                placeholderTextColor={theme.colors.textMuted}
-                style={[common.input, stylesProp?.input]}
-              />
-              {assets.isSearching && (
-                <Text style={[common.muted, stylesProp?.label]}>
-                  Searching…
-                </Text>
-              )}
-              {assets.counterpartyError && (
-                <Text style={[common.error, stylesProp?.error]}>
-                  {assets.counterpartyError.message}
-                </Text>
-              )}
-              {assets.isLoadingOrdinals && (
-                <Text style={[common.muted, stylesProp?.label]}>
-                  Loading ordinals…
-                </Text>
-              )}
-              {assets.ordinalsError && (
-                <Text style={[common.error, stylesProp?.error]}>
-                  Ordinals: {assets.ordinalsError.message}
-                </Text>
-              )}
               <SectionList
                 sections={sections}
                 keyExtractor={(item) => assetKey(item)}
@@ -239,7 +299,7 @@ export function SellOrderForm({
                 renderSectionHeader={({ section }) => (
                   <Text style={sheet.sectionHeader}>{section.title}</Text>
                 )}
-                renderItem={({ item }) => (
+                renderItem={({ item }: { item: AssetOption }) => (
                   <Pressable
                     onPress={() => {
                       setFormValues({ asset: item });
@@ -253,7 +313,9 @@ export function SellOrderForm({
                   </Pressable>
                 )}
                 ListEmptyComponent={
-                  <Text style={sheet.placeholder}>No assets</Text>
+                  <Text style={sheet.placeholder}>
+                    {isFetching ? "Loading your assets…" : "No assets to sell"}
+                  </Text>
                 }
               />
             </View>
@@ -264,6 +326,9 @@ export function SellOrderForm({
   }
 
   if (step === "confirm" && formValues.asset) {
+    const showSummaryQuantity =
+      formValues.asset.type !== "ordinal" &&
+      formValues.asset.type !== "kontor-nft";
     return (
       <View style={[common.root, style, stylesProp?.root]}>
         <View style={[common.summaryStack, stylesProp?.summary]}>
@@ -272,7 +337,7 @@ export function SellOrderForm({
             value={describeAsset(formValues.asset)}
             sheet={common}
           />
-          {formValues.asset.type !== "ordinal" && (
+          {showSummaryQuantity && (
             <SummaryRow
               label="Quantity"
               value={formValues.quantity}

@@ -55,6 +55,9 @@ export default function App() {
     <HorizonMarketProvider
       network="mainnet"
       baseUrl={import.meta.env.VITE_HORIZON_MARKET_URL}
+      // Ordinals only load when an ord API base URL is configured. Counterparty
+      // and ZELD use their public-API defaults, so no extra config is needed.
+      ordApiBaseUrl={import.meta.env.VITE_ORD_API_URL}
       theme={HORIZON_THEME}
     >
       <SessionRestorer />

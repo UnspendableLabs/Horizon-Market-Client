@@ -32,8 +32,22 @@ import { fillKontorSwap } from "./workflows/buy-kontor.js";
 import { delistKontorSwap } from "./workflows/delist-kontor.js";
 import { resolveKontorChain } from "./kontor/chain.js";
 import type { KontorContext } from "./kontor/context.js";
+import { makeKontorReadSession } from "./kontor/session.js";
+import { bindKontorToken, bindKontorNft } from "./kontor/contracts.js";
+import { holderCandidates } from "./kontor/holders.js";
+import {
+  getCounterpartyBalances as apiGetCounterpartyBalances,
+  type CounterpartyBalance,
+} from "./api/counterparty.js";
+import { getZeldBalance as apiGetZeldBalance, type ZeldBalance } from "./api/zeld.js";
+import { resolveFetch } from "./api/resolveFetch.js";
 import type { HorizonMarketClientOptions } from "./config.js";
-import { DEFAULT_BASE_URL, DEFAULT_KONTOR_INDEXER_URL } from "./config.js";
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_KONTOR_INDEXER_URL,
+  DEFAULT_COUNTERPARTY_API_BASE_URL,
+  DEFAULT_ZELD_API_BASE_URL,
+} from "./config.js";
 import {
   assertNonEmptySwapIds,
   assertBuyQuoteParams,
@@ -70,6 +84,36 @@ import type {
 
 export type { OpenSellOrderParams } from "./workflows/sell.js";
 export type { FillSwapsParams } from "./workflows/buy.js";
+export type { CounterpartyBalance } from "./api/counterparty.js";
+export type { ZeldBalance } from "./api/zeld.js";
+
+/** The connected wallet's KOR token balance (native Kontor token). */
+export interface KontorBalance {
+  /** KOR amount as a decimal string (e.g. "100.5"). "0" when none. */
+  amount: string;
+  /** The taproot address whose x-only key holds the balance. */
+  address: string;
+}
+
+/** A single Kontor NFT owned by the connected wallet. */
+export interface KontorNftHolding {
+  nftId: string;
+  /** NFT contract address (`name@height.txIndex`). */
+  contractAddress: string;
+  /** The taproot address whose x-only key holds the NFT. */
+  address: string;
+}
+
+/** Result of `getKontorHoldings` — KOR balance + owned NFTs (empty when unset). */
+export interface KontorHoldings {
+  kor: KontorBalance | null;
+  nfts: KontorNftHolding[];
+}
+
+// `list_nfts_by_holder` clamps `limit` to 100 per call; page with `offset` up to
+// this many NFTs per holder candidate to bound the work.
+const KONTOR_NFT_PAGE = 100n;
+const KONTOR_NFT_MAX_PER_HOLDER = 1000n;
 
 /** Options for `delistSwap`. Kontor delists may carry `fundingUtxos` for the on-chain revoke. */
 export interface DelistSwapOptions extends WorkflowOptions {
@@ -92,6 +136,10 @@ export class HorizonMarketClient {
   private readonly btcNetwork: btc.Network;
   private readonly kontorNetwork?: "signet";
   private readonly kontorIndexerUrl: string;
+  private readonly kontorNftContractAddress?: string;
+  private readonly counterpartyApiBaseUrl: string;
+  private readonly zeldApiBaseUrl: string;
+  private readonly fetch: typeof globalThis.fetch;
 
   constructor(options: HorizonMarketClientOptions = {}) {
     this.network = options.network ?? "mainnet";
@@ -100,6 +148,11 @@ export class HorizonMarketClient {
     this.kontorNetwork = options.kontorNetwork;
     this.kontorIndexerUrl =
       options.kontorIndexerUrl ?? DEFAULT_KONTOR_INDEXER_URL;
+    this.kontorNftContractAddress = options.kontorNftContractAddress;
+    this.counterpartyApiBaseUrl =
+      options.counterpartyApiBaseUrl ?? DEFAULT_COUNTERPARTY_API_BASE_URL;
+    this.zeldApiBaseUrl = options.zeldApiBaseUrl ?? DEFAULT_ZELD_API_BASE_URL;
+    this.fetch = resolveFetch(options.fetch);
 
     this.http = new HttpClient({
       baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
@@ -151,6 +204,128 @@ export class HorizonMarketClient {
       indexerUrl: this.kontorIndexerUrl,
       btcNetwork: this.btcNetwork,
     };
+  }
+
+  // ─── Owned-balance reads (public protocol APIs) ──────────────────────────────
+
+  /**
+   * Read the connected wallet's owned XCP + Counterparty asset balances across
+   * the given `addresses` (e.g. P2WPKH + P2TR), each row tagged with its holding
+   * address. Calls the public Counterparty API v2 directly via the client's
+   * `fetch`. **Mainnet only** — returns `[]` on non-mainnet. Excludes ZELD (its
+   * own protocol — see {@link getZeldBalances}).
+   */
+  async getCounterpartyBalances(
+    addresses: string[],
+  ): Promise<CounterpartyBalance[]> {
+    if (this.network !== "mainnet") return [];
+    const unique = [...new Set(addresses.filter(Boolean))];
+    const perAddress = await Promise.all(
+      unique.map((address) =>
+        apiGetCounterpartyBalances(
+          this.fetch,
+          this.counterpartyApiBaseUrl,
+          address,
+        ),
+      ),
+    );
+    return perAddress.flat();
+  }
+
+  /**
+   * Read the connected wallet's ZELD balance across the given `addresses`, summed
+   * per address. ZELD is its own protocol (not a Counterparty asset) and
+   * **mainnet only** — returns `[]` on non-mainnet. Returns one entry per address
+   * that holds ZELD (`balance > 0`).
+   */
+  async getZeldBalances(addresses: string[]): Promise<ZeldBalance[]> {
+    if (this.network !== "mainnet") return [];
+    const unique = [...new Set(addresses.filter(Boolean))];
+    const results = await Promise.all(
+      unique.map((address) =>
+        apiGetZeldBalance(this.fetch, this.zeldApiBaseUrl, address),
+      ),
+    );
+    return results.filter((b): b is ZeldBalance => b !== null);
+  }
+
+  /**
+   * Read the connected wallet's Kontor holdings — KOR token balance and owned
+   * NFTs — via a read-only KontorSession. Requires `kontorNetwork: "signet"` (and
+   * the client `network` to be "testnet"); returns empty holdings when Kontor is
+   * not configured rather than throwing. NFT enumeration additionally requires
+   * `kontorNftContractAddress` (there is no cross-contract "all NFTs owned"
+   * query).
+   */
+  async getKontorHoldings(): Promise<KontorHoldings> {
+    const signer = this.signer;
+    if (!signer || !this.kontorNetwork) return { kor: null, nfts: [] };
+
+    const chain = resolveKontorChain(this.kontorNetwork);
+    if (!chain || this.network !== "testnet") return { kor: null, nfts: [] };
+
+    const addresses = signer.getAddresses();
+    const xOnly = addresses.xOnlyPubkey;
+    const taprootAddress = addresses.p2tr;
+    if (!xOnly || !taprootAddress) return { kor: null, nfts: [] };
+
+    const session = makeKontorReadSession({
+      chain,
+      xOnlyPubkey: xOnly,
+      indexerUrl: this.kontorIndexerUrl,
+      fetch: this.fetch,
+    });
+
+    try {
+      // KOR balance for the session identity.
+      let kor: KontorBalance | null = null;
+      const raw = await bindKontorToken(session).balance(
+        session.identity.holderRef,
+      );
+      if (raw) {
+        const amount = raw.toString();
+        if (amount !== "0") kor = { amount, address: taprootAddress };
+      }
+
+      // NFTs — only when a contract address is configured.
+      const nfts: KontorNftHolding[] = [];
+      if (this.kontorNftContractAddress) {
+        const contractAddress = this.kontorNftContractAddress;
+        const nft = bindKontorNft(session, contractAddress);
+        const candidates = holderCandidates(
+          session.identity.xOnlyPubKey,
+          taprootAddress,
+        );
+        const seen = new Set<string>();
+        for (const holder of candidates) {
+          const total = await nft.countNftsByHolder(holder);
+          if (total <= 0n) continue;
+          const cap =
+            total < KONTOR_NFT_MAX_PER_HOLDER ? total : KONTOR_NFT_MAX_PER_HOLDER;
+          for (let offset = 0n; offset < cap; offset += KONTOR_NFT_PAGE) {
+            const page = await nft.listNftsByHolder(
+              holder,
+              offset,
+              KONTOR_NFT_PAGE,
+            );
+            for (const info of page) {
+              if (seen.has(info.nftId)) continue;
+              seen.add(info.nftId);
+              nfts.push({
+                nftId: info.nftId,
+                contractAddress,
+                address: taprootAddress,
+              });
+            }
+            if (BigInt(page.length) < KONTOR_NFT_PAGE) break;
+          }
+        }
+      }
+
+      return { kor, nfts };
+    } finally {
+      session.close();
+    }
   }
 
   // ─── Authentication (platform-fee credits) ──────────────────────────────────

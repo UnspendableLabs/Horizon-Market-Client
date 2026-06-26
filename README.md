@@ -116,7 +116,7 @@ function App() {
 | `useLoginPanel`, `useAssets`, `useSellOrder`, `useSwapConfirmation`, `useSwapList` | Headless hooks (build your own UI) |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
-| `SellOrderForm` | Multi-step sell listing (asset search, confirm, progress) |
+| `SellOrderForm` | Multi-step sell listing from the wallet's owned balances (pick asset, confirm, progress) |
 | `SwapConfirmation` | Buy or delist a swap with progress UI |
 | `WorkflowProgress` | Standalone progress list (also used inside the forms) |
 
@@ -257,8 +257,19 @@ new HorizonMarketClient({
   fetch?: typeof globalThis.fetch,   // injectable fetch (for tests / custom runtimes)
   kontorNetwork?: "signet",          // enable Kontor ops (signet-only today; requires network: "testnet")
   kontorIndexerUrl?: string,         // default: public signet indexer; set for self-hosting / browser CORS
+  kontorNftContractAddress?: string, // NFT contract to enumerate owned Kontor NFTs (no cross-contract query)
+  counterpartyApiBaseUrl?: string,   // owned-balance reads; default: "https://api.counterparty.io:4000" (mainnet only)
+  zeldApiBaseUrl?: string,           // ZELD balance reads (own protocol); default: "https://api.zeldhash.com" (mainnet only)
 })
 ```
+
+### Owned-Balance Reads
+
+Read the connected wallet's real holdings (used by `SellOrderForm` / `useAssets`):
+
+- `getCounterpartyBalances(addresses)` — XCP + Counterparty assets per address (mainnet; excludes ZELD)
+- `getZeldBalances(addresses)` — ZELD balance per address from the ZeldHash API (its own protocol; mainnet only)
+- `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`)
 
 ### Workflow Methods
 
