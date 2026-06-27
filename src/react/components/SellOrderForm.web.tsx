@@ -2,15 +2,18 @@ import { useMemo } from "react";
 import type { CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import type { AssetOption } from "../hooks/useAssets.js";
+import { useHorizonMarket } from "../context.js";
 import {
   assetKey,
   cx,
   describeAsset,
   formatRelativeTime,
+  mempoolTxUrl,
 } from "../internal/format.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SummaryRow } from "../internal/SummaryRow.web.js";
 import * as ws from "../internal/styles.web.js";
+import { webTokens } from "../theme.js";
 import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
 import {
   WorkflowProgress,
@@ -61,6 +64,19 @@ const maxButton: CSSProperties = {
   alignSelf: "flex-start",
 };
 
+const pendingNote: CSSProperties = {
+  fontSize: webTokens.fontSizeSm,
+  color: webTokens.textMuted,
+  lineHeight: 1.5,
+};
+
+const mempoolLink: CSSProperties = {
+  color: webTokens.primary,
+  fontWeight: 600,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
 interface AssetGroupDef {
   label: string;
   options: AssetOption[];
@@ -97,6 +113,8 @@ export function SellOrderForm({
     result,
     error,
   } = useSellOrderFormController({ defaultSatsPerVbyte, onSuccess, onError });
+
+  const { network, kontorNetwork } = useHorizonMarket();
 
   const assetIndex = useMemo(() => {
     const m = new Map<string, AssetOption>();
@@ -304,22 +322,58 @@ export function SellOrderForm({
     );
   }
 
+  // result step. A freshly created listing whose asset UTXO isn't confirmed yet
+  // (counterparty attach / zeld transfer prep) won't appear in the marketplace
+  // until its funding tx confirms — so it's "submitted", not "live", and we
+  // surface a mempool.space link to that tx.
+  const successResult = status === "success" ? result : null;
+  const pendingConfirmation =
+    successResult?.created === true && successResult.swap.funded === false;
+  const fundingTxid =
+    successResult?.swap.assetUtxoId?.split(":")[0] ??
+    successResult?.swap.txId ??
+    null;
+  const trackUrl = pendingConfirmation
+    ? mempoolTxUrl(network, kontorNetwork, fundingTxid)
+    : null;
+
+  const successMessage = successResult
+    ? !successResult.created
+      ? "Listing already exists (no changes)."
+      : successResult.swap.funded
+        ? "Your listing is live!"
+        : "Sell order submitted!"
+    : undefined;
+
   return (
     <div className={cx(classNames?.root, className)} style={root}>
       <WorkflowProgress
         steps={steps}
         totalSteps={totalSteps}
         status={status}
-        successMessage={
-          status === "success" && result
-            ? result.created
-              ? "Your listing is live!"
-              : "Listing already exists (no changes)."
-            : undefined
-        }
+        successMessage={successMessage}
         errorMessage={error?.message}
         classNames={classNames?.progress}
       />
+      {pendingConfirmation && (
+        <div className={classNames?.success} style={pendingNote}>
+          Your order will appear in the marketplace once its transaction is
+          confirmed on-chain.
+          {trackUrl && (
+            <>
+              {" "}
+              <a
+                href={trackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={mempoolLink}
+              >
+                Track it on mempool.space →
+              </a>
+            </>
+          )}
+        </div>
+      )}
       <ResultActions
         isError={status === "error"}
         onBack={goBack}

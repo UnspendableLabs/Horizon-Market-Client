@@ -305,9 +305,11 @@ export function Header() {
         />
       </Modal>
 
-      {/* Sell modal */}
+      {/* Sell modal — kept open on success so SellOrderForm's result screen
+          (success message + mempool.space link) is shown; the user dismisses it
+          via the ✕ / Escape / overlay, or starts another with "New order". */}
       <Modal open={sellOpen} onClose={() => setSellOpen(false)}>
-        <SellOrderForm onSuccess={() => setSellOpen(false)} />
+        <SellOrderForm />
       </Modal>
     </>
   );

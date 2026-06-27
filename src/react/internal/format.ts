@@ -77,6 +77,26 @@ export function truncate(s: string, head = 8, tail = 6): string {
   return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
+/**
+ * mempool.space transaction explorer URL for the active network, or null when
+ * `txid` is missing. Signet shares the SDK's `testnet` params, so it's
+ * distinguished by `kontorNetwork === "signet"`.
+ */
+export function mempoolTxUrl(
+  network: "mainnet" | "testnet",
+  kontorNetwork: "signet" | undefined,
+  txid: string | null | undefined,
+): string | null {
+  if (!txid) return null;
+  const base =
+    network === "mainnet"
+      ? "https://mempool.space"
+      : kontorNetwork === "signet"
+        ? "https://mempool.space/signet"
+        : "https://mempool.space/testnet";
+  return `${base}/tx/${txid}`;
+}
+
 /** "Never" / "just now" / "N min ago" / "N hr ago" / "N day(s) ago". */
 export function formatRelativeTime(
   fetchedAt: number | null,
