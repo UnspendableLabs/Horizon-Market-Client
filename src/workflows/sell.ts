@@ -7,6 +7,7 @@ import { WorkflowProgressReporter } from "./progress.js";
 import type {
   AtomicSwap,
   AtomicSwapCreateRequest,
+  FeePayment,
   ListingType,
   WorkflowOptions,
 } from "../types/index.js";
@@ -146,8 +147,9 @@ export async function openSellOrder(
     signer.signPsbtHex(quote.swapPsbt, quote.swapInputsToSign),
   );
 
-  let feePayment: { psbtHex: string; feePaymentId: string } | undefined;
+  let feePayment: FeePayment | undefined;
   if (quote.feePsbt && quote.feePaymentId) {
+    // Separate platform-fee PSBT (existing-UTXO counterparty/ordinal, zeld existing UTXO).
     const signedFeePsbt = progress.runSync("signFeePsbt", () =>
       signer.signPsbtHex(quote.feePsbt!, quote.feeInputsToSign),
     );
@@ -155,6 +157,16 @@ export async function openSellOrder(
       psbtHex: signedFeePsbt,
       feePaymentId: quote.feePaymentId,
     };
+  } else if (
+    quote.prepKind === "attach" &&
+    !quote.feeWaived &&
+    quote.feePaymentId
+  ) {
+    // Folded fee: the platform-fee output rides inside the attach prep tx (sent
+    // as funding_tx_hex), so there is no separate fee PSBT to sign — submit the
+    // payment id alone. Required for anonymous listings (server rejects an
+    // anonymous create with neither fee_payment nor zeld_payment).
+    feePayment = { feePaymentId: quote.feePaymentId };
   }
 
   const createReq: AtomicSwapCreateRequest = {

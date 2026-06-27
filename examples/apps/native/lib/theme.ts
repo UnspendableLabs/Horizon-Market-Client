@@ -65,9 +65,10 @@ export const HORIZON_THEME = {
   typography: {
     fontFamily: fonts.sans,
   },
+  // The SDK theme (and RN's borderRadius) take numeric radii, not CSS strings.
   radii: {
-    sm: `${radii.sm}px`,
-    md: `${radii.md}px`,
-    lg: `${radii.lg}px`,
+    sm: radii.sm,
+    md: radii.md,
+    lg: radii.lg,
   },
 } as const;

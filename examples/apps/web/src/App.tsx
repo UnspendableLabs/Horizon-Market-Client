@@ -1,7 +1,14 @@
 import { HorizonMarketProvider, SwapList, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header.js";
+import { Footer } from "./components/Footer.js";
 import { getPrivateKey } from "./lib/web3auth.js";
+import {
+  NETWORKS,
+  getInitialNetwork,
+  persistNetwork,
+  type UiNetwork,
+} from "./lib/networks.js";
 
 /**
  * Restores an existing Web3Auth session on app startup — crucially after the
@@ -51,46 +58,69 @@ const HORIZON_THEME = {
 } as const;
 
 export default function App() {
+  // Network is chosen at runtime via the footer toggle. Switching remounts the
+  // provider (key={network}) so SessionRestorer re-derives addresses for the
+  // newly selected network from the same Web3Auth key.
+  const [network, setNetwork] = useState<UiNetwork>(getInitialNetwork);
+
+  const handleNetworkChange = (next: UiNetwork) => {
+    persistNetwork(next);
+    setNetwork(next);
+  };
+
+  // `sdkNetwork` is the SDK network ("mainnet" | "testnet"); `providerConfig`
+  // carries the remaining provider props (on signet: kontorNetwork +
+  // signet-specific URLs). `label` is UI-only, so it's dropped here.
+  const { sdkNetwork, label: _label, ...providerConfig } = NETWORKS[network];
+  void _label;
+
   return (
-    <HorizonMarketProvider
-      network="mainnet"
-      baseUrl={import.meta.env.VITE_HORIZON_MARKET_URL}
-      // Ordinals only load when an ord API base URL is configured. Counterparty
-      // and ZELD use their public-API defaults, so no extra config is needed.
-      ordApiBaseUrl={import.meta.env.VITE_ORD_API_URL}
-      theme={HORIZON_THEME}
-    >
-      <SessionRestorer />
-      <Header />
-      <main
-        style={{
-          flex: 1,
-          width: "100%",
-          maxWidth: "var(--content-max-width)",
-          margin: "0 auto",
-          // No top padding: the 24px gap below the header lives inside the
-          // sticky toolbar (pt-6) instead, so the toolbar never shifts up when
-          // it pins — it rests exactly where it sticks.
-          padding: "0 24px 64px",
-        }}
+    <>
+      <HorizonMarketProvider
+        key={network}
+        network={sdkNetwork}
+        // providerConfig carries the per-network API config (Horizon, ord,
+        // Counterparty, ZELD, Kontor). Mainnet falls back to the SDK's public
+        // defaults; signet uses the *_SIGNET values from .env.local.
+        {...providerConfig}
+        theme={HORIZON_THEME}
       >
-        <SwapList
-          getPrivateKey={getPrivateKey}
-          classNames={{
-            // Pins the filter bar at the header's bottom edge
-            // (--header-height, see globals.css).
-            // pt-6/pb-6 (24px) hold the gaps above and below the filters
-            // *inside* the sticky box, so the bar stays at its initial position
-            // instead of jumping up against the header, and its background
-            // covers content scrolling behind it cleanly on both edges.
-            // toolbar-fullbleed makes the background span the full viewport
-            // width (past main's centered max-width) while keeping the filters
-            // aligned with the content column — see globals.css.
-            toolbar:
-              "sticky top-[var(--header-height)] z-40 bg-[#0b0b15] pt-6 pb-6 toolbar-fullbleed",
+        <SessionRestorer />
+        <Header />
+        <main
+          style={{
+            flex: 1,
+            width: "100%",
+            maxWidth: "var(--content-max-width)",
+            margin: "0 auto",
+            // No top padding: the 24px gap below the header lives inside the
+            // sticky toolbar (pt-6) instead, so the toolbar never shifts up when
+            // it pins — it rests exactly where it sticks.
+            padding: "0 24px 64px",
           }}
-        />
-      </main>
-    </HorizonMarketProvider>
+        >
+          <SwapList
+            getPrivateKey={getPrivateKey}
+            classNames={{
+              // Pins the filter bar at the header's bottom edge
+              // (--header-height, see globals.css).
+              // pt-6/pb-6 (24px) hold the gaps above and below the filters
+              // *inside* the sticky box, so the bar stays at its initial position
+              // instead of jumping up against the header, and its background
+              // covers content scrolling behind it cleanly on both edges.
+              // toolbar-fullbleed makes the background span the full viewport
+              // width (past main's centered max-width) while keeping the filters
+              // aligned with the content column — see globals.css.
+              toolbar:
+                "sticky top-[var(--header-height)] z-40 bg-[#0b0b15] pt-6 pb-6 toolbar-fullbleed",
+            }}
+          />
+        </main>
+      </HorizonMarketProvider>
+
+      {/* Footer lives outside the provider so it survives the key={network}
+          remount and can drive the switch. */}
+      <Footer network={network} onChange={handleNetworkChange} />
+    </>
   );
 }

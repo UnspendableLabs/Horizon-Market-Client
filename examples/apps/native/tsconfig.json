@@ -2,7 +2,15 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // The expo base sets moduleResolution: "node" (node10), which cannot read the
+    // SDK's package.json "exports" map, so the "/react" subpath fails to resolve.
+    // "bundler" matches how Metro actually resolves it and fixes the typecheck.
+    "moduleResolution": "bundler",
+    // Resolve the SDK's "react-native" export condition so typecheck uses the
+    // native ".native" declarations (e.g. SwapList's `scrollable` prop) — same
+    // condition Metro applies at bundle time.
+    "customConditions": ["react-native"]
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

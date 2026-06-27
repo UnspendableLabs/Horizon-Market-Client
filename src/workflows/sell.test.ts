@@ -669,6 +669,60 @@ describe("openSellOrder", () => {
     expect(body.psbt_hex).toBe("70736274ff_swap_signed");
   });
 
+  it("sends psbt-less fee_payment for counterparty attach folded fee", async () => {
+    // No exact asset UTXO → server folds the platform fee into the attach prep
+    // tx: fee_psbt is null but fee_payment_id is set and the fee is not waived.
+    // The create must carry fee_payment: { fee_payment_id } (no PSBT), otherwise
+    // anonymous listings are rejected with HTTP 400.
+    const quoteFoldedFee = {
+      ...WIRE_SELL_QUOTE,
+      fee_psbt: null,
+      fee_inputs_to_sign: [],
+      fee_payment_id: "fp_folded",
+      fee_waived: false,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      asset_utxo_id: "revealthash:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteFoldedFee } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signPsbtHexFn = vi.fn((hex: string, indices: number[]) =>
+      hex === FIXTURE_PSBT_HEX
+        ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+        : `${hex}_signed`,
+    );
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: signPsbtHexFn,
+      signMessage: () => "base64sig",
+    };
+
+    await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    // prep + swap only — no fee PSBT to sign for the folded fee.
+    expect(signPsbtHexFn).toHaveBeenCalledTimes(2);
+
+    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(createInit.body as string);
+    expect(body.fee_payment).toEqual({ fee_payment_id: "fp_folded" });
+    expect(body.fee_payment.psbt_hex).toBeUndefined();
+    expect(typeof body.funding_tx_hex).toBe("string");
+    expect(body.zeld_payment).toBeUndefined();
+  });
+
   it("passes reveal_tx_hex unchanged from quote when attach+reveal", async () => {
     const quoteWithReveal = {
       ...WIRE_SELL_QUOTE,

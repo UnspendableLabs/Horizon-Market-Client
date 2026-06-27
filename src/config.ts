@@ -47,14 +47,16 @@ export interface HorizonMarketClientOptions {
   kontorIndexerUrl?: string;
   /**
    * Counterparty API v2 base URL for reading the connected wallet's owned XCP +
-   * Counterparty asset balances. Defaults to `https://api.counterparty.io:4000`.
-   * Mainnet only — `getCounterpartyBalances` returns `[]` on non-mainnet.
+   * Counterparty asset balances. Defaults to `https://api.counterparty.io:4000`
+   * on mainnet. On other networks it's used only when set (so balances aren't
+   * read against the wrong network); unset → `getCounterpartyBalances` returns `[]`.
    */
   counterpartyApiBaseUrl?: string;
   /**
    * ZeldHash API base URL for reading the connected wallet's ZELD balance. ZELD
-   * is its own protocol (not a Counterparty asset) and mainnet only. Defaults to
-   * `https://api.zeldhash.com`.
+   * is its own protocol (not a Counterparty asset). Defaults to
+   * `https://api.zeldhash.com` on mainnet. On other networks it's used only when
+   * set; unset → `getZeldBalances` returns `[]`.
    */
   zeldApiBaseUrl?: string;
   /**

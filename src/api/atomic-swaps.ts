@@ -98,7 +98,9 @@ interface WireAtomicSwapCreateBody {
   asset_name?: string | null;
   asset_quantity?: number | string | null;
   expires_at?: string | null;
-  fee_payment?: { psbt_hex: string; fee_payment_id: string };
+  fee_payment?:
+    | { psbt_hex: string; fee_payment_id: string }
+    | { fee_payment_id: string };
   zeld_payment?: {
     zeld_send_txid: string;
     zeld_send_tx_hex: string;
@@ -328,10 +330,15 @@ export async function createSwap(
   }
   if (req.expiresAt !== undefined) body.expires_at = req.expiresAt;
   if (req.feePayment !== undefined) {
-    body.fee_payment = {
-      psbt_hex: req.feePayment.psbtHex,
-      fee_payment_id: req.feePayment.feePaymentId,
-    };
+    // Counterparty attach folded-fee listings send the id alone (no PSBT); the
+    // server maps a psbt-less fee_payment to the folded-fee create path.
+    body.fee_payment =
+      req.feePayment.psbtHex === undefined
+        ? { fee_payment_id: req.feePayment.feePaymentId }
+        : {
+            psbt_hex: req.feePayment.psbtHex,
+            fee_payment_id: req.feePayment.feePaymentId,
+          };
   }
   if (req.zeldPayment !== undefined) {
     body.zeld_payment = {

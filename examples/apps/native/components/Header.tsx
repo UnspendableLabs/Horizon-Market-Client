@@ -16,7 +16,7 @@ import {
   LoginPanel,
   SellOrderForm,
 } from "@unspendablelabs/horizon-market-client/react";
-import { getPrivateKey } from "../lib/web3auth.js";
+import { getPrivateKey, logout as web3authLogout } from "../lib/web3auth.js";
 import { colors, radii, spacing, fonts } from "../lib/theme.js";
 
 /* ── Logo (text-based, matches the Horizon Market wordmark style) ─ */
@@ -70,6 +70,19 @@ export function Header() {
   const handleLoginSuccess = () => {
     setLoginOpen(false);
     setSellOpen(true);
+  };
+
+  // Disconnect must clear *both* sessions: Horizon Market's local state (hides
+  // the wallet icon) and the Web3Auth session (persisted in expo-secure-store).
+  // Skipping the latter lets App.tsx's SessionRestorer silently reconnect on the
+  // next mount / network switch.
+  const handleLogout = async () => {
+    try {
+      await web3authLogout();
+    } catch (err) {
+      console.error("Web3Auth logout failed:", err);
+    }
+    logout();
   };
 
   return (
@@ -162,7 +175,7 @@ export function Header() {
               style={styles.disconnectButton}
               onPress={() => {
                 setWalletOpen(false);
-                logout();
+                void handleLogout();
               }}
               activeOpacity={0.7}
             >

@@ -46,6 +46,12 @@ export interface HorizonMarketProviderProps {
    * querying. Pair with `network="testnet"` (signet shares testnet params).
    */
   kontorNetwork?: "signet";
+  /**
+   * Kontor indexer URL the client reads from / submits signed transactions to.
+   * Defaults to the public signet indexer. Browser apps can point this at
+   * `${baseUrl}/api/kontor-indexer` to avoid CORS.
+   */
+  kontorIndexerUrl?: string;
   ordApiBaseUrl?: string;
   /** Counterparty API v2 base URL (owned balances). Defaults to the public API. */
   counterpartyApiBaseUrl?: string;
@@ -70,6 +76,7 @@ export function HorizonMarketProvider({
   network = "mainnet",
   baseUrl,
   kontorNetwork,
+  kontorIndexerUrl,
   ordApiBaseUrl,
   counterpartyApiBaseUrl,
   zeldApiBaseUrl,
@@ -87,6 +94,7 @@ export function HorizonMarketProvider({
         network,
         baseUrl,
         kontorNetwork,
+        kontorIndexerUrl,
         counterpartyApiBaseUrl,
         zeldApiBaseUrl,
         kontorNftContractAddress,
@@ -96,6 +104,7 @@ export function HorizonMarketProvider({
       network,
       baseUrl,
       kontorNetwork,
+      kontorIndexerUrl,
       counterpartyApiBaseUrl,
       zeldApiBaseUrl,
       kontorNftContractAddress,
@@ -111,6 +120,7 @@ export function HorizonMarketProvider({
             network,
             baseUrl,
             kontorNetwork,
+            kontorIndexerUrl,
             counterpartyApiBaseUrl,
             zeldApiBaseUrl,
             kontorNftContractAddress,
@@ -122,6 +132,7 @@ export function HorizonMarketProvider({
       network,
       baseUrl,
       kontorNetwork,
+      kontorIndexerUrl,
       counterpartyApiBaseUrl,
       zeldApiBaseUrl,
       kontorNftContractAddress,

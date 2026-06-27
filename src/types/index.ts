@@ -216,7 +216,12 @@ export interface FeeQuoteZeldTransferPrep {
 
 /** Signed platform fee PSBT submitted on create (counterparty, ordinal, zeld existing UTXO). */
 export interface FeePayment {
-  psbtHex: string;
+  /**
+   * Signed fee PSBT hex. Omitted for counterparty attach folded-fee listings —
+   * there the platform-fee output rides inside the attach prep tx (sent as
+   * `fundingTxHex`), so only the `feePaymentId` is submitted.
+   */
+  psbtHex?: string;
   feePaymentId: string;
 }
 

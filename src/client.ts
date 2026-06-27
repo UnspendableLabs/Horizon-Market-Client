@@ -137,8 +137,8 @@ export class HorizonMarketClient {
   private readonly kontorNetwork?: "signet";
   private readonly kontorIndexerUrl: string;
   private readonly kontorNftContractAddress?: string;
-  private readonly counterpartyApiBaseUrl: string;
-  private readonly zeldApiBaseUrl: string;
+  private readonly counterpartyApiBaseUrl: string | undefined;
+  private readonly zeldApiBaseUrl: string | undefined;
   private readonly fetch: typeof globalThis.fetch;
 
   constructor(options: HorizonMarketClientOptions = {}) {
@@ -149,9 +149,18 @@ export class HorizonMarketClient {
     this.kontorIndexerUrl =
       options.kontorIndexerUrl ?? DEFAULT_KONTOR_INDEXER_URL;
     this.kontorNftContractAddress = options.kontorNftContractAddress;
+    // Default the public APIs only on mainnet; on other networks they're called
+    // only when an explicit base URL is configured, so we never hit a mainnet
+    // endpoint with non-mainnet addresses. Counterparty already supports signet;
+    // ZELD/others light up the moment their network's base URL is provided.
     this.counterpartyApiBaseUrl =
-      options.counterpartyApiBaseUrl ?? DEFAULT_COUNTERPARTY_API_BASE_URL;
-    this.zeldApiBaseUrl = options.zeldApiBaseUrl ?? DEFAULT_ZELD_API_BASE_URL;
+      options.counterpartyApiBaseUrl ??
+      (this.network === "mainnet"
+        ? DEFAULT_COUNTERPARTY_API_BASE_URL
+        : undefined);
+    this.zeldApiBaseUrl =
+      options.zeldApiBaseUrl ??
+      (this.network === "mainnet" ? DEFAULT_ZELD_API_BASE_URL : undefined);
     this.fetch = resolveFetch(options.fetch);
 
     this.http = new HttpClient({
@@ -211,22 +220,21 @@ export class HorizonMarketClient {
   /**
    * Read the connected wallet's owned XCP + Counterparty asset balances across
    * the given `addresses` (e.g. P2WPKH + P2TR), each row tagged with its holding
-   * address. Calls the public Counterparty API v2 directly via the client's
-   * `fetch`. **Mainnet only** — returns `[]` on non-mainnet. Excludes ZELD (its
-   * own protocol — see {@link getZeldBalances}).
+   * address. Calls the Counterparty API v2 directly via the client's `fetch`.
+   * Returns `[]` when no Counterparty base URL is configured for the active
+   * network — the public default applies on mainnet; pass `counterpartyApiBaseUrl`
+   * to enable other networks (e.g. signet). Excludes ZELD (its own protocol —
+   * see {@link getZeldBalances}).
    */
   async getCounterpartyBalances(
     addresses: string[],
   ): Promise<CounterpartyBalance[]> {
-    if (this.network !== "mainnet") return [];
+    if (!this.counterpartyApiBaseUrl) return [];
+    const baseUrl = this.counterpartyApiBaseUrl;
     const unique = [...new Set(addresses.filter(Boolean))];
     const perAddress = await Promise.all(
       unique.map((address) =>
-        apiGetCounterpartyBalances(
-          this.fetch,
-          this.counterpartyApiBaseUrl,
-          address,
-        ),
+        apiGetCounterpartyBalances(this.fetch, baseUrl, address),
       ),
     );
     return perAddress.flat();
@@ -234,17 +242,17 @@ export class HorizonMarketClient {
 
   /**
    * Read the connected wallet's ZELD balance across the given `addresses`, summed
-   * per address. ZELD is its own protocol (not a Counterparty asset) and
-   * **mainnet only** — returns `[]` on non-mainnet. Returns one entry per address
-   * that holds ZELD (`balance > 0`).
+   * per address. ZELD is its own protocol (not a Counterparty asset). Returns `[]`
+   * when no ZELD base URL is configured for the active network — the public
+   * default applies on mainnet; pass `zeldApiBaseUrl` to enable other networks.
+   * Returns one entry per address that holds ZELD (`balance > 0`).
    */
   async getZeldBalances(addresses: string[]): Promise<ZeldBalance[]> {
-    if (this.network !== "mainnet") return [];
+    if (!this.zeldApiBaseUrl) return [];
+    const baseUrl = this.zeldApiBaseUrl;
     const unique = [...new Set(addresses.filter(Boolean))];
     const results = await Promise.all(
-      unique.map((address) =>
-        apiGetZeldBalance(this.fetch, this.zeldApiBaseUrl, address),
-      ),
+      unique.map((address) => apiGetZeldBalance(this.fetch, baseUrl, address)),
     );
     return results.filter((b): b is ZeldBalance => b !== null);
   }
