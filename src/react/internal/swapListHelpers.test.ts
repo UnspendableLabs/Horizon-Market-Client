@@ -7,6 +7,8 @@ import {
   mergeSwapsById,
   paginateSwaps,
   sortSwaps,
+  swapDisplayPricePerUnit,
+  swapDisplayQuantity,
   swapThumbnailUrl,
 } from "./swapListHelpers.js";
 
@@ -124,6 +126,60 @@ describe("clampPage", () => {
     expect(clampPage(2, 48, 24)).toBe(1);
     expect(clampPage(0, 48, 24)).toBe(0);
     expect(clampPage(5, 0, 24)).toBe(0);
+  });
+});
+
+// The server computes price_per_unit = price * 1e8 / rawQuantity for every
+// listing (verified against live horizon.market data). For divisible assets one
+// whole unit is 1e8 base units, so that value is already the price per whole
+// unit; for non-divisible assets it is over-scaled by 1e8.
+describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
+  it("divides the over-scaled per-unit price by 1e8 for non-divisible assets", () => {
+    // 2 units (raw 2) at 4000 sats total => server ppu 200,000,000,000, shows 2 × 2000.
+    const s = swap({
+      id: "a",
+      assetQuantity: 2n,
+      price: 4000,
+      pricePerUnit: 200_000_000_000,
+    });
+    expect(swapDisplayQuantity(s)).toBe((2).toLocaleString());
+    expect(swapDisplayPricePerUnit(s)).toBe(
+      (2000).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+    );
+  });
+
+  it("uses the server per-unit price as-is for divisible assets", () => {
+    // 1 whole unit (raw 1e8) at 25000 sats => server ppu already 25000 per whole unit.
+    const s = swap({
+      id: "b",
+      assetDivisibility: true,
+      assetQuantity: 100_000_000n,
+      price: 25000,
+      pricePerUnit: 25000,
+    });
+    expect(swapDisplayQuantity(s)).toBe((1).toLocaleString());
+    expect(swapDisplayPricePerUnit(s)).toBe(
+      (25000).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+    );
+  });
+
+  it("treats zeld listings as divisible (no rescale)", () => {
+    // 3000 whole units (raw 3e11) at 9000 sats => server ppu 3 per whole unit.
+    const s = swap({
+      id: "c",
+      listingType: "zeld",
+      assetQuantity: 300_000_000_000n,
+      price: 9000,
+      pricePerUnit: 3,
+    });
+    expect(swapDisplayQuantity(s)).toBe((3000).toLocaleString());
+    expect(swapDisplayPricePerUnit(s)).toBe(
+      (3).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+    );
+  });
+
+  it("returns null per-unit price when pricePerUnit is null", () => {
+    expect(swapDisplayPricePerUnit(swap({ id: "d", pricePerUnit: null }))).toBeNull();
   });
 });
 

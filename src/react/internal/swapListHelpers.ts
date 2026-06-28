@@ -49,6 +49,26 @@ export function swapDisplayQuantity(swap: AtomicSwap): string | null {
   return formatQuantity(swap.assetQuantity, divisible);
 }
 
+/**
+ * Per-unit price formatted for display.
+ *
+ * The server computes `pricePerUnit` as `price * 1e8 / rawQuantity` for every
+ * listing. For a divisible asset (zeld / `assetDivisibility`) one whole unit is
+ * 1e8 base units, so that formula already yields the price per *whole* unit —
+ * use it as-is. For a non-divisible asset `rawQuantity` is the literal unit
+ * count, so the server value is over-scaled by 1e8 and must be divided back down
+ * to read as sats per unit (e.g. "200,000,000,000" -> "2,000" for 2 units at
+ * 4,000 sats). This keeps the per-unit price consistent with the quantity shown
+ * by `swapDisplayQuantity`, so `quantity x perUnit` matches the total `price`.
+ */
+export function swapDisplayPricePerUnit(swap: AtomicSwap): string | null {
+  if (swap.pricePerUnit === null) return null;
+  const divisible =
+    swap.listingType === "zeld" || swap.assetDivisibility === true;
+  const perUnit = divisible ? swap.pricePerUnit : swap.pricePerUnit / 1e8;
+  return perUnit.toLocaleString(undefined, { maximumFractionDigits: 8 });
+}
+
 export function mergeSwapsById(lists: AtomicSwap[][]): AtomicSwap[] {
   const seen = new Set<string>();
   const merged: AtomicSwap[] = [];

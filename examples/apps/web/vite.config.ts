@@ -41,6 +41,21 @@ function stripBip39WordlistSourcemaps(): Plugin {
 export default defineConfig({
   plugins: [stripBip39WordlistSourcemaps(), react()],
   server: {
+    proxy: {
+      // The Kontor signet indexer (signet.kontor.network:35100) sends no CORS
+      // headers, so the browser blocks any direct cross-origin call to it
+      // ("Failed to fetch"). Proxy it through the dev server so the SDK can hit
+      // a same-origin relative path instead — set
+      // VITE_KONTOR_INDEXER_URL_SIGNET=/kontor-signet to use this.
+      // The indexer serves its routes under an `/api` prefix, so rewrite
+      // `/kontor-signet/...` → `/api/...` (stripping to "" yields 404s).
+      "/kontor-signet": {
+        target: "https://signet.kontor.network:35100",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/kontor-signet/, "/api"),
+      },
+    },
     fs: {
       // This app has its own package-lock.json, so Vite infers the workspace
       // root as the app dir and refuses to serve files above it. @kontor/sdk

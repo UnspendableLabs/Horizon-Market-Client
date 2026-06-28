@@ -327,8 +327,12 @@ export function SellOrderForm({
   // until its funding tx confirms — so it's "submitted", not "live", and we
   // surface a mempool.space link to that tx.
   const successResult = status === "success" ? result : null;
+  // Pending = a freshly created listing whose funding tx hasn't confirmed yet.
+  // `funded` can arrive falsy-but-not-strictly-false (e.g. undefined) over the
+  // wire, so mirror the falsy check used for the "Sell order submitted!" message
+  // below rather than `=== false`, otherwise the mempool note never renders.
   const pendingConfirmation =
-    successResult?.created === true && successResult.swap.funded === false;
+    Boolean(successResult?.created) && !successResult?.swap.funded;
   const fundingTxid =
     successResult?.swap.assetUtxoId?.split(":")[0] ??
     successResult?.swap.txId ??

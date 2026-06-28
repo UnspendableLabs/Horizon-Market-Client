@@ -5,6 +5,7 @@ import {
   swapThumbnailUrl,
   swapDisplayName,
   swapDisplayQuantity,
+  swapDisplayPricePerUnit,
 } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
@@ -119,6 +120,7 @@ export function SwapListItem({
   const thumbnail = swapThumbnailUrl(swap);
   const displayName = swapDisplayName(swap);
   const displayQuantity = swapDisplayQuantity(swap);
+  const displayPricePerUnit = swapDisplayPricePerUnit(swap);
   const showMeta =
     swap.listingType !== "ordinal" &&
     (displayQuantity !== null || swap.pricePerUnit !== null);
@@ -145,10 +147,10 @@ export function SwapListItem({
         {showMeta && (
           <span className={classNames?.meta} style={ws.mutedText}>
             {displayQuantity !== null && swap.pricePerUnit !== null
-              ? `${displayQuantity} × ${swap.pricePerUnit.toLocaleString()} sats/unit`
+              ? `${displayQuantity} × ${displayPricePerUnit} sats/unit`
               : displayQuantity !== null
                 ? `Qty: ${displayQuantity}`
-                : `${swap.pricePerUnit!.toLocaleString()} sats/unit`}
+                : `${displayPricePerUnit} sats/unit`}
           </span>
         )}
       </div>
