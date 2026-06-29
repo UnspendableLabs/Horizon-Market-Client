@@ -298,7 +298,11 @@ export function Header() {
       </header>
 
       {/* Login modal */}
-      <Modal open={loginOpen} onClose={() => setLoginOpen(false)}>
+      <Modal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        title="Login or sign up"
+      >
         <LoginPanel
           getPrivateKey={getPrivateKey}
           onSuccess={handleLoginSuccess}
@@ -308,7 +312,7 @@ export function Header() {
       {/* Sell modal — kept open on success so SellOrderForm's result screen
           (success message + mempool.space link) is shown; the user dismisses it
           via the ✕ / Escape / overlay, or starts another with "New order". */}
-      <Modal open={sellOpen} onClose={() => setSellOpen(false)}>
+      <Modal open={sellOpen} onClose={() => setSellOpen(false)} title="Sell">
         <SellOrderForm />
       </Modal>
     </>

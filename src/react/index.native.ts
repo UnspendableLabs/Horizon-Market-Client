@@ -51,6 +51,9 @@ export type {
 } from "./theme.js";
 export { defaultTheme, resolveTheme } from "./theme.js";
 
+export { Modal } from "./components/Modal.native.js";
+export type { ModalProps } from "./components/Modal.native.js";
+
 export { LoginPanel } from "./components/LoginPanel.native.js";
 export type {
   LoginPanelProps,

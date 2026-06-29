@@ -36,7 +36,7 @@ export interface LoginPanelProps {
   style?: CSSProperties;
 }
 
-const rootStyle: CSSProperties = { ...ws.cardRoot, maxWidth: 420 };
+const rootStyle: CSSProperties = ws.panelBody;
 
 const addressStyle: CSSProperties = {
   fontFamily: "monospace",

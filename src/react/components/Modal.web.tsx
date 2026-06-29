@@ -1,36 +1,30 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect } from "react";
 import * as ws from "../internal/styles.web.js";
-import { webTokens } from "../theme.js";
 
 export interface ModalProps {
   /** Whether the modal is visible. When false, nothing is rendered. */
   open: boolean;
-  /** Called when the overlay is clicked or the Escape key is pressed. */
+  /** Called when the overlay is clicked, the ✕ is pressed, or Escape is hit. */
   onClose: () => void;
+  /** Heading shown on the left of the title row, beside the close button. */
+  title?: ReactNode;
+  /** Max card width in px. Defaults to 450 (matches Horizon Market). */
+  maxWidth?: number;
   children: ReactNode;
 }
-
-const panelStyle: CSSProperties = {
-  position: "relative",
-  maxHeight: "90vh",
-  overflowY: "auto",
-  // Opaque base so the floating panel never shows the dimmed page through it,
-  // even when the theme's `surface` token is translucent. The child card
-  // (cardRoot, background = surface) composites on top for the visible surface.
-  background: webTokens.background,
-  borderRadius: webTokens.radiusLg,
-};
 
 /**
  * Shared overlay modal used across the library (and re-exported for consumers).
  *
- * Renders a dimmed full-screen overlay with a centered, opaque panel. Click the
- * overlay or press Escape to close. The panel content is expected to bring its
- * own card surface (e.g. LoginPanel / SellOrderForm / SwapConfirmation), which
- * sits on top of the opaque panel background.
+ * Renders a dimmed, blurred full-screen overlay with a centered card. The card
+ * is the visible surface (diagonal gradient, no border, generous padding, large
+ * radius) and carries a title row with the heading on the left and a ✕ on the
+ * right. Click the overlay, press ✕, or hit Escape to close. The panel content
+ * (LoginPanel / SellOrderForm / SwapConfirmation) is chrome-less and stacks
+ * directly under the title row.
  */
-export function Modal({ open, onClose, children }: ModalProps) {
+export function Modal({ open, onClose, title, maxWidth = 450, children }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -42,22 +36,27 @@ export function Modal({ open, onClose, children }: ModalProps) {
 
   if (!open) return null;
 
+  const cardStyle: CSSProperties = { ...ws.modalCard, maxWidth };
+
   return (
     <div style={ws.modalOverlay} onClick={onClose} role="presentation">
       <div
-        style={panelStyle}
+        style={cardStyle}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <button
-          type="button"
-          onClick={onClose}
-          style={ws.modalClose}
-          aria-label="Close"
-        >
-          ✕
-        </button>
+        <div style={ws.modalHeader}>
+          {title != null ? <h2 style={ws.modalTitle}>{title}</h2> : <span />}
+          <button
+            type="button"
+            onClick={onClose}
+            style={ws.modalClose}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
         {children}
       </div>
     </div>

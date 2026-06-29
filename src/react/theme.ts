@@ -4,6 +4,13 @@ export interface HorizonMarketThemeColors {
   primary?: string;
   primaryForeground?: string;
   background?: string;
+  /**
+   * Elevated background used for floating surfaces (modals). On the web this is
+   * the lighter stop of the modal's diagonal gradient; on native it's the modal
+   * card's solid fill. Defaults to a value close to `background`, so unset
+   * themes get a near-flat surface rather than a jarring gradient.
+   */
+  backgroundElevated?: string;
   surface?: string;
   border?: string;
   text?: string;
@@ -56,6 +63,7 @@ export const defaultTheme: ResolvedTheme = {
     primary: "#3b82f6",
     primaryForeground: "#ffffff",
     background: "#ffffff",
+    backgroundElevated: "#f9fafb",
     surface: "#f9fafb",
     border: "#e5e7eb",
     text: "#111827",
@@ -96,6 +104,7 @@ export function themeToCssVars(t: ResolvedTheme): CSSProperties {
     "--hm-primary": t.colors.primary,
     "--hm-primary-foreground": t.colors.primaryForeground,
     "--hm-background": t.colors.background,
+    "--hm-background-elevated": t.colors.backgroundElevated,
     "--hm-surface": t.colors.surface,
     "--hm-border": t.colors.border,
     "--hm-text": t.colors.text,
@@ -128,6 +137,8 @@ export const webTokens = {
   primaryForeground:
     "var(--hm-primary-foreground, var(--primary-foreground, #ffffff))",
   background: "var(--hm-background, var(--background, #ffffff))",
+  backgroundElevated:
+    "var(--hm-background-elevated, var(--card, #f9fafb))",
   surface: "var(--hm-surface, var(--card, #f9fafb))",
   border: "var(--hm-border, var(--border, #e5e7eb))",
   text: "var(--hm-text, var(--foreground, #111827))",

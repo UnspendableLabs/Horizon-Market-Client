@@ -42,7 +42,7 @@ export interface SellOrderFormProps {
   style?: CSSProperties;
 }
 
-const rootStyle: CSSProperties = { ...ws.cardRoot, maxWidth: 480 };
+const rootStyle: CSSProperties = ws.panelBody;
 
 const updatedRow: CSSProperties = {
   display: "flex",

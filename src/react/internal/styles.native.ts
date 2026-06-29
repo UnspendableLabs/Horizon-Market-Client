@@ -22,6 +22,11 @@ export function commonSheet(theme: ResolvedTheme) {
       borderColor: theme.colors.border,
       borderRadius: theme.radii.lg,
     },
+    // Chrome-less content stack for panels that live inside a Modal (the Modal
+    // owns the card surface). Mirrors `panelBody` in styles.web.ts.
+    panelBody: {
+      gap: theme.spacing.md,
+    },
     label: {
       fontSize: theme.typography.fontSizeSm,
       color: theme.colors.textMuted,

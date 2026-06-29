@@ -18,11 +18,25 @@ export function checkIsMySwap(
   );
 }
 
-export function swapThumbnailUrl(swap: AtomicSwap): string | null {
-  return swap.thumbnailUrl ?? swap.imageUrl;
+/**
+ * The image to show on a swap-list tile. Prefer `imageUrl` (the full-size
+ * artwork) over `thumbnailUrl`: the tile renders the image as a large square
+ * panel, so the 48×48 `thumbnail_url` — meant for small pictos — would look
+ * blurry stretched to that size. Fall back to it only when there's no full image.
+ */
+export function swapImageUrl(swap: AtomicSwap): string | null {
+  return swap.imageUrl ?? swap.thumbnailUrl;
 }
 
 export function swapDisplayName(swap: AtomicSwap): string {
+  if (swap.listingType === "kontor") {
+    // Kontor listings carry no Counterparty `assetName`. Tokens are always the
+    // native KOR token; NFTs fall back to their id (or a generic label).
+    if (swap.kontorAssetKind === "nft") {
+      return swap.assetName ?? swap.kontorNftId ?? "Kontor NFT";
+    }
+    return "KOR";
+  }
   if (swap.listingType === "ordinal") {
     return swap.inscriptionNumber !== null
       ? `#${swap.inscriptionNumber}`
@@ -41,7 +55,22 @@ export function formatQuantity(quantity: bigint, divisible: boolean): string {
   return `${whole.toLocaleString()}.${dec}`;
 }
 
+/** Format a Kontor token amount (a decimal string) for display. */
+function formatKontorAmount(amount: string): string {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return amount;
+  return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
+}
+
 export function swapDisplayQuantity(swap: AtomicSwap): string | null {
+  if (swap.listingType === "kontor") {
+    // KOR token amounts live in `kontorAmount` (a decimal string), not
+    // `assetQuantity`. NFTs are single, indivisible items with no quantity.
+    if (swap.kontorAssetKind === "nft") return null;
+    return swap.kontorAmount === null
+      ? null
+      : formatKontorAmount(swap.kontorAmount);
+  }
   if (swap.listingType === "ordinal") return null;
   if (swap.assetQuantity === null) return null;
   const divisible =
@@ -62,6 +91,17 @@ export function swapDisplayQuantity(swap: AtomicSwap): string | null {
  * by `swapDisplayQuantity`, so `quantity x perUnit` matches the total `price`.
  */
 export function swapDisplayPricePerUnit(swap: AtomicSwap): string | null {
+  if (swap.listingType === "kontor") {
+    // The server doesn't compute `pricePerUnit` for Kontor tokens, so derive
+    // sats-per-KOR from the total price and `kontorAmount`. NFTs are single
+    // items with no per-unit price.
+    if (swap.kontorAssetKind === "nft") return null;
+    const amount = Number(swap.kontorAmount ?? 0);
+    if (!amount || !Number.isFinite(amount)) return null;
+    return (swap.price / amount).toLocaleString(undefined, {
+      maximumFractionDigits: 8,
+    });
+  }
   if (swap.pricePerUnit === null) return null;
   const divisible =
     swap.listingType === "zeld" || swap.assetDivisibility === true;

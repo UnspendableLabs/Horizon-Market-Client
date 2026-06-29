@@ -1,5 +1,4 @@
 import {
-  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -17,6 +16,7 @@ import {
 } from "../hooks/useSwapList.js";
 import { FILTER_TABS } from "../internal/swapListConstants.js";
 import { useCommonSheet } from "../internal/styles.native.js";
+import { Modal } from "./Modal.native.js";
 import {
   SwapListItem,
   type SwapListItemStyles,
@@ -55,14 +55,6 @@ export interface SwapListProps extends UseSwapListOptions {
   style?: StyleProp<ViewStyle>;
   styles?: SwapListStyles;
 }
-
-const modalBackdropStyle = {
-  flex: 1,
-  backgroundColor: "rgba(0,0,0,0.55)",
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-  padding: 16,
-};
 
 export function SwapList({
   getPrivateKey,
@@ -271,50 +263,34 @@ export function SwapList({
 
       {/* Login modal */}
       <Modal
-        visible={loginModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={closeLoginModal}
+        open={loginModalOpen}
+        onClose={closeLoginModal}
+        title="Login or sign up"
       >
-        <View style={modalBackdropStyle}>
-          <View style={{ width: "100%", maxWidth: 420 }}>
-            <LoginPanel
-              getPrivateKey={getPrivateKey}
-              autoDetectSession={false}
-              onSuccess={handleLoginSuccess}
-              styles={stylesProp?.loginPanel}
-            />
-            <Pressable
-              onPress={closeLoginModal}
-              style={[common.buttonSecondary, { marginTop: 8 }]}
-            >
-              <Text style={common.buttonSecondaryText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
+        <LoginPanel
+          getPrivateKey={getPrivateKey}
+          autoDetectSession={false}
+          onSuccess={handleLoginSuccess}
+          styles={stylesProp?.loginPanel}
+        />
       </Modal>
 
       {/* Swap confirmation modal */}
       <Modal
-        visible={confirmationModalOpen && pendingSwap !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={closeConfirmationModal}
+        open={confirmationModalOpen && pendingSwap !== null}
+        onClose={closeConfirmationModal}
+        title={confirmationMode === "buy" ? "Buy" : "Delist"}
       >
-        <View style={modalBackdropStyle}>
-          <View style={{ width: "100%", maxWidth: 480 }}>
-            {pendingSwap && (
-              <SwapConfirmation
-                swap={pendingSwap}
-                mode={confirmationMode}
-                onBuySuccess={() => refetch()}
-                onDelistSuccess={() => refetch()}
-                onComplete={closeConfirmationModal}
-                styles={stylesProp?.confirmation}
-              />
-            )}
-          </View>
-        </View>
+        {pendingSwap && (
+          <SwapConfirmation
+            swap={pendingSwap}
+            mode={confirmationMode}
+            onBuySuccess={() => refetch()}
+            onDelistSuccess={() => refetch()}
+            onComplete={closeConfirmationModal}
+            styles={stylesProp?.confirmation}
+          />
+        )}
       </Modal>
     </View>
   );

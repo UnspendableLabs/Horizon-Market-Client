@@ -5,6 +5,7 @@ import {
   TEST_PRIVATE_KEY_HEX,
   FIXTURE_PSBT_HEX,
   buildTaprootPsbtFixture,
+  buildTaprootPsbtFixtureNoInternalKey,
 } from "../test-utils.js";
 
 describe("signPsbtHex", () => {
@@ -84,6 +85,24 @@ describe("signPsbtHex", () => {
       TEST_PRIVATE_KEY_HEX,
       network,
     );
+
+    const psbt = btc.Psbt.fromHex(signedHex, { network });
+    expect(psbt.data.inputs[0].tapKeySig).toBeDefined();
+    expect(psbt.data.inputs[0].tapKeySig!.length).toBeGreaterThan(0);
+    expect(psbt.data.inputs[0].partialSig).toBeUndefined();
+  });
+
+  // Regression: server-composed fee PSBTs carry only the P2TR `witnessUtxo` and
+  // omit `tapInternalKey`. bitcoinjs still routes them through its Taproot signer,
+  // so signing with the raw ECDSA key threw "Can not sign for input #0 with the
+  // key 03…". We must detect P2TR via the witnessUtxo script and key-path sign.
+  it("signs a P2TR key-path input that lacks tapInternalKey (fee PSBT)", () => {
+    const network = btc.networks.bitcoin;
+    const psbtHex = buildTaprootPsbtFixtureNoInternalKey(
+      TEST_PRIVATE_KEY_HEX,
+      network,
+    );
+    const signedHex = signPsbtHex(psbtHex, [0], TEST_PRIVATE_KEY_HEX, network);
 
     const psbt = btc.Psbt.fromHex(signedHex, { network });
     expect(psbt.data.inputs[0].tapKeySig).toBeDefined();

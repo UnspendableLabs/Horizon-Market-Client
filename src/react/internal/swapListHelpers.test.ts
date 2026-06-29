@@ -7,9 +7,10 @@ import {
   mergeSwapsById,
   paginateSwaps,
   sortSwaps,
+  swapDisplayName,
   swapDisplayPricePerUnit,
   swapDisplayQuantity,
-  swapThumbnailUrl,
+  swapImageUrl,
 } from "./swapListHelpers.js";
 
 function swap(
@@ -183,15 +184,68 @@ describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
   });
 });
 
-describe("swapThumbnailUrl", () => {
-  it("prefers thumbnail with image fallback", () => {
+// Kontor (KOR token / NFT) listings carry no Counterparty asset_name,
+// asset_quantity, or server-computed price_per_unit. Display is derived from
+// `kontorAssetKind` / `kontorAmount` instead.
+describe("kontor display", () => {
+  const korToken = (overrides = {}) =>
+    swap({
+      id: "k",
+      listingType: "kontor",
+      kontorAssetKind: "token",
+      assetName: null,
+      assetQuantity: null,
+      pricePerUnit: null,
+      kontorAmount: "2000",
+      price: 2000,
+      ...overrides,
+    });
+
+  it('names a token listing "KOR" and uses kontorAmount for quantity', () => {
+    const s = korToken();
+    expect(swapDisplayName(s)).toBe("KOR");
+    expect(swapDisplayQuantity(s)).toBe((2000).toLocaleString());
+  });
+
+  it("derives sats-per-KOR from price and kontorAmount", () => {
+    // 5000 sats for 2000 KOR => 2.5 sats/KOR.
+    const s = korToken({ price: 5000, kontorAmount: "2000" });
+    expect(swapDisplayPricePerUnit(s)).toBe(
+      (2.5).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+    );
+  });
+
+  it("has no quantity or per-unit price when kontorAmount is missing", () => {
+    const s = korToken({ kontorAmount: null });
+    expect(swapDisplayQuantity(s)).toBeNull();
+    expect(swapDisplayPricePerUnit(s)).toBeNull();
+  });
+
+  it("names an NFT listing by id and shows no quantity/per-unit price", () => {
+    const s = swap({
+      id: "n",
+      listingType: "kontor",
+      kontorAssetKind: "nft",
+      assetName: null,
+      assetQuantity: null,
+      pricePerUnit: null,
+      kontorNftId: "punk-42",
+    });
+    expect(swapDisplayName(s)).toBe("punk-42");
+    expect(swapDisplayQuantity(s)).toBeNull();
+    expect(swapDisplayPricePerUnit(s)).toBeNull();
+  });
+});
+
+describe("swapImageUrl", () => {
+  it("prefers the full image with thumbnail fallback", () => {
     expect(
-      swapThumbnailUrl(
+      swapImageUrl(
         swap({ id: "a", thumbnailUrl: "thumb.png", imageUrl: "full.png" }),
       ),
-    ).toBe("thumb.png");
-    expect(
-      swapThumbnailUrl(swap({ id: "b", thumbnailUrl: null, imageUrl: "full.png" })),
     ).toBe("full.png");
+    expect(
+      swapImageUrl(swap({ id: "b", thumbnailUrl: "thumb.png", imageUrl: null })),
+    ).toBe("thumb.png");
   });
 });

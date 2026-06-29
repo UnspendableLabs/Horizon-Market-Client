@@ -14,6 +14,21 @@ export const cardRoot: CSSProperties = {
   fontSize: webTokens.fontSizeBase,
 };
 
+/**
+ * Chrome-less content stack used by the panels that live inside a {@link Modal}
+ * (LoginPanel / SellOrderForm / SwapConfirmation). The Modal now owns the card
+ * surface (gradient background, padding, radius), so the panels just stack their
+ * fields — no background, border, or padding of their own.
+ */
+export const panelBody: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingMd,
+  color: webTokens.text,
+  fontFamily: webTokens.fontFamily,
+  fontSize: webTokens.fontSizeBase,
+};
+
 export const input: CSSProperties = {
   padding: webTokens.spacingSm,
   background: webTokens.background,
@@ -166,24 +181,69 @@ export const noImageText: CSSProperties = {
 export const modalOverlay: CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.55)",
+  background: "rgba(0,0,0,0.7)",
+  backdropFilter: "blur(8px)",
+  WebkitBackdropFilter: "blur(8px)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  padding: webTokens.spacingMd,
   zIndex: 1000,
+} as CSSProperties;
+
+/**
+ * Floating modal card (Horizon Market style): diagonal gradient fill, no border,
+ * generous padding, large radius. Owns the visible surface; its children stack
+ * directly on top (see {@link panelBody}).
+ */
+export const modalCard: CSSProperties = {
+  position: "relative",
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingLg,
+  width: "100%",
+  maxHeight: "90vh",
+  overflowY: "auto",
+  padding: 24,
+  background: `linear-gradient(224deg, ${webTokens.background} 52.98%, ${webTokens.backgroundElevated} 81.99%)`,
+  border: "none",
+  borderRadius: webTokens.radiusLg,
+  boxShadow: "0 24px 60px -12px rgba(0, 0, 0, 0.6)",
+  color: webTokens.text,
+  fontFamily: webTokens.fontFamily,
+  fontSize: webTokens.fontSizeBase,
+};
+
+export const modalHeader: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: webTokens.spacingMd,
+};
+
+export const modalTitle: CSSProperties = {
+  margin: 0,
+  fontSize: 18,
+  fontWeight: 700,
+  color: webTokens.text,
+  fontFamily: webTokens.fontFamily,
 };
 
 export const modalClose: CSSProperties = {
-  position: "absolute",
-  top: webTokens.spacingSm,
-  right: webTokens.spacingSm,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+  width: 32,
+  height: 32,
   background: "transparent",
   border: "none",
   cursor: "pointer",
   fontSize: webTokens.fontSizeLg,
-  color: webTokens.textMuted,
+  color: webTokens.text,
   lineHeight: "1",
-  padding: webTokens.spacingXs,
+  padding: 0,
+  borderRadius: webTokens.radiusSm,
 };
 
 export function filterTab(active: boolean): CSSProperties {

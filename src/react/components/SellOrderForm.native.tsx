@@ -178,7 +178,7 @@ export function SellOrderForm({
 
   if (step === "form") {
     return (
-      <View style={[common.root, style, stylesProp?.root]}>
+      <View style={[common.panelBody, style, stylesProp?.root]}>
         <View style={sheet.updatedRow}>
           <Text style={[common.muted, stylesProp?.label]}>
             Updated {formatRelativeTime(lastFetchedAt)}
@@ -330,7 +330,7 @@ export function SellOrderForm({
       formValues.asset.type !== "ordinal" &&
       formValues.asset.type !== "kontor-nft";
     return (
-      <View style={[common.root, style, stylesProp?.root]}>
+      <View style={[common.panelBody, style, stylesProp?.root]}>
         <View style={[common.summaryStack, stylesProp?.summary]}>
           <SummaryRow
             label="Asset"
@@ -389,7 +389,7 @@ export function SellOrderForm({
 
   if (step === "progress") {
     return (
-      <View style={[common.root, style, stylesProp?.root]}>
+      <View style={[common.panelBody, style, stylesProp?.root]}>
         <WorkflowProgress
           steps={steps}
           totalSteps={totalSteps}

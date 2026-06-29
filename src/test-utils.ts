@@ -54,6 +54,36 @@ export function buildTaprootPsbtFixture(
   return psbt.toHex();
 }
 
+/**
+ * Minimal P2TR key-path PSBT that carries ONLY the `witnessUtxo` and omits
+ * `tapInternalKey`, reproducing server-composed fee PSBT inputs (the
+ * "Fee PSBT signing failed" regression).
+ */
+export function buildTaprootPsbtFixtureNoInternalKey(
+  privateKeyHex: string = TEST_PRIVATE_KEY_HEX,
+  network: btc.Network = btc.networks.bitcoin,
+): string {
+  const keyPair = ECPair.fromPrivateKey(Buffer.from(privateKeyHex, "hex"), {
+    network,
+  });
+  const xOnlyPubkey = keyPair.publicKey.subarray(1, 33);
+  const p2tr = btc.payments.p2tr({ internalPubkey: xOnlyPubkey, network });
+  if (!p2tr.output) {
+    throw new Error("Failed to derive P2TR output script for fixture PSBT");
+  }
+
+  const psbt = new btc.Psbt({ network });
+  psbt.addInput({
+    hash: "a".repeat(64),
+    index: 0,
+    witnessUtxo: { script: p2tr.output, value: BigInt(100_000) },
+    // Intentionally NO tapInternalKey — bitcoinjs still routes this through its
+    // Taproot signer because the witnessUtxo script is P2TR.
+  });
+  psbt.addOutput({ script: p2tr.output, value: BigInt(99_000) });
+  return psbt.toHex();
+}
+
 // ─── Mock fetch helpers ───────────────────────────────────────────────────────
 
 export function makeFetch(

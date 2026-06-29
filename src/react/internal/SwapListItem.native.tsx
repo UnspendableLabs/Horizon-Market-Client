@@ -14,7 +14,7 @@ import type { AtomicSwap } from "../../types/index.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
 import {
-  swapThumbnailUrl,
+  swapImageUrl,
   swapDisplayName,
   swapDisplayQuantity,
   swapDisplayPricePerUnit,
@@ -130,20 +130,20 @@ export function SwapListItem({
   const sheet = useMemo(() => createSheet(theme), [theme]);
 
   const actionLabel = isMySwap ? "Delist" : "Buy";
-  const thumbnail = swapThumbnailUrl(swap);
+  const thumbnail = swapImageUrl(swap);
   const displayName = swapDisplayName(swap);
   const displayQuantity = swapDisplayQuantity(swap);
   const displayPricePerUnit = swapDisplayPricePerUnit(swap);
   const showMeta =
     swap.listingType !== "ordinal" &&
-    (displayQuantity !== null || swap.pricePerUnit !== null);
+    (displayQuantity !== null || displayPricePerUnit !== null);
 
   const metaText =
-    displayQuantity !== null && swap.pricePerUnit !== null
+    displayQuantity !== null && displayPricePerUnit !== null
       ? `${displayQuantity} × ${displayPricePerUnit} sats/unit`
       : displayQuantity !== null
         ? `Qty: ${displayQuantity}`
-        : swap.pricePerUnit !== null
+        : displayPricePerUnit !== null
           ? `${displayPricePerUnit} sats/unit`
           : null;
 

@@ -54,10 +54,21 @@ function createTaprootSigner(
   };
 }
 
+/** P2TR scriptPubKey: OP_1 (0x51) PUSH_32 (0x20) <32-byte output key>. */
+function isP2trScript(script: Uint8Array | undefined): boolean {
+  return (
+    !!script && script.length === 34 && script[0] === 0x51 && script[1] === 0x20
+  );
+}
+
 /**
  * Sign a PSBT hex string at the given input indices using the provided private key.
  *
- * - Detects Taproot inputs via `tapInternalKey` and uses key-path tweaked signing.
+ * - Detects Taproot inputs via `tapInternalKey` OR a P2TR `witnessUtxo` script and
+ *   uses key-path tweaked signing. Server-composed fee PSBTs sometimes carry only the
+ *   P2TR `witnessUtxo` and omit `tapInternalKey`; bitcoinjs still routes such inputs
+ *   through its Taproot signer (so the raw ECDSA key is rejected) but key-spend hashing
+ *   requires `tapInternalKey` to be present, so we backfill it from our own x-only pubkey.
  * - Only signs the specified input indices; never modifies order or other inputs.
  * - Returns the signed PSBT as hex (NOT finalized — do not call finalizeAllInputs here).
  */
@@ -83,12 +94,27 @@ export function signPsbtHex(
       btc.Transaction.SIGHASH_SINGLE | btc.Transaction.SIGHASH_ANYONECANPAY,
     ];
 
+    const xOnlyPubkey = keyPair.publicKey.subarray(1, 33);
+
     for (const inputIndex of inputIndices) {
       const input = psbt.data.inputs[inputIndex];
-      const isTaproot = !!input.tapInternalKey;
-      const signer = isTaproot ? createTaprootSigner(keyPair, ecc) : keyPair;
+      const isTaproot =
+        !!input.tapInternalKey || isP2trScript(input.witnessUtxo?.script);
 
-      psbt.signInput(inputIndex, signer, allowedSighashTypes);
+      if (isTaproot) {
+        // Key-spend hashing in bitcoinjs is gated on `tapInternalKey` being present;
+        // backfill it from our internal key when the composer left it off the input.
+        if (!input.tapInternalKey) {
+          input.tapInternalKey = Buffer.from(xOnlyPubkey);
+        }
+        psbt.signInput(
+          inputIndex,
+          createTaprootSigner(keyPair, ecc),
+          allowedSighashTypes,
+        );
+      } else {
+        psbt.signInput(inputIndex, keyPair, allowedSighashTypes);
+      }
     }
 
     return psbt.toHex();

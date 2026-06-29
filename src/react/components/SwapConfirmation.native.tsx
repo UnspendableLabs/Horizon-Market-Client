@@ -87,7 +87,7 @@ export function SwapConfirmation({
 
   if (step === "confirm") {
     return (
-      <View style={[common.root, style, stylesProp?.root]}>
+      <View style={[common.panelBody, style, stylesProp?.root]}>
         <View style={[common.summaryStack, stylesProp?.details]}>
           <SummaryRow
             label="Asset"
@@ -159,7 +159,7 @@ export function SwapConfirmation({
 
   if (step === "progress") {
     return (
-      <View style={[common.root, style, stylesProp?.root]}>
+      <View style={[common.panelBody, style, stylesProp?.root]}>
         <WorkflowProgress
           steps={steps}
           totalSteps={totalSteps}

@@ -54,6 +54,9 @@ export const HORIZON_THEME = {
     primary: colors.primary,
     primaryForeground: colors.primaryForeground,
     background: colors.background,
+    // Solid fill for the modal card — the lighter stop of the web's brand
+    // gradient (#0b0b15 → #161624), used here as a flat elevated surface.
+    backgroundElevated: colors.backgroundSecondary,
     surface: colors.surface,
     border: colors.border,
     text: colors.foreground,

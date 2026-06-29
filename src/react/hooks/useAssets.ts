@@ -82,27 +82,25 @@ export interface UseAssetsResult {
   refresh: () => void;
 }
 
-interface OrdInscriptionWire {
-  inscription_id: string;
-  owner_output: string;
+/**
+ * The ord server's `/address/{addr}` returns an object (not an array):
+ * `{ outputs, inscriptions, sat_balance, runes_balances }`, where
+ * `inscriptions` is a flat list of inscription-id strings. It does NOT carry
+ * the holding UTXO — that's resolved per inscription via `/inscription/{id}`.
+ */
+function extractInscriptionIds(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return [];
+  const { inscriptions } = raw as { inscriptions?: unknown };
+  if (!Array.isArray(inscriptions)) return [];
+  return inscriptions.filter((x): x is string => typeof x === "string");
 }
 
-function parseOrdInscriptions(raw: unknown, address: string): AssetOption[] {
-  if (!Array.isArray(raw)) return [];
-  const out: AssetOption[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const { inscription_id, owner_output } = item as Partial<OrdInscriptionWire>;
-    if (typeof inscription_id !== "string" || typeof owner_output !== "string")
-      continue;
-    out.push({
-      type: "ordinal",
-      inscriptionId: inscription_id,
-      utxoId: owner_output,
-      address,
-    });
-  }
-  return out;
+/** A `satpoint` is `txid:vout:offset`; the holding UTXO id is `txid:vout`. */
+function satpointToUtxoId(satpoint: unknown): string | null {
+  if (typeof satpoint !== "string") return null;
+  const lastColon = satpoint.lastIndexOf(":");
+  if (lastColon <= 0) return null;
+  return satpoint.slice(0, lastColon);
 }
 
 function regroup(all: AssetOption[]): AssetGroups {
@@ -213,7 +211,31 @@ export function useAssets(): UseAssetsResult {
               throw new Error(
                 `Ord API returned ${res.status}: ${res.statusText}`,
               );
-            return parseOrdInscriptions((await res.json()) as unknown, addr);
+            const ids = extractInscriptionIds((await res.json()) as unknown);
+            // The address response lists inscription ids but not their UTXOs,
+            // so resolve each one's holding outpoint via /inscription/{id}.
+            const resolved = await Promise.all(
+              ids.map(async (id): Promise<AssetOption | null> => {
+                const insRes = await fetch(
+                  `${ordRoot}/inscription/${encodeURIComponent(id)}`,
+                  { headers: { Accept: "application/json" } },
+                );
+                if (!insRes.ok)
+                  throw new Error(
+                    `Ord API returned ${insRes.status}: ${insRes.statusText}`,
+                  );
+                const body = (await insRes.json()) as { satpoint?: unknown };
+                const utxoId = satpointToUtxoId(body.satpoint);
+                if (!utxoId) return null;
+                return {
+                  type: "ordinal",
+                  inscriptionId: id,
+                  utxoId,
+                  address: addr,
+                };
+              }),
+            );
+            return resolved.filter((x): x is AssetOption => x !== null);
           }),
         );
         return lists.flat();

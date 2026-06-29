@@ -37,7 +37,7 @@ export interface SwapConfirmationProps {
   style?: CSSProperties;
 }
 
-const rootStyle: CSSProperties = { ...ws.cardRoot, maxWidth: 480 };
+const rootStyle: CSSProperties = ws.panelBody;
 
 export function SwapConfirmation({
   swap,

@@ -39,6 +39,9 @@ const HORIZON_THEME = {
     primary: "#1ee7c5",
     primaryForeground: "#0b0b15",
     background: "#0b0b15",
+    // Lighter stop of the modal's diagonal gradient (matches the brand
+    // `.bgradient-box`: linear-gradient(224deg, #0b0b15, #161624)).
+    backgroundElevated: "#161624",
     surface: "rgba(254, 251, 249, 0.04)",
     border: "rgba(254, 251, 249, 0.16)",
     text: "#fefbf9",

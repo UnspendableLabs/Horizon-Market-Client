@@ -40,7 +40,6 @@ export interface LoginPanelProps {
 
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
-    root: { maxWidth: 420 },
     status: { color: theme.colors.success, fontWeight: "600" },
     address: {
       fontFamily: MONO_FONT,
@@ -70,7 +69,7 @@ export function LoginPanel({
     onError,
   });
 
-  const root = [common.root, sheet.root, style, stylesProp?.root];
+  const root = [common.panelBody, style, stylesProp?.root];
 
   if (phase === "success" && addresses) {
     return (

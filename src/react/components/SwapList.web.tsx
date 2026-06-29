@@ -232,7 +232,11 @@ export function SwapList({
       )}
 
       {/* Login modal */}
-      <Modal open={loginModalOpen} onClose={closeLoginModal}>
+      <Modal
+        open={loginModalOpen}
+        onClose={closeLoginModal}
+        title="Login or sign up"
+      >
         <LoginPanel
           getPrivateKey={getPrivateKey}
           autoDetectSession={false}
@@ -243,7 +247,11 @@ export function SwapList({
 
       {/* Swap confirmation modal */}
       {confirmationModalOpen && pendingSwap && (
-        <Modal open onClose={closeConfirmationModal}>
+        <Modal
+          open
+          onClose={closeConfirmationModal}
+          title={confirmationMode === "buy" ? "Buy" : "Delist"}
+        >
           <SwapConfirmation
             swap={pendingSwap}
             mode={confirmationMode}

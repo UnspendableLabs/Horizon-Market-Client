@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import { cx } from "./format.js";
 import {
-  swapThumbnailUrl,
+  swapImageUrl,
   swapDisplayName,
   swapDisplayQuantity,
   swapDisplayPricePerUnit,
@@ -117,13 +117,13 @@ export function SwapListItem({
   const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
   const itemStyle = { ...ws.swapItemGrid, ...style };
 
-  const thumbnail = swapThumbnailUrl(swap);
+  const thumbnail = swapImageUrl(swap);
   const displayName = swapDisplayName(swap);
   const displayQuantity = swapDisplayQuantity(swap);
   const displayPricePerUnit = swapDisplayPricePerUnit(swap);
   const showMeta =
     swap.listingType !== "ordinal" &&
-    (displayQuantity !== null || swap.pricePerUnit !== null);
+    (displayQuantity !== null || displayPricePerUnit !== null);
 
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
@@ -146,7 +146,7 @@ export function SwapListItem({
         </span>
         {showMeta && (
           <span className={classNames?.meta} style={ws.mutedText}>
-            {displayQuantity !== null && swap.pricePerUnit !== null
+            {displayQuantity !== null && displayPricePerUnit !== null
               ? `${displayQuantity} × ${displayPricePerUnit} sats/unit`
               : displayQuantity !== null
                 ? `Qty: ${displayQuantity}`
