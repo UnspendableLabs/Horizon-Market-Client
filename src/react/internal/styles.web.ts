@@ -91,6 +91,50 @@ export const summaryRow: CSSProperties = {
   borderRadius: webTokens.radiusSm,
 };
 
+/** Bordered, padded panel used for each section of the sell review screen. */
+export const reviewSection: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingSm,
+  padding: webTokens.spacingMd,
+  background: webTokens.surface,
+  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
+  borderRadius: webTokens.radiusMd,
+};
+
+/** Small muted heading at the top of each review section ("You're selling"). */
+export const reviewSectionLabel: CSSProperties = {
+  fontSize: webTokens.fontSizeSm,
+  color: webTokens.textMuted,
+};
+
+/** Compact bordered fee-rate selector shown top-right of "You'll pay to list". */
+export const feeRateSelect: CSSProperties = {
+  appearance: "none",
+  WebkitAppearance: "none",
+  MozAppearance: "none",
+  padding: "6px 10px",
+  background: webTokens.background,
+  color: webTokens.text,
+  border: `${webTokens.borderWidth} solid ${webTokens.border}`,
+  borderRadius: webTokens.radiusSm,
+  fontSize: webTokens.fontSizeSm,
+  fontFamily: "inherit",
+  cursor: "pointer",
+} as CSSProperties;
+
+/** Borderless full-width text button (the review's "Cancel"). */
+export const textButton: CSSProperties = {
+  padding: webTokens.spacingSm,
+  background: "transparent",
+  color: webTokens.textMuted,
+  border: "none",
+  borderRadius: webTokens.radiusMd,
+  fontSize: webTokens.fontSizeBase,
+  fontWeight: 500,
+  cursor: "pointer",
+};
+
 export const errorText: CSSProperties = {
   color: webTokens.error,
   fontSize: webTokens.fontSizeSm,

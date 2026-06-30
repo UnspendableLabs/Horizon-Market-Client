@@ -20,9 +20,10 @@ import {
   formatRelativeTime,
 } from "../internal/format.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
+import { SellReview } from "../internal/SellReview.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
-import { SummaryRow } from "../internal/SummaryRow.native.js";
 import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
+import { useSellReview } from "../internal/useSellReview.js";
 import type { ResolvedTheme } from "../theme.js";
 import {
   WorkflowProgress,
@@ -147,6 +148,14 @@ export function SellOrderForm({
     result,
     error,
   } = useSellOrderFormController({ defaultSatsPerVbyte, onSuccess, onError });
+
+  // Fee rate + cost preview + live price for the review screen. Idle until the
+  // confirm step is shown.
+  const review = useSellReview({
+    formValues,
+    defaultSatsPerVbyte,
+    active: step === "confirm",
+  });
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -326,63 +335,23 @@ export function SellOrderForm({
   }
 
   if (step === "confirm" && formValues.asset) {
-    const showSummaryQuantity =
-      formValues.asset.type !== "ordinal" &&
-      formValues.asset.type !== "kontor-nft";
     return (
       <View style={[common.panelBody, style, stylesProp?.root]}>
-        <View style={[common.summaryStack, stylesProp?.summary]}>
-          <SummaryRow
-            label="Asset"
-            value={describeAsset(formValues.asset)}
-            sheet={common}
-          />
-          {showSummaryQuantity && (
-            <SummaryRow
-              label="Quantity"
-              value={formValues.quantity}
-              sheet={common}
-            />
-          )}
-          <SummaryRow
-            label="Price"
-            value={`${Number(formValues.priceSats).toLocaleString()} sats`}
-            sheet={common}
-          />
-        </View>
-        <View style={common.actions}>
-          <Pressable
-            onPress={goBack}
-            style={[
-              common.buttonSecondary,
-              common.flex1,
-              stylesProp?.buttonSecondary,
-            ]}
-          >
-            <Text
-              style={[
-                common.buttonSecondaryText,
-                stylesProp?.buttonSecondaryText,
-              ]}
-            >
-              Back
-            </Text>
-          </Pressable>
-          <Pressable
-            disabled={isSubmitting}
-            onPress={() => void confirmAndSell()}
-            style={[
-              common.button,
-              common.flex1,
-              isSubmitting && common.buttonDisabled,
-              stylesProp?.button,
-            ]}
-          >
-            <Text style={[common.buttonText, stylesProp?.buttonText]}>
-              {isSubmitting ? "Selling…" : "Sell"}
-            </Text>
-          </Pressable>
-        </View>
+        <SellReview
+          asset={formValues.asset}
+          quantity={formValues.quantity}
+          priceSats={Number(formValues.priceSats)}
+          review={review}
+          isSubmitting={isSubmitting}
+          onSign={() => void confirmAndSell({ satsPerVbyte: review.feeRate })}
+          onCancel={goBack}
+          styles={{
+            button: stylesProp?.button,
+            buttonText: stylesProp?.buttonText,
+            buttonSecondary: stylesProp?.buttonSecondary,
+            buttonSecondaryText: stylesProp?.buttonSecondaryText,
+          }}
+        />
       </View>
     );
   }

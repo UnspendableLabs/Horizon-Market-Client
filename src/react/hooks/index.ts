@@ -23,6 +23,10 @@ export type {
   UseSwapConfirmationOptions,
   UseSwapConfirmationResult,
 } from "./useSwapConfirmation.js";
+export { usePrices } from "./usePrices.js";
+export type { UsePricesResult } from "./usePrices.js";
+export { useFeeEstimates } from "./useFeeEstimates.js";
+export type { FeeEstimates, UseFeeEstimatesResult } from "./useFeeEstimates.js";
 export { useSwapList, SORT_OPTIONS, SORT_OPTION_LABELS } from "./useSwapList.js";
 export type {
   SwapListOrderBy,

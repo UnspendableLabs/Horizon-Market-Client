@@ -56,6 +56,28 @@ export function describeAsset(a: AssetOption): string {
   return `Inscription ${a.inscriptionId.slice(0, 8)}…`;
 }
 
+/**
+ * "You're selling" headline for the review screen: a top line (asset name) and
+ * an optional sub line (quantity + unit), adapted per asset type.
+ */
+export function sellingDisplay(
+  a: AssetOption,
+  quantity: string,
+): { name: string; sub: string | null } {
+  switch (a.type) {
+    case "counterparty":
+      return { name: a.assetName, sub: `${quantity} units` };
+    case "zeld":
+      return { name: "ZELD", sub: `${quantity} ZELD` };
+    case "kor":
+      return { name: "KOR", sub: `${quantity} KOR` };
+    case "kontor-nft":
+      return { name: `NFT ${truncate(a.nftId)}`, sub: null };
+    case "ordinal":
+      return { name: "Inscription", sub: truncate(a.inscriptionId) };
+  }
+}
+
 export function assetKey(a: AssetOption): string {
   if (a.type === "zeld") return `zeld:${a.address}`;
   if (a.type === "counterparty") return `cp:${a.address}:${a.assetName}`;
@@ -112,6 +134,54 @@ export function formatRelativeTime(
   if (hr < 24) return `${hr} hr ago`;
   const day = Math.floor(hr / 24);
   return `${day} day${day === 1 ? "" : "s"} ago`;
+}
+
+/** USD value of a sats amount, or null when no BTC/USD price is available. */
+export function satsToUsd(
+  sats: number,
+  btcUsd: number | null | undefined,
+): number | null {
+  if (btcUsd == null || !Number.isFinite(btcUsd)) return null;
+  if (!Number.isFinite(sats)) return null;
+  return (sats / 1e8) * btcUsd;
+}
+
+/**
+ * Format a sats amount as a USD currency string ("$0.31"), or null without a
+ * price. Sub-cent listings keep more precision so the line never reads a
+ * misleading "$0.00" for a non-zero value.
+ */
+export function formatUsd(
+  sats: number,
+  btcUsd: number | null | undefined,
+): string | null {
+  const usd = satsToUsd(sats, btcUsd);
+  if (usd === null) return null;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: usd > 0 && usd < 0.01 ? 6 : 2,
+  }).format(usd);
+}
+
+/** Group-separated sats amount ("3,450"). */
+export function formatSats(sats: number): string {
+  return Math.round(sats).toLocaleString();
+}
+
+/**
+ * mempool.space REST API base for the active network (no trailing slash).
+ * Signet shares the SDK's `testnet` params, so it's distinguished by
+ * `kontorNetwork === "signet"` (mirrors {@link mempoolTxUrl}).
+ */
+export function mempoolApiBase(
+  network: "mainnet" | "testnet",
+  kontorNetwork: "signet" | undefined,
+): string {
+  if (network === "mainnet") return "https://mempool.space/api";
+  return kontorNetwork === "signet"
+    ? "https://mempool.space/signet/api"
+    : "https://mempool.space/testnet/api";
 }
 
 export const CLIENT_NOT_INITIALIZED =

@@ -11,10 +11,11 @@ import {
   mempoolTxUrl,
 } from "../internal/format.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
-import { SummaryRow } from "../internal/SummaryRow.web.js";
+import { SellReview } from "../internal/SellReview.web.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
 import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
+import { useSellReview } from "../internal/useSellReview.js";
 import {
   WorkflowProgress,
   type WorkflowProgressClassNames,
@@ -115,6 +116,14 @@ export function SellOrderForm({
   } = useSellOrderFormController({ defaultSatsPerVbyte, onSuccess, onError });
 
   const { network, kontorNetwork } = useHorizonMarket();
+
+  // Fee rate + cost preview + live price for the review screen. Stays idle until
+  // the confirm step is shown (so it never quotes while the form is being filled).
+  const review = useSellReview({
+    formValues,
+    defaultSatsPerVbyte,
+    active: step === "confirm",
+  });
 
   const assetIndex = useMemo(() => {
     const m = new Map<string, AssetOption>();
@@ -268,43 +277,22 @@ export function SellOrderForm({
   }
 
   if (step === "confirm" && formValues.asset) {
-    const showSummaryQuantity =
-      formValues.asset.type !== "ordinal" &&
-      formValues.asset.type !== "kontor-nft";
     return (
       <div className={cx(classNames?.root, className)} style={root}>
-        <div className={classNames?.summary} style={ws.summaryStack}>
-          <SummaryRow label="Asset" value={describeAsset(formValues.asset)} />
-          {showSummaryQuantity && (
-            <SummaryRow label="Quantity" value={formValues.quantity} />
-          )}
-          <SummaryRow
-            label="Price"
-            value={`${Number(formValues.priceSats).toLocaleString()} sats`}
-          />
-        </div>
-        <div style={ws.actionsRow}>
-          <button
-            type="button"
-            onClick={goBack}
-            className={classNames?.buttonSecondary}
-            style={{ ...ws.secondaryButton, flex: 1 }}
-          >
-            Back
-          </button>
-          <button
-            type="button"
-            onClick={() => void confirmAndSell()}
-            disabled={isSubmitting}
-            className={classNames?.button}
-            style={ws.withDisabled(
-              { ...ws.primaryButton, flex: 1 },
-              isSubmitting,
-            )}
-          >
-            {isSubmitting ? "Selling…" : "Sell"}
-          </button>
-        </div>
+        <SellReview
+          asset={formValues.asset}
+          quantity={formValues.quantity}
+          priceSats={Number(formValues.priceSats)}
+          review={review}
+          isSubmitting={isSubmitting}
+          onSign={() => void confirmAndSell({ satsPerVbyte: review.feeRate })}
+          onCancel={goBack}
+          classNames={{
+            button: classNames?.button,
+            buttonSecondary: classNames?.buttonSecondary,
+            summary: classNames?.summary,
+          }}
+        />
       </div>
     );
   }

@@ -14,6 +14,8 @@ export {
   useSellOrder,
   useSwapConfirmation,
   useSwapList,
+  usePrices,
+  useFeeEstimates,
   SORT_OPTIONS,
   SORT_OPTION_LABELS,
 } from "./hooks/index.js";
@@ -33,6 +35,9 @@ export type {
   SwapConfirmationStatus,
   UseSwapConfirmationOptions,
   UseSwapConfirmationResult,
+  UsePricesResult,
+  FeeEstimates,
+  UseFeeEstimatesResult,
   SwapListOrderBy,
   SwapListOrder,
   SwapListingType,

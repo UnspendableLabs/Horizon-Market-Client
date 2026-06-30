@@ -47,6 +47,27 @@ export async function createKontorFeeQuote(
   };
 }
 
+/**
+ * POST /api/atomic-swaps/fee-quotes with `preview: true` — read the Kontor
+ * listing fee (sats) WITHOUT reserving an OnChainPayment. The platform fee is a
+ * fixed USD amount priced in sats at the current BTC rate; this mirrors the
+ * `sell-quotes` `preview` mode for PSBT listings. The returned amount is for
+ * display only — call {@link createKontorFeeQuote} to actually reserve the fee.
+ */
+export async function previewKontorListingFee(
+  http: HttpClient,
+  address: string,
+  options?: RequestOptions,
+): Promise<number> {
+  const wire = await http.request<{ payment_amount: number }>(
+    "POST",
+    "/api/atomic-swaps/fee-quotes",
+    { type: "kontor", address, preview: true },
+    options?.signal,
+  );
+  return wire.payment_amount;
+}
+
 /** Input for {@link createKontorSwap}. */
 export interface KontorCreateSwapRequest {
   /** `${attachRevealTxid}:0`. */

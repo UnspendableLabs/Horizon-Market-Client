@@ -44,7 +44,7 @@ export interface UseSellOrderResult {
       | ((prev: SellOrderFormValues) => SellOrderFormValues),
   ) => void;
   submitForm: () => void;
-  confirmAndSell: () => Promise<void>;
+  confirmAndSell: (overrides?: { satsPerVbyte?: number }) => Promise<void>;
   goBack: () => void;
   retry: () => void;
   reset: () => void;
@@ -103,7 +103,9 @@ export function useSellOrder(
     setStep("confirm");
   }, [formValues]);
 
-  const confirmAndSell = useCallback(async () => {
+  const confirmAndSell = useCallback(async (overrides?: {
+    satsPerVbyte?: number;
+  }) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setIsSubmitting(true);
@@ -118,8 +120,8 @@ export function useSellOrder(
         return;
       }
 
-      const params = confirmedParamsRef.current;
-      if (!params) {
+      const base = confirmedParamsRef.current;
+      if (!base) {
         const e = new Error("Form not submitted");
         setError(e);
         setStatus("error");
@@ -127,6 +129,14 @@ export function useSellOrder(
         optsRef.current?.onError?.(e);
         return;
       }
+
+      // Apply the fee rate chosen on the review screen, then persist it so a
+      // retry re-uses the same rate.
+      const params: OpenSellOrderParams =
+        overrides?.satsPerVbyte != null
+          ? ({ ...base, satsPerVbyte: overrides.satsPerVbyte } as OpenSellOrderParams)
+          : base;
+      confirmedParamsRef.current = params;
 
       setSteps([]);
       setTotalSteps(null);
