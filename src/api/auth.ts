@@ -114,6 +114,77 @@ export async function completeWalletSignIn(
   }
 }
 
+// ─── Token sign-in (CORS-open, browser-friendly) ───────────────────────────────
+
+/** Account credit balance (free credits are spent before paid ones). */
+export interface CreditBalance {
+  /** Paid credits purchased through the web UI. */
+  credits: number;
+  /** Free monthly credits (0–10). */
+  freeCredits: number;
+}
+
+/** Sign-in result from `POST /api/auth/wallet/token`: a bearer token + balance. */
+export interface WalletTokenSignIn extends CreditBalance {
+  /** Auth.js session JWT to present as `Authorization: Bearer <token>`. */
+  token: string;
+}
+
+/**
+ * POST /api/auth/wallet/token — CORS-open, token-returning wallet sign-in.
+ *
+ * Runs the same BIP322 verification as the cookie-based `callback/WALLET` flow but
+ * returns the session JWT in the body, so a cross-origin browser client (which
+ * cannot read a cross-origin `Set-Cookie`) can authenticate by presenting the
+ * token as a bearer header. Works in every environment (browser + RN + Node).
+ */
+export async function walletSignInToken(
+  http: HttpClient,
+  params: WalletSignInParams,
+): Promise<WalletTokenSignIn> {
+  const body = await http.request<{
+    token: string;
+    credits: number;
+    free_credits: number;
+  }>("POST", "/api/auth/wallet/token", {
+    address: params.address,
+    signature: params.signature,
+    nonce: params.nonce,
+    wallet_provider: params.walletProvider,
+    ...(params.taprootAddress
+      ? { taproot_address: params.taprootAddress }
+      : {}),
+  });
+  return {
+    token: body.token,
+    credits: body.credits,
+    freeCredits: body.free_credits,
+  };
+}
+
+/**
+ * GET /api/auth/credits — read the authenticated account's credit balance.
+ *
+ * Authenticates via the bearer token (or session cookie). Returns `null` when the
+ * caller is unauthenticated.
+ */
+export async function getCredits(
+  http: HttpClient,
+): Promise<CreditBalance | null> {
+  const res = await http.fetchRaw("GET", "/api/auth/credits", {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return null;
+  const body = (await res.json().catch(() => null)) as {
+    data?: { credits?: number; free_credits?: number };
+  } | null;
+  if (!body?.data) return null;
+  return {
+    credits: body.data.credits ?? 0,
+    freeCredits: body.data.free_credits ?? 0,
+  };
+}
+
 // ─── Session introspection ───────────────────────────────────────────────────
 
 /** Authenticated user info from `GET /api/auth/session`. */

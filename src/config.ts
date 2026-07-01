@@ -33,6 +33,13 @@ export interface HorizonMarketClientOptions {
    */
   sessionToken?: string;
   /**
+   * Reuse a bearer session token (from `signInWithWallet`) across client
+   * re-creations. Attached as `Authorization: Bearer <token>`, which — unlike the
+   * cookie jar — works in cross-origin browser apps. Prefer this over
+   * `sessionToken` for web clients.
+   */
+  bearerToken?: string;
+  /**
    * Enables Kontor (KOR token + NFT) operations. Only "signet" is supported by
    * `@kontor/sdk` today. When set, the client `network` must be "testnet" (signet
    * shares testnet address params). Required for any `listingType: "kontor"` op.

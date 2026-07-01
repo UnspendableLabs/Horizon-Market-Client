@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useHorizonMarket } from "../context.js";
 import { usePrices } from "../hooks/usePrices.js";
 import { useFeeEstimates, type FeeEstimates } from "../hooks/useFeeEstimates.js";
 import { useSellQuotePreview, type SellCost } from "./useSellQuotePreview.js";
@@ -47,6 +48,13 @@ export interface UseSellReviewResult {
   isKontor: boolean;
   cost: SellCost | null;
   feeWaived: boolean;
+  /**
+   * True when the listing fee is covered by consuming one account credit (the
+   * server waived the on-chain fee AND the account holds ≥1 credit). Drives the
+   * "1 credit" label in the review. False for subscription-only waivers (shown as
+   * "Free") and for Kontor listings (whose fee is always paid on-chain).
+   */
+  paidWithCredit: boolean;
   previewLoading: boolean;
   previewError: Error | null;
   /**
@@ -80,7 +88,11 @@ export function useSellReview({
 }: UseSellReviewArgs): UseSellReviewResult {
   const { estimates } = useFeeEstimates();
   const { btcUsd } = usePrices();
+  const { credits, freeCredits } = useHorizonMarket();
   const [feeOption, setFeeOption] = useState<FeeOption>("normal");
+
+  // The account holds at least one credit (free credits are spent first).
+  const hasCredit = (credits ?? 0) + (freeCredits ?? 0) > 0;
 
   // Fall back to the caller's default (then the server default) until the live
   // estimates resolve.
@@ -137,6 +149,9 @@ export function useSellReview({
     isKontor,
     cost: preview.cost,
     feeWaived: preview.feeWaived,
+    // Only PSBT listings truly swap the on-chain fee for a credit; Kontor always
+    // pays its fee on-chain, so it never shows "1 credit".
+    paidWithCredit: !isKontor && preview.feeWaived && hasCredit,
     previewLoading: preview.loading,
     previewError: preview.error,
     canSign,

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { NodeGlobalsPolyfillPlugin } from "@esbuild-plugins/node-globals-polyfill";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 // The repo root, three levels up from this example app. @kontor/sdk and the
 // horizon-market-client (a `file:../../..` link) are installed there, not in
@@ -39,7 +39,29 @@ function stripBip39WordlistSourcemaps(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [stripBip39WordlistSourcemaps(), react()],
+  plugins: [
+    stripBip39WordlistSourcemaps(),
+    // bip322-js (used to BIP322-sign the wallet login challenge) pulls in a CJS
+    // stack — bitcoinjs-message → cipher-base / readable-stream → node core
+    // `stream`, `events`, `string_decoder`, … — that doesn't exist in the
+    // browser. Polyfill those builtins (and the process/Buffer globals) for both
+    // the dev optimizer and the production build. Without this, signing throws
+    // "Cannot read properties of undefined (reading 'call')" at runtime.
+    nodePolyfills({
+      include: [
+        "stream",
+        "events",
+        "string_decoder",
+        "util",
+        "buffer",
+        "process",
+        "crypto",
+        "vm",
+      ],
+      globals: { Buffer: true, process: true, global: true },
+    }),
+    react(),
+  ],
   server: {
     proxy: {
       // The Kontor signet indexer (signet.kontor.network:35100) sends no CORS
@@ -87,21 +109,23 @@ export default defineConfig({
     // excluded above, so it would otherwise be served straight from node_modules.)
     // The deep wordlist subpaths can't be pre-bundled this way (see
     // stripBip39WordlistSourcemaps above) — that plugin handles them instead.
-    include: ["@scure/bip39"],
+    //
+    // bip322-js: a CJS-only library (with CJS deps: secp256k1, bitcoinjs-message,
+    // ecpair, elliptic) that horizon-market-client uses to BIP322-sign the wallet
+    // login challenge. The client is a `file:` link, so Vite's dep scanner never
+    // crawls it and bip322-js is left un-optimized — served as raw CJS, it throws
+    // "Cannot read properties of undefined (reading 'call')" the moment signing
+    // runs. Force esbuild to pre-bundle it into clean ESM (secp256k1's `browser`
+    // field resolves to its pure-JS `elliptic` impl, so no native binding is
+    // pulled in). Same reason @scure/bip39 is listed above.
+    include: ["@scure/bip39", "bip322-js"],
     esbuildOptions: {
       // The dev server pre-bundles deps with esbuild's default target
       // (es2020/chrome87/...), which lacks top-level await. A WASM-backed
       // dependency (@kontor/sdk) relies on it, so match the build target.
+      // (Node globals/builtins are polyfilled by vite-plugin-node-polyfills,
+      // which injects itself into the optimizer too.)
       target: "esnext",
-      define: {
-        global: "globalThis",
-      },
-      plugins: [
-        NodeGlobalsPolyfillPlugin({
-          process: true,
-          buffer: true,
-        }),
-      ],
     },
   },
 });

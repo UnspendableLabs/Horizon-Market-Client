@@ -310,6 +310,7 @@ export function SellReview({
     isKontor,
     cost,
     feeWaived,
+    paidWithCredit,
     previewLoading,
     previewError,
     canSign,
@@ -482,7 +483,9 @@ export function SellReview({
                       sheet={sheet}
                     />
                   </View>
-                  {feeWaived || cost.listing === 0 ? (
+                  {paidWithCredit ? (
+                    <Text style={sheet.free}>1 credit</Text>
+                  ) : feeWaived || cost.listing === 0 ? (
                     <Text style={sheet.free}>Free</Text>
                   ) : (
                     <SatsValue sats={cost.listing} btcUsd={btcUsd} sheet={sheet} />

@@ -240,6 +240,7 @@ export function SellReview({
     isKontor,
     cost,
     feeWaived,
+    paidWithCredit,
     previewLoading,
     previewError,
     canSign,
@@ -401,7 +402,11 @@ export function SellReview({
                     Listing fee
                     <InfoHint text={FEE_HINTS.listing} />
                   </span>
-                  {feeWaived || cost.listing === 0 ? (
+                  {paidWithCredit ? (
+                    <span style={{ ...breakValue, color: webTokens.success }}>
+                      1 credit
+                    </span>
+                  ) : feeWaived || cost.listing === 0 ? (
                     <span style={{ ...breakValue, color: webTokens.success }}>
                       Free
                     </span>

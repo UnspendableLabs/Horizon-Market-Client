@@ -47,10 +47,29 @@ function AddressRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/* ── Credits row ───────────────────────────────────────────── */
+
+function CreditsRow({
+  credits,
+  freeCredits,
+}: {
+  credits: number | null;
+  freeCredits: number | null;
+}) {
+  const loading = credits === null && freeCredits === null;
+  const total = (credits ?? 0) + (freeCredits ?? 0);
+  return (
+    <View style={styles.creditsRow}>
+      <Text style={styles.creditsLabel}>Credits</Text>
+      <Text style={styles.creditsValue}>{loading ? "…" : String(total)}</Text>
+    </View>
+  );
+}
+
 /* ── Header ────────────────────────────────────────────────── */
 
 export function Header() {
-  const { addresses, logout } = useHorizonMarket();
+  const { addresses, logout, credits, freeCredits } = useHorizonMarket();
   const [loginOpen, setLoginOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
@@ -137,6 +156,10 @@ export function Header() {
             )}
           </>
         )}
+
+        <View style={styles.walletDivider} />
+
+        <CreditsRow credits={credits} freeCredits={freeCredits} />
 
         <View style={styles.walletDivider} />
 
@@ -270,6 +293,26 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
     marginVertical: spacing.sm,
+  },
+
+  creditsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+
+  creditsLabel: {
+    fontSize: 12,
+    color: colors.muted,
+    fontFamily: fonts.sans,
+  },
+
+  creditsValue: {
+    fontSize: 15,
+    color: colors.foreground,
+    fontFamily: fonts.sansSemiBold,
   },
 
   disconnectButton: {

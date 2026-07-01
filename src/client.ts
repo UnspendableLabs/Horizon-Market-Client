@@ -17,8 +17,12 @@ import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from
 import {
   requestWalletChallenge as apiRequestWalletChallenge,
   completeWalletSignIn as apiCompleteWalletSignIn,
+  walletSignInToken as apiWalletSignInToken,
+  getCredits as apiGetCredits,
   getSession as apiGetSession,
   type SessionInfo,
+  type CreditBalance,
+  type WalletTokenSignIn,
 } from "./api/auth.js";
 import { LocalSigner, type Signer } from "./crypto/signer.js";
 import {
@@ -167,6 +171,7 @@ export class HorizonMarketClient {
     this.http = new HttpClient({
       baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
       fetch: options.fetch,
+      bearerToken: options.bearerToken,
     });
 
     if (options.sessionToken) {
@@ -344,14 +349,17 @@ export class HorizonMarketClient {
    * subsequent requests. An authenticated account gets free monthly credits (or a
    * subscription), so the server waives the platform fee — `requestSellQuote` then
    * returns `feeWaived: true` / `feePsbt: null` and `openSellOrder` lists without an
-   * on-chain fee payment.
+   * on-chain fee payment (1 credit is consumed instead).
    *
-   * Flow: request a BIP322 challenge → sign it with the signer → complete the
-   * NextAuth credentials sign-in. The session cookie is stored on the client.
+   * Flow: request a BIP322 challenge → sign it with the signer → `POST
+   * /api/auth/wallet/token`, which returns a bearer session token stored on the
+   * client (attached as `Authorization: Bearer …`). Works in **every** environment
+   * — browser (cross-origin), React Native, and Node — because it never relies on
+   * cross-origin cookies.
    *
-   * **Node / server contexts only** — the sign-in callback is not CORS-open. In a
-   * same-origin browser app, rely on the website's existing session (or pass a
-   * `sessionToken` to the constructor).
+   * Returns the bearer token and the account's credit balance at sign-in. The
+   * token is stored on this client; keep it to re-hydrate a client later via the
+   * `bearerToken` constructor option (survives page reloads / re-creations).
    *
    * @param opts.address Wallet address to authenticate as. Defaults to the signer's
    *   P2WPKH address.
@@ -360,6 +368,38 @@ export class HorizonMarketClient {
    *   `"horizon-market-client"`.
    */
   async signInWithWallet(opts?: {
+    address?: string;
+    taprootAddress?: string;
+    walletProvider?: string;
+  }): Promise<WalletTokenSignIn> {
+    const signer = this.assertSigner();
+    const addresses = signer.getAddresses();
+    const address = opts?.address ?? addresses.p2wpkh;
+    const taprootAddress = opts?.taprootAddress ?? addresses.p2tr;
+
+    const { nonce, message } = await apiRequestWalletChallenge(
+      this.http,
+      address,
+    );
+    const signature = signer.signMessage(address, message);
+
+    const result = await apiWalletSignInToken(this.http, {
+      address,
+      signature,
+      nonce,
+      walletProvider: opts?.walletProvider ?? "horizon-market-client",
+      taprootAddress,
+    });
+    this.http.setBearerToken(result.token);
+    return result;
+  }
+
+  /**
+   * Cookie-based wallet sign-in (legacy `callback/WALLET` flow). **Node / server
+   * contexts only** — the callback is not CORS-open and browsers cannot capture
+   * its `Set-Cookie`. Prefer {@link signInWithWallet} (bearer token) everywhere.
+   */
+  async signInWithWalletCookie(opts?: {
     address?: string;
     taprootAddress?: string;
     walletProvider?: string;
@@ -384,18 +424,27 @@ export class HorizonMarketClient {
     });
   }
 
+  /**
+   * Read the authenticated account's credit balance, or `null` when signed out.
+   * Free credits are spent before paid ones; each listing consumes 1 credit.
+   */
+  getCredits(): Promise<CreditBalance | null> {
+    return apiGetCredits(this.http);
+  }
+
   /** Read the current authenticated session, or `null` when signed out. */
   getSession(): Promise<SessionInfo | null> {
     return apiGetSession(this.http);
   }
 
-  /** True once a session cookie has been established (via sign-in or `sessionToken`). */
+  /** True once a bearer token or session cookie has been established. */
   get isAuthenticated(): boolean {
-    return this.http.hasSessionCookie();
+    return this.http.hasBearerToken() || this.http.hasSessionCookie();
   }
 
-  /** Clear the stored session (and any other cookies). */
+  /** Clear the stored session (bearer token and any cookies). */
   signOut(): void {
+    this.http.clearBearerToken();
     this.http.clearCookies();
   }
 

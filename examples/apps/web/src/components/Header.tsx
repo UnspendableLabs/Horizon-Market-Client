@@ -151,10 +151,57 @@ function AddressRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/* ── Credits row ───────────────────────────────────────────── */
+
+function CreditsRow({
+  credits,
+  freeCredits,
+  signInError,
+}: {
+  credits: number | null;
+  freeCredits: number | null;
+  signInError: string | null;
+}) {
+  const loading = credits === null && freeCredits === null;
+  const total = (credits ?? 0) + (freeCredits ?? 0);
+  return (
+    <div
+      className="flex items-center justify-between px-3 py-2 gap-2"
+      title={
+        signInError
+          ? `Sign-in failed: ${signInError}`
+          : loading
+            ? undefined
+            : `${freeCredits ?? 0} free + ${credits ?? 0} paid`
+      }
+    >
+      <span className="text-xs font-medium" style={{ color: "var(--color-muted)" }}>
+        Credits
+      </span>
+      {loading && signInError ? (
+        <span
+          className="text-xs truncate max-w-[170px]"
+          style={{ color: "var(--color-error)" }}
+        >
+          {signInError}
+        </span>
+      ) : (
+        <span
+          className="text-sm font-semibold font-data"
+          style={{ color: "var(--color-foreground)" }}
+        >
+          {loading ? "…" : total}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ── Header ────────────────────────────────────────────────── */
 
 export function Header() {
-  const { addresses, logout } = useHorizonMarket();
+  const { addresses, logout, credits, freeCredits, signInError } =
+    useHorizonMarket();
   const [loginOpen, setLoginOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
 
@@ -273,6 +320,17 @@ export function Header() {
                   {addresses.p2tr && (
                     <AddressRow label="Taproot (P2TR)" value={addresses.p2tr} />
                   )}
+
+                  <DropdownMenu.Separator
+                    className="my-1 h-px"
+                    style={{ background: "var(--color-border)" }}
+                  />
+
+                  <CreditsRow
+                    credits={credits}
+                    freeCredits={freeCredits}
+                    signInError={signInError}
+                  />
 
                   <DropdownMenu.Separator
                     className="my-1 h-px"

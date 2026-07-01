@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
@@ -24,6 +26,19 @@ export interface HorizonMarketContextValue {
   addresses: Addresses | null;
   initialize: (privateKey: string | Uint8Array) => void;
   logout: () => void;
+  /**
+   * Paid credits on the connected account, or `null` before sign-in resolves.
+   * Free credits are spent before paid ones; each listing consumes 1 credit.
+   */
+  credits: number | null;
+  /** Free monthly credits (0–10) on the connected account, or `null` pre-sign-in. */
+  freeCredits: number | null;
+  /** True once the wallet holds an authenticated Horizon Market session. */
+  isAuthenticated: boolean;
+  /** Re-read the credit balance from the server (e.g. after opening a listing). */
+  refreshCredits: () => Promise<void>;
+  /** Last wallet sign-in error message, or `null` when sign-in succeeded/pending. */
+  signInError: string | null;
   network: Network;
   /** Set to `"signet"` when Kontor (KOR token + NFT) listings are enabled. */
   kontorNetwork: "signet" | undefined;
@@ -90,6 +105,18 @@ export function HorizonMarketProvider({
   children,
 }: HorizonMarketProviderProps) {
   const [authState, setAuthState] = useState<AuthState | null>(null);
+  const [session, setSession] = useState<{
+    token: string;
+    credits: number;
+    freeCredits: number;
+  } | null>(null);
+  // Last wallet sign-in error (surfaced in the UI so failures aren't silent).
+  const [signInError, setSignInError] = useState<string | null>(null);
+  // The wallet ADDRESS we've already signed in for. Keyed on the stable address
+  // (not the Signer object) so repeated initialize() calls with the same key —
+  // e.g. StrictMode's double-invoke or a Web3Auth session-restore — dedupe to a
+  // single sign-in instead of each new Signer object superseding the last.
+  const signedInFor = useRef<string | null>(null);
 
   const anonClient = useMemo(
     () =>
@@ -128,6 +155,9 @@ export function HorizonMarketProvider({
             zeldApiBaseUrl,
             kontorNftContractAddress,
             fetch: fetchImpl,
+            // Re-hydrate the authenticated session so quotes/orders are sent
+            // authenticated (fee waived → 1 credit) even after re-memoization.
+            bearerToken: session?.token,
           })
         : null,
     [
@@ -140,6 +170,7 @@ export function HorizonMarketProvider({
       zeldApiBaseUrl,
       kontorNftContractAddress,
       fetchImpl,
+      session?.token,
     ],
   );
 
@@ -153,8 +184,89 @@ export function HorizonMarketProvider({
   );
 
   const logout = useCallback(() => {
+    signedInFor.current = null;
+    setSession(null);
     setAuthState(null);
   }, []);
+
+  // After a wallet connects, establish a Horizon Market session so the account's
+  // free credits waive the listing fee (1 credit consumed instead of an on-chain
+  // fee). Runs once per connected signer; failure falls back to anonymous
+  // (fee-paid) listings without blocking the app.
+  //
+  // Dedupe on the signer (not an effect cleanup flag) so this survives React
+  // StrictMode's dev-only mount→cleanup→mount: the second pass early-returns
+  // while the first pass's request completes, and the result is applied only if
+  // the wallet hasn't changed since. Cancelling on cleanup here would instead
+  // discard that first (only) request and leave the balance unresolved.
+  useEffect(() => {
+    if (!authState) {
+      signedInFor.current = null;
+      setSession(null);
+      setSignInError(null);
+      return;
+    }
+    const address = authState.addresses.p2wpkh;
+    if (signedInFor.current === address) return;
+    signedInFor.current = address;
+    setSignInError(null);
+
+    const signInClient = new HorizonMarketClient({
+      signer: authState.signer,
+      network,
+      baseUrl,
+      kontorNetwork,
+      kontorIndexerUrl,
+      counterpartyApiBaseUrl,
+      zeldApiBaseUrl,
+      kontorNftContractAddress,
+      fetch: fetchImpl,
+    });
+    signInClient
+      .signInWithWallet()
+      .then((res) => {
+        // Ignore a stale result if the wallet changed while signing in.
+        if (signedInFor.current !== address) return;
+        setSession({
+          token: res.token,
+          credits: res.credits,
+          freeCredits: res.freeCredits,
+        });
+      })
+      .catch((err) => {
+        // Allow a retry on a later render if this is still the active wallet,
+        // and surface the reason so the UI can show it instead of a silent "…".
+        if (signedInFor.current === address) signedInFor.current = null;
+        setSignInError(err instanceof Error ? err.message : String(err));
+        console.error("Horizon Market wallet sign-in failed:", err);
+      });
+  }, [
+    authState,
+    network,
+    baseUrl,
+    kontorNetwork,
+    kontorIndexerUrl,
+    counterpartyApiBaseUrl,
+    zeldApiBaseUrl,
+    kontorNftContractAddress,
+    fetchImpl,
+  ]);
+
+  const refreshCredits = useCallback(async () => {
+    if (!authState) return;
+    const balance = await (authedClient ?? anonClient).getCredits();
+    if (balance) {
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              credits: balance.credits,
+              freeCredits: balance.freeCredits,
+            }
+          : prev,
+      );
+    }
+  }, [authState, authedClient, anonClient]);
 
   const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
   const resolvedFetch = useMemo(() => resolveFetch(fetchImpl), [fetchImpl]);
@@ -165,6 +277,11 @@ export function HorizonMarketProvider({
       addresses: authState?.addresses ?? null,
       initialize,
       logout,
+      credits: session?.credits ?? null,
+      freeCredits: session?.freeCredits ?? null,
+      isAuthenticated: session !== null,
+      refreshCredits,
+      signInError,
       network,
       kontorNetwork,
       baseUrl: baseUrl ?? DEFAULT_BASE_URL,
@@ -173,7 +290,7 @@ export function HorizonMarketProvider({
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, logout, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
   );
 
   return (

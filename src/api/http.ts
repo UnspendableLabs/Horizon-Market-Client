@@ -33,10 +33,39 @@ export class HttpClient {
   private readonly fetchFn: typeof fetch;
   /** Cookies attached to every request (e.g. the NextAuth session after sign-in). */
   private readonly cookies = new Map<string, string>();
+  /**
+   * Bearer session token attached as `Authorization: Bearer …` when set. Unlike
+   * the cookie jar (Node/RN only — browsers forbid manual `Cookie` headers and
+   * cross-origin `Set-Cookie` reads), the Authorization header works in browsers
+   * too, so this is the auth path for cross-origin web apps.
+   */
+  private bearerToken: string | null = null;
 
-  constructor(options: { baseUrl: string; fetch?: typeof fetch }) {
+  constructor(options: {
+    baseUrl: string;
+    fetch?: typeof fetch;
+    bearerToken?: string;
+  }) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.fetchFn = resolveFetch(options.fetch);
+    this.bearerToken = options.bearerToken ?? null;
+  }
+
+  // ─── Bearer token handling ──────────────────────────────────────────────────
+
+  /** Attach `Authorization: Bearer <token>` to every subsequent request. */
+  setBearerToken(token: string): void {
+    this.bearerToken = token;
+  }
+
+  /** Clear the stored bearer token (e.g. on sign-out). */
+  clearBearerToken(): void {
+    this.bearerToken = null;
+  }
+
+  /** True once a bearer session token has been set. */
+  hasBearerToken(): boolean {
+    return this.bearerToken !== null;
   }
 
   // ─── Cookie / session handling ──────────────────────────────────────────────
@@ -131,6 +160,9 @@ export class HttpClient {
     if (cookieHeader && !headers.has("Cookie")) {
       headers.set("Cookie", cookieHeader);
     }
+    if (this.bearerToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${this.bearerToken}`);
+    }
     const response = await this.fetchFn(url, { ...init, method, headers });
     this.captureSetCookies(response);
     return response;
@@ -158,6 +190,9 @@ export class HttpClient {
     const cookieHeader = this.getCookieHeader();
     if (cookieHeader) {
       headers["Cookie"] = cookieHeader;
+    }
+    if (this.bearerToken) {
+      headers["Authorization"] = `Bearer ${this.bearerToken}`;
     }
 
     const init: RequestInit = {

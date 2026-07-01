@@ -59,7 +59,7 @@ export interface UseSellOrderResult {
 export function useSellOrder(
   options?: UseSellOrderOptions,
 ): UseSellOrderResult {
-  const { client } = useHorizonMarket();
+  const { client, refreshCredits } = useHorizonMarket();
 
   const optsRef = useRef(options);
   optsRef.current = options;
@@ -156,6 +156,9 @@ export function useSellOrder(
         setStatus("success");
         setStep("result");
         optsRef.current?.onSuccess?.(res.swap, res.created);
+        // A listing consumes 1 credit when the fee was waived — refresh the
+        // displayed balance. Fire-and-forget; a stale count is harmless.
+        void refreshCredits();
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));
         setError(e);
@@ -167,7 +170,7 @@ export function useSellOrder(
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [client]);
+  }, [client, refreshCredits]);
 
   const goBack = useCallback(() => {
     if (step === "confirm") {
