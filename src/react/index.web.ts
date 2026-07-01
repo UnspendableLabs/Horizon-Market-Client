@@ -9,6 +9,7 @@ export {
   useTheme,
   useLoginPanel,
   useAssets,
+  useBtcBalance,
   useSellOrder,
   useSwapConfirmation,
   useSwapList,
@@ -23,6 +24,7 @@ export type {
   UseLoginPanelResult,
   AssetOption,
   UseAssetsResult,
+  UseBtcBalanceResult,
   SellOrderStep,
   SellOrderStatus,
   SellOrderFormValues,
@@ -86,3 +88,15 @@ export type {
   SwapListProps,
   SwapListClassNames,
 } from "./components/SwapList.web.js";
+
+export { WalletBalances } from "./components/WalletBalances.web.js";
+export type {
+  WalletBalancesProps,
+  WalletBalancesClassNames,
+} from "./components/WalletBalances.web.js";
+
+export { WalletBalanceSummary } from "./components/WalletBalanceSummary.web.js";
+export type {
+  WalletBalanceSummaryProps,
+  WalletBalanceSummaryClassNames,
+} from "./components/WalletBalanceSummary.web.js";

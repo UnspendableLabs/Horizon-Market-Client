@@ -6,8 +6,11 @@ import {
   Modal,
   LoginPanel,
   SellOrderForm,
+  WalletBalanceSummary,
+  themeToCssVars,
 } from "@unspendablelabs/horizon-market-client/react";
 import { getPrivateKey, logout as web3authLogout } from "../lib/web3auth.js";
+import { goToWallet } from "../lib/route.js";
 import { cn } from "../lib/utils.js";
 
 /* ── Logo SVG ──────────────────────────────────────────────── */
@@ -200,10 +203,11 @@ function CreditsRow({
 /* ── Header ────────────────────────────────────────────────── */
 
 export function Header() {
-  const { addresses, logout, credits, freeCredits, signInError } =
+  const { addresses, logout, credits, freeCredits, signInError, theme } =
     useHorizonMarket();
   const [loginOpen, setLoginOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
 
   const handleSell = () => {
     if (addresses) {
@@ -216,6 +220,13 @@ export function Header() {
   const handleLoginSuccess = () => {
     setLoginOpen(false);
     setSellOpen(true);
+  };
+
+  // "Show all" jumps to the wallet page — close the menu first so it isn't left
+  // floating over the new view.
+  const handleShowAllBalances = () => {
+    setWalletOpen(false);
+    goToWallet();
   };
 
   // Disconnect must clear *both* sessions: Horizon Market's local state (hides
@@ -281,7 +292,7 @@ export function Header() {
           </button>
 
           {addresses && (
-            <DropdownMenu.Root>
+            <DropdownMenu.Root open={walletOpen} onOpenChange={setWalletOpen}>
               <DropdownMenu.Trigger asChild>
                 <button
                   className="p-2.5 rounded-lg transition-colors"
@@ -300,7 +311,7 @@ export function Header() {
                 <DropdownMenu.Content
                   align="end"
                   sideOffset={8}
-                  className="z-50 min-w-[260px] rounded-xl py-2 shadow-2xl"
+                  className="z-50 min-w-[300px] rounded-xl py-2 shadow-2xl"
                   style={{
                     background: "#13131f",
                     border: "1px solid var(--color-border)",
@@ -320,6 +331,19 @@ export function Header() {
                   {addresses.p2tr && (
                     <AddressRow label="Taproot (P2TR)" value={addresses.p2tr} />
                   )}
+
+                  <DropdownMenu.Separator
+                    className="my-1 h-px"
+                    style={{ background: "var(--color-border)" }}
+                  />
+
+                  {/* Balances live in a Radix Portal (rendered at document.body),
+                      outside the provider's theme-vars wrapper — so re-apply the
+                      `--hm-*` vars here or the SDK component falls back to its
+                      default (light) palette. */}
+                  <div className="px-3 py-2" style={themeToCssVars(theme)}>
+                    <WalletBalanceSummary onShowAll={handleShowAllBalances} />
+                  </div>
 
                   <DropdownMenu.Separator
                     className="my-1 h-px"

@@ -2,6 +2,8 @@ import { HorizonMarketProvider, SwapList, useHorizonMarket } from "@unspendablel
 import { useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header.js";
 import { Footer } from "./components/Footer.js";
+import { WalletPage } from "./components/WalletPage.js";
+import { useRoute } from "./lib/route.js";
 import { getPrivateKey } from "./lib/web3auth.js";
 import {
   NETWORKS,
@@ -65,6 +67,7 @@ export default function App() {
   // provider (key={network}) so SessionRestorer re-derives addresses for the
   // newly selected network from the same Web3Auth key.
   const [network, setNetwork] = useState<UiNetwork>(getInitialNetwork);
+  const route = useRoute();
 
   const handleNetworkChange = (next: UiNetwork) => {
     persistNetwork(next);
@@ -102,22 +105,26 @@ export default function App() {
             padding: "0 24px 64px",
           }}
         >
-          <SwapList
-            getPrivateKey={getPrivateKey}
-            classNames={{
-              // Pins the filter bar at the header's bottom edge
-              // (--header-height, see globals.css).
-              // pt-6/pb-6 (24px) hold the gaps above and below the filters
-              // *inside* the sticky box, so the bar stays at its initial position
-              // instead of jumping up against the header, and its background
-              // covers content scrolling behind it cleanly on both edges.
-              // toolbar-fullbleed makes the background span the full viewport
-              // width (past main's centered max-width) while keeping the filters
-              // aligned with the content column — see globals.css.
-              toolbar:
-                "sticky top-[var(--header-height)] z-40 bg-[#0b0b15] pt-6 pb-6 toolbar-fullbleed",
-            }}
-          />
+          {route === "wallet" ? (
+            <WalletPage />
+          ) : (
+            <SwapList
+              getPrivateKey={getPrivateKey}
+              classNames={{
+                // Pins the filter bar at the header's bottom edge
+                // (--header-height, see globals.css).
+                // pt-6/pb-6 (24px) hold the gaps above and below the filters
+                // *inside* the sticky box, so the bar stays at its initial position
+                // instead of jumping up against the header, and its background
+                // covers content scrolling behind it cleanly on both edges.
+                // toolbar-fullbleed makes the background span the full viewport
+                // width (past main's centered max-width) while keeping the filters
+                // aligned with the content column — see globals.css.
+                toolbar:
+                  "sticky top-[var(--header-height)] z-40 bg-[#0b0b15] pt-6 pb-6 toolbar-fullbleed",
+              }}
+            />
+          )}
         </main>
       </HorizonMarketProvider>
 
