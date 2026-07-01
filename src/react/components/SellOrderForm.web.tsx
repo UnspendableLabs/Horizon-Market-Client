@@ -37,6 +37,11 @@ export interface SellOrderFormClassNames {
 
 export interface SellOrderFormProps {
   defaultSatsPerVbyte?: number;
+  /**
+   * Asset to pre-select on the form — e.g. when the sell flow is opened from a
+   * specific wallet balance. "New order" still resets to an empty form.
+   */
+  initialAsset?: AssetOption | null;
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
   /**
@@ -91,6 +96,7 @@ interface AssetGroupDef {
 
 export function SellOrderForm({
   defaultSatsPerVbyte,
+  initialAsset,
   onSuccess,
   onError,
   onClose,
@@ -120,7 +126,12 @@ export function SellOrderForm({
     status,
     result,
     error,
-  } = useSellOrderFormController({ defaultSatsPerVbyte, onSuccess, onError });
+  } = useSellOrderFormController({
+    defaultSatsPerVbyte,
+    initialAsset,
+    onSuccess,
+    onError,
+  });
 
   const { network, kontorNetwork } = useHorizonMarket();
 

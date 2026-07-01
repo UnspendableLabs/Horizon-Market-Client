@@ -45,13 +45,20 @@ export function useSellOrderFormController(
   // when it's gone, rather than leaving a stale/invalid snapshot selected. Only
   // reconcile on the form step; `confirm`/`progress` work off captured params.
   const { setFormValues, step } = sellOrder;
-  const { allAssets } = assets;
+  const { allAssets, lastFetchedAt, isFetching } = assets;
   useEffect(() => {
     if (step !== "form" || !selected) return;
     const key = assetKey(selected);
-    const fresh = allAssets.find((a) => assetKey(a) === key) ?? null;
-    if (fresh !== selected) setFormValues({ asset: fresh });
-  }, [allAssets, selected, step, setFormValues]);
+    const fresh = allAssets.find((a) => assetKey(a) === key);
+    if (fresh) {
+      if (fresh !== selected) setFormValues({ asset: fresh });
+      return;
+    }
+    // No match. Only clear a stale selection once balances have actually loaded
+    // — otherwise a pre-selected `initialAsset` (e.g. launched from a wallet
+    // balance) would be wiped during the first fetch, before `allAssets` fills.
+    if (lastFetchedAt != null && !isFetching) setFormValues({ asset: null });
+  }, [allAssets, selected, step, setFormValues, lastFetchedAt, isFetching]);
 
   const showQuantity = showQuantityForAsset(selected);
   const submitDisabled = !isSellFormValid(sellOrder.formValues);

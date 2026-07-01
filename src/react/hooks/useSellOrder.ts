@@ -31,6 +31,12 @@ export interface SellOrderResult {
 
 export interface UseSellOrderOptions {
   defaultSatsPerVbyte?: number;
+  /**
+   * Asset to pre-select on the form (e.g. when the sell flow is launched from a
+   * specific wallet balance). Seeds `formValues.asset` on mount; "New order"
+   * (reset) still clears it.
+   */
+  initialAsset?: AssetOption | null;
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
 }
@@ -65,8 +71,11 @@ export function useSellOrder(
   optsRef.current = options;
 
   const [step, setStep] = useState<SellOrderStep>("form");
-  const [formValues, setFormValuesState] =
-    useState<SellOrderFormValues>(initialForm);
+  const [formValues, setFormValuesState] = useState<SellOrderFormValues>(() =>
+    options?.initialAsset
+      ? { ...initialForm, asset: options.initialAsset }
+      : initialForm,
+  );
   const [steps, setSteps] = useState<WorkflowProgressEvent[]>([]);
   const [totalSteps, setTotalSteps] = useState<number | null>(null);
   const [status, setStatus] = useState<SellOrderStatus>("idle");

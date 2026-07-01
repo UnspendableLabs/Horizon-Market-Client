@@ -17,6 +17,12 @@ export interface TokenLine {
    * for BTC, which uses the dedicated {@link BtcGoldIcon} mark instead.
    */
   asset: AssetOption | null;
+  /**
+   * The real owned option to pre-select when selling this token (with its true
+   * holding address + balance), or null when the wallet holds none / it isn't
+   * sellable (BTC). When several are held, the largest balance wins.
+   */
+  sellAsset: AssetOption | null;
 }
 
 export interface WalletTokenSummary {
@@ -52,6 +58,14 @@ function sumBalance(options: { balance: bigint }[]): bigint {
   return options.reduce((total, o) => total + o.balance, 0n);
 }
 
+/** The largest-balance option of a fungible list (for the sell pre-selection). */
+function largestBalance<T extends { balance: bigint }>(options: T[]): T | null {
+  return options.reduce<T | null>(
+    (best, o) => (best === null || o.balance > best.balance ? o : best),
+    null,
+  );
+}
+
 /**
  * Aggregates the connected wallet's balances into the four headline tokens
  * (BTC/XCP/KOR/ZELD, always shown) plus every other holding — sharing one fetch
@@ -84,10 +98,13 @@ export function useWalletTokenSummary(): WalletTokenSummary {
       symbol: "BTC",
       amount: btc.sats === null ? null : formatAmount(btc.sats, true),
       asset: null,
+      sellAsset: null,
     };
 
     // Synthetic 0-balance options so the brand avatars (and monogram fallbacks)
     // render identically to the sell-order asset picker, even at a zero balance.
+    // `sellAsset` is instead the *real* held option (true address + balance), so
+    // launching a sell from the balance pre-selects a listable asset.
     const xcpLine: TokenLine = {
       symbol: "XCP",
       amount: xcpAmount,
@@ -99,11 +116,13 @@ export function useWalletTokenSummary(): WalletTokenSummary {
         quantityNormalized: xcpAmount,
         divisible: true,
       },
+      sellAsset: largestBalance(xcpOptions),
     };
     const korLine: TokenLine = {
       symbol: "KOR",
       amount: korAmount,
       asset: { type: "kor", address, amount: korAmount },
+      sellAsset: korOption ?? null,
     };
     const zeldLine: TokenLine = {
       symbol: "ZELD",
@@ -115,6 +134,7 @@ export function useWalletTokenSummary(): WalletTokenSummary {
         quantityNormalized: zeldAmount,
         divisible: true,
       },
+      sellAsset: largestBalance(zeldOptions),
     };
 
     const primary = [xcpLine, korLine, zeldLine];
