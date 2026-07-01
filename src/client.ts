@@ -10,7 +10,10 @@ import {
   purchaseSwaps as apiPurchaseSwaps,
 } from "./api/atomic-swaps.js";
 import { requestSellQuote as apiRequestSellQuote } from "./api/sell-quotes.js";
-import { previewKontorListingFee as apiPreviewKontorListingFee } from "./api/kontor.js";
+import {
+  previewKontorListingFee as apiPreviewKontorListingFee,
+  type KontorListingFeePreview,
+} from "./api/kontor.js";
 import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
 import { requestFeeQuote as apiRequestFeeQuote, type FeeQuoteParams } from "./api/fee-quotes.js";
 import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from "./api/delist.js";
@@ -518,15 +521,16 @@ export class HorizonMarketClient {
   }
 
   /**
-   * Preview the Kontor (KOR / NFT) listing fee in sats for `address` without
-   * reserving an OnChainPayment — for review screens. The miner fee of the
-   * client-composed attach reveal is not included (the server never builds that
-   * tx); add it at sign time.
+   * Preview the Kontor (KOR / NFT) listing fee for `address` without reserving an
+   * OnChainPayment — for review screens. Returns `{ sats, feeWaived }`; `feeWaived`
+   * is true (and `sats` is 0) when the authenticated account holds a credit /
+   * subscription. The miner fee of the client-composed attach reveal is not
+   * included (the server never builds that tx); add it at sign time.
    */
   previewKontorListingFee(
     address: string,
     options?: RequestOptions,
-  ): Promise<number> {
+  ): Promise<KontorListingFeePreview> {
     return apiPreviewKontorListingFee(this.http, address, options);
   }
 

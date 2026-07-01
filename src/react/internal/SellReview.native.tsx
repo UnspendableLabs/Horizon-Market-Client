@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
 import { assetImageUrl, formatSats, formatUsd, sellingDisplay } from "./format.js";
+import { AssetAvatar } from "./icons.native.js";
 import {
   FEE_OPTIONS,
   type FeeOption,
@@ -26,40 +26,6 @@ const FEE_LABELS: Record<FeeOption, string> = {
   normal: "Normal",
   fast: "Fast",
 };
-
-const MONOGRAM_PALETTE = [
-  "#6366f1",
-  "#8b5cf6",
-  "#ec4899",
-  "#f97316",
-  "#14b8a6",
-  "#0ea5e9",
-  "#84cc16",
-];
-
-function hashHue(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-  return MONOGRAM_PALETTE[Math.abs(h) % MONOGRAM_PALETTE.length];
-}
-
-function avatarBadge(asset: AssetOption): { label: string; bg: string } {
-  switch (asset.type) {
-    case "counterparty":
-      return {
-        label: asset.assetName === "XCP" ? "XCP" : asset.assetName.slice(0, 4),
-        bg: asset.assetName === "XCP" ? "#EC1550" : hashHue(asset.assetName),
-      };
-    case "zeld":
-      return { label: "ZELD", bg: "#2563eb" };
-    case "kor":
-      return { label: "KOR", bg: "#f59e0b" };
-    case "kontor-nft":
-      return { label: "NFT", bg: "#a855f7" };
-    case "ordinal":
-      return { label: "ORD", bg: hashHue(asset.inscriptionId) };
-  }
-}
 
 export interface SellReviewStyles {
   button?: StyleProp<ViewStyle>;
@@ -94,15 +60,6 @@ function createSheet(theme: ResolvedTheme) {
       color: theme.colors.textMuted,
     },
     sellingRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
-    avatar: {
-      width: 56,
-      height: 56,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarImage: { width: 56, height: 56, borderRadius: 14 },
-    avatarText: { color: "#fff", fontWeight: "700", fontSize: 13 },
     assetName: {
       fontSize: theme.typography.fontSizeLg,
       fontWeight: "600",
@@ -236,38 +193,6 @@ function InfoHint({
   );
 }
 
-/**
- * Asset thumbnail: the real artwork from the Horizon Market asset-image endpoint,
- * falling back to a colored monogram badge when it's missing or fails to load.
- */
-function AssetAvatar({
-  asset,
-  imageUrl,
-  sheet,
-}: {
-  asset: AssetOption;
-  imageUrl: string;
-  sheet: ReturnType<typeof createSheet>;
-}) {
-  // Track the failed URL so switching assets re-attempts the new image.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (failedUrl === imageUrl) {
-    const badge = avatarBadge(asset);
-    return (
-      <View style={[sheet.avatar, { backgroundColor: badge.bg }]}>
-        <Text style={sheet.avatarText}>{badge.label}</Text>
-      </View>
-    );
-  }
-  return (
-    <Image
-      source={{ uri: imageUrl }}
-      onError={() => setFailedUrl(imageUrl)}
-      style={sheet.avatarImage}
-    />
-  );
-}
-
 function SatsValue({
   sats,
   btcUsd,
@@ -332,7 +257,7 @@ export function SellReview({
       <View style={sheet.section}>
         <Text style={sheet.sectionLabel}>You&apos;re selling</Text>
         <View style={sheet.sellingRow}>
-          <AssetAvatar asset={asset} imageUrl={imageUrl} sheet={sheet} />
+          <AssetAvatar asset={asset} imageUrl={imageUrl} size={56} radius={14} />
           <View style={{ gap: 2 }}>
             <Text style={sheet.assetName}>{selling.name}</Text>
             {selling.sub ? (
@@ -393,7 +318,11 @@ export function SellReview({
                   sheet={sheet}
                 />
               </View>
-              {kontorListingSats != null ? (
+              {paidWithCredit ? (
+                <Text style={sheet.free}>1 credit</Text>
+              ) : feeWaived ? (
+                <Text style={sheet.free}>Free</Text>
+              ) : kontorListingSats != null ? (
                 <SatsValue sats={kontorListingSats} btcUsd={btcUsd} sheet={sheet} />
               ) : (
                 <Text style={sheet.breakValue}>

@@ -164,7 +164,7 @@ function wireSwap(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeClient(calls: RecordedCall[]) {
+function makeClient(calls: RecordedCall[], opts?: { waiveFee?: boolean }) {
   const json = (data: unknown, status = 200) =>
     ({ status, json: async () => ({ data }) }) as unknown as Response;
 
@@ -175,11 +175,21 @@ function makeClient(calls: RecordedCall[]) {
     calls.push({ url: u, method, body });
 
     if (u.endsWith("/api/atomic-swaps/fee-quotes") && method === "POST") {
-      return json({
-        fee_payment_id: "fp_1",
-        payment_address: "tb1qfeeaddr",
-        payment_amount: 700,
-      });
+      return json(
+        opts?.waiveFee
+          ? {
+              // Credit / subscription: server waives the on-chain fee.
+              fee_payment_id: null,
+              payment_address: null,
+              payment_amount: 0,
+              fee_waived: true,
+            }
+          : {
+              fee_payment_id: "fp_1",
+              payment_address: "tb1qfeeaddr",
+              payment_amount: 700,
+            },
+      );
     }
     if (u.endsWith("/api/atomic-swaps") && method === "POST") {
       return json(wireSwap(), 201);
@@ -261,6 +271,30 @@ describe("Kontor key safety (private key never leaves the client)", () => {
     expect(createBody.kontor_asset_kind).toBe("token");
     expect(createBody.fee_payment).toEqual({ fee_payment_id: "fp_1" });
     expect("psbt_hex" in createBody).toBe(false);
+  });
+
+  it("openSellOrder (token, credit) waives the fee: no fee_payment on the create", async () => {
+    const calls: RecordedCall[] = [];
+    const client = makeClient(calls, { waiveFee: true });
+
+    const { created } = await client.openSellOrder({
+      listingType: "kontor",
+      kontorAssetKind: "token",
+      korAmount: "100",
+      priceSats: 50000,
+    });
+
+    expect(created).toBe(true);
+    assertKeySafety(calls);
+
+    const create = calls.find(
+      (c) => c.url.endsWith("/api/atomic-swaps") && c.method === "POST",
+    )!;
+    const createBody = JSON.parse(create.body!);
+    // Credit path: the listing POST carries no fee_payment, so the server
+    // decrements a credit instead of expecting an on-chain fee output.
+    expect("fee_payment" in createBody).toBe(false);
+    expect(createBody.kontor_asset_kind).toBe("token");
   });
 
   it("openSellOrder (nft) sends the nft contract + id, no key", async () => {

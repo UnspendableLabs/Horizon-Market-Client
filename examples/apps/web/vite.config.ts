@@ -118,7 +118,22 @@ export default defineConfig({
     // runs. Force esbuild to pre-bundle it into clean ESM (secp256k1's `browser`
     // field resolves to its pure-JS `elliptic` impl, so no native binding is
     // pulled in). Same reason @scure/bip39 is listed above.
-    include: ["@scure/bip39", "bip322-js"],
+    //
+    // vite-plugin-node-polyfills/shims/{buffer,process,global}: the plugin
+    // injects these as global shims, but they're only discovered while crawling
+    // the app — not during the initial optimize scan. That triggers a
+    // mid-startup re-optimize + full reload, and because the re-optimization
+    // reuses the same browserHash while regenerating the chunk files, an
+    // already-open tab keeps importing a now-deleted `chunk-*.js?v=<hash>` →
+    // 404 → blank page. Declaring them here makes them known before the first
+    // optimize pass, so no reload happens.
+    include: [
+      "@scure/bip39",
+      "bip322-js",
+      "vite-plugin-node-polyfills/shims/buffer",
+      "vite-plugin-node-polyfills/shims/process",
+      "vite-plugin-node-polyfills/shims/global",
+    ],
     esbuildOptions: {
       // The dev server pre-bundles deps with esbuild's default target
       // (es2020/chrome87/...), which lacks top-level await. A WASM-backed

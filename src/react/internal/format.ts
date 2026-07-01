@@ -46,6 +46,28 @@ export function assetBalanceLabel(a: AssetOption): string {
   return "";
 }
 
+const isXcp = (a: AssetOption): boolean =>
+  a.type === "counterparty" && a.assetName === "XCP";
+
+/**
+ * Counterparty options with XCP pinned to the top; every other asset keeps its
+ * original (server) order. The picker's Counterparty group always leads with XCP.
+ */
+export function counterpartyXcpFirst(options: AssetOption[]): AssetOption[] {
+  return [...options.filter(isXcp), ...options.filter((a) => !isXcp(a))];
+}
+
+/**
+ * Kontor options (KOR + Kontor NFTs) with the KOR token pinned to the top; NFTs
+ * keep their original order. The picker's merged Kontor group always leads with KOR.
+ */
+export function kontorKorFirst(options: AssetOption[]): AssetOption[] {
+  return [
+    ...options.filter((a) => a.type === "kor"),
+    ...options.filter((a) => a.type !== "kor"),
+  ];
+}
+
 export function describeAsset(a: AssetOption): string {
   if (a.type === "zeld") return `ZELD — ${a.quantityNormalized}`;
   if (a.type === "counterparty")

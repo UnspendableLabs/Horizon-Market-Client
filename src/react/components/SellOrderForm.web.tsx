@@ -4,12 +4,13 @@ import type { AtomicSwap } from "../../types/index.js";
 import type { AssetOption } from "../hooks/useAssets.js";
 import { useHorizonMarket } from "../context.js";
 import {
-  assetKey,
+  counterpartyXcpFirst,
   cx,
-  describeAsset,
   formatRelativeTime,
+  kontorKorFirst,
   mempoolTxUrl,
 } from "../internal/format.js";
+import { AssetSelect } from "../internal/AssetSelect.web.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SellReview } from "../internal/SellReview.web.js";
 import * as ws from "../internal/styles.web.js";
@@ -131,18 +132,17 @@ export function SellOrderForm({
     active: step === "confirm",
   });
 
-  const assetIndex = useMemo(() => {
-    const m = new Map<string, AssetOption>();
-    for (const a of assets.allAssets) m.set(assetKey(a), a);
-    return m;
-  }, [assets.allAssets]);
-
   const groups: AssetGroupDef[] = useMemo(
     () => [
-      { label: "Counterparty", options: assets.counterpartyAssets },
+      {
+        label: "Counterparty",
+        options: counterpartyXcpFirst(assets.counterpartyAssets),
+      },
       { label: "ZELD", options: assets.zeldAssets },
-      { label: "KOR", options: assets.korAssets },
-      { label: "Kontor NFTs", options: assets.kontorNfts },
+      {
+        label: "Kontor",
+        options: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
+      },
       { label: "Ordinals", options: assets.ordinals },
     ],
     [
@@ -157,7 +157,12 @@ export function SellOrderForm({
   const root = { ...rootStyle, ...style };
 
   if (step === "form") {
-    const selectedValue = formValues.asset ? assetKey(formValues.asset) : "";
+    const assetPlaceholder =
+      isFetching && !assets.allAssets.length
+        ? "Loading your assets…"
+        : assets.isEmpty
+          ? "No assets to sell"
+          : "Select an asset…";
     const nonFatalErrors = [
       assets.errors.counterparty &&
         `Counterparty: ${assets.errors.counterparty.message}`,
@@ -182,39 +187,17 @@ export function SellOrderForm({
             {isFetching ? "Refreshing…" : "Refresh"}
           </button>
         </div>
-        <label className={classNames?.label} style={ws.label}>
-          Asset
-          <select
-            value={selectedValue}
-            onChange={(e) =>
-              setFormValues({ asset: assetIndex.get(e.target.value) ?? null })
-            }
+        <div className={classNames?.label} style={ws.label}>
+          <span>Asset</span>
+          <AssetSelect
+            groups={groups}
+            value={formValues.asset}
+            onChange={(asset) => setFormValues({ asset })}
+            placeholder={assetPlaceholder}
+            disabled={!assets.allAssets.length}
             className={classNames?.dropdown}
-            style={ws.input}
-          >
-            <option value="">
-              {isFetching && !assets.allAssets.length
-                ? "Loading your assets…"
-                : assets.isEmpty
-                  ? "No assets to sell"
-                  : "Select an asset…"}
-            </option>
-            {groups.map((group) =>
-              group.options.length === 0 ? null : (
-                <optgroup key={group.label} label={group.label}>
-                  {group.options.map((a) => {
-                    const k = assetKey(a);
-                    return (
-                      <option key={k} value={k}>
-                        {describeAsset(a)}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              ),
-            )}
-          </select>
-        </label>
+          />
+        </div>
         {nonFatalErrors.length > 0 && (
           <div className={classNames?.error} style={ws.errorText}>
             {nonFatalErrors.join(" · ")}

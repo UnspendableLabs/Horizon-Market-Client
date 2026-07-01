@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
 
 export interface KontorListingFeeResult {
-  /** Listing fee in sats (null until loaded / on failure). */
+  /** Listing fee in sats (null until loaded / on failure; 0 when waived). */
   listingSats: number | null;
+  /** True when the fee is covered by an account credit / subscription. */
+  feeWaived: boolean;
   loading: boolean;
   error: Error | null;
 }
 
 const IDLE: KontorListingFeeResult = {
   listingSats: null,
+  feeWaived: false,
   loading: false,
   error: null,
 };
@@ -40,14 +43,20 @@ export function useKontorListingFee(
 
     client
       .previewKontorListingFee(address, { signal: controller.signal })
-      .then((sats) => {
+      .then((preview) => {
         if (seq !== seqRef.current) return;
-        setState({ listingSats: sats, loading: false, error: null });
+        setState({
+          listingSats: preview.sats,
+          feeWaived: preview.feeWaived,
+          loading: false,
+          error: null,
+        });
       })
       .catch((err) => {
         if (seq !== seqRef.current || controller.signal.aborted) return;
         setState({
           listingSats: null,
+          feeWaived: false,
           loading: false,
           error: err instanceof Error ? err : new Error(String(err)),
         });

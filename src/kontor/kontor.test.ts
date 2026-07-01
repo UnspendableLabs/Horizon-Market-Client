@@ -179,6 +179,7 @@ describe("createKontorFeeQuote (fee-quotes contract)", () => {
       feePaymentId: "fp_42",
       paymentAddress: "tb1pfeeaddr",
       paymentAmount: 700,
+      feeWaived: false,
     });
 
     expect(calls).toHaveLength(1);
@@ -189,6 +190,34 @@ describe("createKontorFeeQuote (fee-quotes contract)", () => {
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({
       type: "kontor",
       address: "tb1pselleraddr",
+    });
+  });
+
+  it("maps a waived fee (credit / subscription) to feeWaived with a null address", async () => {
+    const fetchFn = (async () =>
+      ({
+        status: 200,
+        json: async () => ({
+          data: {
+            fee_payment_id: null,
+            payment_address: null,
+            payment_amount: 0,
+            fee_waived: true,
+          },
+        }),
+      }) as unknown as Response) as typeof fetch;
+
+    const http = new HttpClient({
+      baseUrl: "https://horizon.market",
+      fetch: fetchFn,
+    });
+    const quote = await createKontorFeeQuote(http, "tb1pselleraddr");
+
+    expect(quote).toEqual({
+      feePaymentId: null,
+      paymentAddress: null,
+      paymentAmount: 0,
+      feeWaived: true,
     });
   });
 });

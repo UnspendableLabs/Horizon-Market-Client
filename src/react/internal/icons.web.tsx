@@ -122,17 +122,22 @@ function AssetPlaceholder({
 }
 
 /**
- * Asset thumbnail for the "You're selling" section. Loads the asset's real
- * artwork from the Horizon Market asset-image endpoint (`imageUrl`) and falls
- * back to a brand mark / colored monogram when it's missing or fails to load.
+ * Asset thumbnail. Loads the asset's real artwork from the Horizon Market
+ * asset-image endpoint (`imageUrl`) and falls back to a brand mark / colored
+ * monogram when it's missing or fails to load. `radius` overrides the corner
+ * rounding (default: a rounded square; pass `size / 2` for a circle). The image
+ * loads lazily and decodes off the main thread so long asset lists render — and
+ * scroll — without blocking on artwork fetches.
  */
 export function AssetAvatar({
   asset,
   size = 56,
+  radius,
   imageUrl,
 }: {
   asset: AssetOption;
   size?: number;
+  radius?: number;
   imageUrl?: string | null;
 }) {
   // Track the URL that failed (not a bare boolean) so switching assets — and thus
@@ -142,7 +147,7 @@ export function AssetAvatar({
     width: size,
     height: size,
     flexShrink: 0,
-    borderRadius: Math.round(size / 4),
+    borderRadius: radius ?? Math.round(size / 4),
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -160,6 +165,8 @@ export function AssetAvatar({
         alt=""
         width={size}
         height={size}
+        loading="lazy"
+        decoding="async"
         onError={() => setFailedUrl(imageUrl)}
         style={{
           width: size,

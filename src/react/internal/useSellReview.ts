@@ -50,9 +50,10 @@ export interface UseSellReviewResult {
   feeWaived: boolean;
   /**
    * True when the listing fee is covered by consuming one account credit (the
-   * server waived the on-chain fee AND the account holds ≥1 credit). Drives the
-   * "1 credit" label in the review. False for subscription-only waivers (shown as
-   * "Free") and for Kontor listings (whose fee is always paid on-chain).
+   * server waived the fee AND the account holds ≥1 credit). Drives the "1 credit"
+   * label in the review. False for subscription-only waivers (shown as "Free").
+   * Applies to both PSBT and Kontor listings — the server honours credits for
+   * Kontor too, dropping the on-chain fee output.
    */
   paidWithCredit: boolean;
   previewLoading: boolean;
@@ -139,6 +140,13 @@ export function useSellReview({
   // be composed either, so the "Sign" button stays disabled until it recovers.
   const canSign = isKontor ? kontorFee.error == null : preview.error == null;
 
+  // The platform listing fee is waived when the server covered it via the
+  // account's credit / subscription. PSBT listings report it on the sell-quote;
+  // Kontor reports it on the fee-quote preview (the server honours credits for
+  // Kontor too now). "1 credit" when a credit was spent, "Free" for a
+  // subscription-only waiver.
+  const feeWaived = isKontor ? kontorFee.feeWaived : preview.feeWaived;
+
   return {
     estimates,
     feeOption,
@@ -148,10 +156,8 @@ export function useSellReview({
     btcUsd,
     isKontor,
     cost: preview.cost,
-    feeWaived: preview.feeWaived,
-    // Only PSBT listings truly swap the on-chain fee for a credit; Kontor always
-    // pays its fee on-chain, so it never shows "1 credit".
-    paidWithCredit: !isKontor && preview.feeWaived && hasCredit,
+    feeWaived,
+    paidWithCredit: feeWaived && hasCredit,
     previewLoading: preview.loading,
     previewError: preview.error,
     canSign,

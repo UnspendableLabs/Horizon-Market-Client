@@ -7,27 +7,39 @@ import type {
   RequestOptions,
 } from "../types/index.js";
 
-/** Reserved Kontor listing fee — paid as an extra output on the attach reveal. */
+/**
+ * Reserved Kontor listing fee.
+ *
+ * Normally paid as an extra output on the attach reveal. When the authenticated
+ * account holds a credit / subscription the server waives it (`feeWaived: true`,
+ * `paymentAmount: 0`, null address/id) — the SDK then skips the fee output and the
+ * listing POST decrements a credit instead, exactly like PSBT listings.
+ */
 export interface KontorFeeQuote {
-  feePaymentId: string;
-  paymentAddress: string;
+  feePaymentId: string | null;
+  paymentAddress: string | null;
   paymentAmount: number;
+  /** True when the fee is covered by an account credit / subscription. */
+  feeWaived: boolean;
 }
 
 /** snake_case wire shape returned by the public `fee-quotes` endpoint. */
 interface WireKontorFeeQuote {
-  fee_payment_id: string;
-  payment_address: string;
+  fee_payment_id: string | null;
+  payment_address: string | null;
   payment_amount: number;
+  fee_waived?: boolean;
 }
 
 /**
  * POST /api/atomic-swaps/fee-quotes — reserve a Kontor listing fee.
  *
- * Returns `{ fee_payment_id, payment_address, payment_amount }` (snake_case, no
- * PSBT — the Kontor branch of the public fee-quote endpoint); the SDK settles the
- * fee as an extra output on the attach reveal it broadcasts. Sends only the
- * seller's address (public).
+ * Returns `{ fee_payment_id, payment_address, payment_amount, fee_waived }`
+ * (snake_case, no PSBT — the Kontor branch of the public fee-quote endpoint); the
+ * SDK settles the fee as an extra output on the attach reveal it broadcasts. When
+ * `fee_waived` is true (account credit / subscription) no payment is reserved and
+ * the SDK omits the fee output. Sends only the seller's address (public), but the
+ * request is authenticated so the server can decide whether to waive the fee.
  */
 export async function createKontorFeeQuote(
   http: HttpClient,
@@ -44,28 +56,44 @@ export async function createKontorFeeQuote(
     feePaymentId: wire.fee_payment_id,
     paymentAddress: wire.payment_address,
     paymentAmount: wire.payment_amount,
+    feeWaived: wire.fee_waived ?? false,
   };
+}
+
+/** Side-effect-free Kontor listing-fee preview (see {@link previewKontorListingFee}). */
+export interface KontorListingFeePreview {
+  /** Platform listing fee in sats (0 when waived). */
+  sats: number;
+  /** True when the fee is covered by an account credit / subscription. */
+  feeWaived: boolean;
 }
 
 /**
  * POST /api/atomic-swaps/fee-quotes with `preview: true` — read the Kontor
  * listing fee (sats) WITHOUT reserving an OnChainPayment. The platform fee is a
  * fixed USD amount priced in sats at the current BTC rate; this mirrors the
- * `sell-quotes` `preview` mode for PSBT listings. The returned amount is for
- * display only — call {@link createKontorFeeQuote} to actually reserve the fee.
+ * `sell-quotes` `preview` mode for PSBT listings. When the authenticated account
+ * holds a credit / subscription the server returns `feeWaived: true` / `sats: 0`.
+ * The result is for display only — call {@link createKontorFeeQuote} to reserve.
  */
 export async function previewKontorListingFee(
   http: HttpClient,
   address: string,
   options?: RequestOptions,
-): Promise<number> {
-  const wire = await http.request<{ payment_amount: number }>(
+): Promise<KontorListingFeePreview> {
+  const wire = await http.request<{
+    payment_amount: number;
+    fee_waived?: boolean;
+  }>(
     "POST",
     "/api/atomic-swaps/fee-quotes",
     { type: "kontor", address, preview: true },
     options?.signal,
   );
-  return wire.payment_amount;
+  return {
+    sats: wire.payment_amount,
+    feeWaived: wire.fee_waived ?? false,
+  };
 }
 
 /** Input for {@link createKontorSwap}. */

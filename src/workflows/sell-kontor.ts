@@ -132,14 +132,21 @@ export async function openKontorSellOrder(
   const feeQuote = await progress.runAsync("reserveKontorFee", () =>
     createKontorFeeQuote(http, sellerAddress),
   );
-  const extraOutputs = [
-    {
-      pay: {
-        address: feeQuote.paymentAddress,
-        value: BigInt(feeQuote.paymentAmount),
-      },
-    },
-  ];
+  // When the account covers the fee with a credit / subscription the server
+  // waives it (feeWaived, no payment address): drop the fee output and let the
+  // listing POST decrement a credit instead. Otherwise the platform fee rides
+  // the attach reveal as an extra output.
+  const extraOutputs =
+    feeQuote.feeWaived || feeQuote.paymentAddress == null
+      ? []
+      : [
+          {
+            pay: {
+              address: feeQuote.paymentAddress,
+              value: BigInt(feeQuote.paymentAmount),
+            },
+          },
+        ];
 
   const { offerBlob, assetUtxoId, assetUtxoValue, contractAddress } =
     await progress.runAsync("composeKontorOffer", async () => {
@@ -162,17 +169,21 @@ export async function openKontorSellOrder(
         let blob: string;
         let resolvedContractAddress: string;
 
+        const offerOpts = extraOutputs.length
+          ? { price: BigInt(params.priceSats), extraOutputs }
+          : { price: BigInt(params.priceSats) };
+
         if (params.kontorAssetKind === "nft") {
           resolvedContractAddress = params.nftContractAddress;
           const offer = await bindKontorNft(session, resolvedContractAddress)
             .attachment(params.nftId)
-            .offer({ price: BigInt(params.priceSats), extraOutputs });
+            .offer(offerOpts);
           blob = offer.serialize();
         } else {
           resolvedContractAddress = kontorNativeTokenAddress(ctx.chain);
           const offer = await bindKontorToken(session)
             .attachment(Decimal.from(params.korAmount))
-            .offer({ price: BigInt(params.priceSats), extraOutputs });
+            .offer(offerOpts);
           blob = offer.serialize();
         }
 
@@ -201,7 +212,9 @@ export async function openKontorSellOrder(
     kontorContractAddress: contractAddress,
     kontorNftId: params.kontorAssetKind === "nft" ? params.nftId : null,
     kontorAmount: params.kontorAssetKind === "token" ? params.korAmount : null,
-    feePaymentId: feeQuote.feePaymentId,
+    // Omitted on the credit path (no fee_payment) so the listing POST takes the
+    // server's session-credit branch instead of expecting an on-chain payment.
+    feePaymentId: feeQuote.feePaymentId ?? undefined,
   };
 
   let result;

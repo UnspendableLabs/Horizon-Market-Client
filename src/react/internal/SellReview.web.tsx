@@ -323,7 +323,15 @@ export function SellReview({
                 Listing fee
                 <InfoHint text={FEE_HINTS.listing} />
               </span>
-              {kontorListingSats != null ? (
+              {paidWithCredit ? (
+                <span style={{ ...breakValue, color: webTokens.success }}>
+                  1 credit
+                </span>
+              ) : feeWaived ? (
+                <span style={{ ...breakValue, color: webTokens.success }}>
+                  Free
+                </span>
+              ) : kontorListingSats != null ? (
                 <SatsValue sats={kontorListingSats} btcUsd={btcUsd} />
               ) : (
                 <span style={breakValue}>

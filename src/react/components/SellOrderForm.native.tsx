@@ -13,12 +13,17 @@ import {
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
 import type { AssetOption } from "../hooks/useAssets.js";
+import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import {
+  assetImageUrl,
   assetKey,
+  counterpartyXcpFirst,
   describeAsset,
   formatRelativeTime,
+  kontorKorFirst,
 } from "../internal/format.js";
+import { AssetAvatar } from "../internal/icons.native.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { SellReview } from "../internal/SellReview.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
@@ -87,6 +92,9 @@ function createSheet(theme: ResolvedTheme) {
       fontWeight: "600",
     },
     item: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
       padding: theme.spacing.md,
       borderBottomWidth: theme.borderWidth,
       borderBottomColor: theme.colors.border,
@@ -130,6 +138,7 @@ export function SellOrderForm({
 }: SellOrderFormProps) {
   const theme = useTheme();
   const common = useCommonSheet();
+  const { baseUrl } = useHorizonMarket();
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const {
     assets,
@@ -168,10 +177,15 @@ export function SellOrderForm({
   const sections = useMemo(
     () =>
       [
-        { title: "Counterparty", data: assets.counterpartyAssets },
+        {
+          title: "Counterparty",
+          data: counterpartyXcpFirst(assets.counterpartyAssets),
+        },
         { title: "ZELD", data: assets.zeldAssets },
-        { title: "KOR", data: assets.korAssets },
-        { title: "Kontor NFTs", data: assets.kontorNfts },
+        {
+          title: "Kontor",
+          data: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
+        },
         { title: "Ordinals", data: assets.ordinals },
       ].filter((s) => s.data.length > 0),
     [
@@ -322,7 +336,20 @@ export function SellOrderForm({
                     }}
                     style={sheet.item}
                   >
-                    <Text style={[sheet.dropdownText, stylesProp?.dropdownText]}>
+                    <AssetAvatar
+                      asset={item}
+                      imageUrl={assetImageUrl(baseUrl, item)}
+                      size={32}
+                      radius={16}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        sheet.dropdownText,
+                        { flex: 1 },
+                        stylesProp?.dropdownText,
+                      ]}
+                    >
                       {describeAsset(item)}
                     </Text>
                   </Pressable>
