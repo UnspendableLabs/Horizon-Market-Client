@@ -313,7 +313,7 @@ export function Header() {
           (success message + mempool.space link) is shown; the user dismisses it
           via the ✕ / Escape / overlay, or starts another with "New order". */}
       <Modal open={sellOpen} onClose={() => setSellOpen(false)} title="Sell">
-        <SellOrderForm />
+        <SellOrderForm onClose={() => setSellOpen(false)} />
       </Modal>
     </>
   );

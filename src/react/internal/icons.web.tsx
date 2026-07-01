@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { AssetOption } from "../hooks/useAssets.js";
 import { webTokens } from "../theme.js";
 
@@ -86,29 +86,16 @@ function monogram(asset: AssetOption): { label: string; bg: string } {
   }
 }
 
-/**
- * Asset thumbnail for the "You're selling" section. XCP gets its real brand mark;
- * every other asset gets a colored monogram placeholder (real artwork resolution
- * is intentionally out of scope here).
- */
-export function AssetAvatar({
+/** XCP brand mark, or a colored monogram — the fallback when no artwork loads. */
+function AssetPlaceholder({
   asset,
-  size = 56,
+  size,
+  tile,
 }: {
   asset: AssetOption;
-  size?: number;
+  size: number;
+  tile: CSSProperties;
 }) {
-  const tile: CSSProperties = {
-    width: size,
-    height: size,
-    flexShrink: 0,
-    borderRadius: Math.round(size / 4),
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  };
-
   if (asset.type === "counterparty" && asset.assetName === "XCP") {
     return (
       <div style={tile}>
@@ -116,7 +103,6 @@ export function AssetAvatar({
       </div>
     );
   }
-
   const { label, bg } = monogram(asset);
   return (
     <div style={{ ...tile, background: bg }}>
@@ -131,6 +117,57 @@ export function AssetAvatar({
       >
         {label}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Asset thumbnail for the "You're selling" section. Loads the asset's real
+ * artwork from the Horizon Market asset-image endpoint (`imageUrl`) and falls
+ * back to a brand mark / colored monogram when it's missing or fails to load.
+ */
+export function AssetAvatar({
+  asset,
+  size = 56,
+  imageUrl,
+}: {
+  asset: AssetOption;
+  size?: number;
+  imageUrl?: string | null;
+}) {
+  // Track the URL that failed (not a bare boolean) so switching assets — and thus
+  // `imageUrl` — automatically clears the fallback and re-attempts the new image.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const tile: CSSProperties = {
+    width: size,
+    height: size,
+    flexShrink: 0,
+    borderRadius: Math.round(size / 4),
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  };
+
+  if (!imageUrl || failedUrl === imageUrl) {
+    return <AssetPlaceholder asset={asset} size={size} tile={tile} />;
+  }
+
+  return (
+    <div style={tile}>
+      <img
+        src={imageUrl}
+        alt=""
+        width={size}
+        height={size}
+        onError={() => setFailedUrl(imageUrl)}
+        style={{
+          width: size,
+          height: size,
+          objectFit: "cover",
+          display: "block",
+        }}
+      />
     </div>
   );
 }

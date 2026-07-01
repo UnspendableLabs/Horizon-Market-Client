@@ -49,9 +49,17 @@ export interface UseSellReviewResult {
   feeWaived: boolean;
   previewLoading: boolean;
   previewError: Error | null;
+  /**
+   * False when the active fee preview failed — the cost couldn't be estimated
+   * (e.g. insufficient BTC), so signing would compose an order guaranteed to
+   * fail. Drives the review's disabled "Sign" button.
+   */
+  canSign: boolean;
   /** Kontor listing fee in sats (null until loaded). Only set for KOR/NFT. */
   kontorListingSats: number | null;
   kontorListingLoading: boolean;
+  /** Kontor listing-fee preview error (null on success). Only set for KOR/NFT. */
+  kontorListingError: Error | null;
   /** Estimated Kontor attach miner fee in sats (≈, scales with feeRate). */
   kontorMinerFeeSats: number | null;
   /** Estimated Kontor total (listing + miner fee) in sats (≈). */
@@ -114,6 +122,11 @@ export function useSellReview({
       ? kontorFee.listingSats + kontorMinerFeeSats
       : null;
 
+  // Block signing whenever the relevant fee preview failed: a failed estimate
+  // (e.g. insufficient BTC to compose the transfer) means the real order can't
+  // be composed either, so the "Sign" button stays disabled until it recovers.
+  const canSign = isKontor ? kontorFee.error == null : preview.error == null;
+
   return {
     estimates,
     feeOption,
@@ -126,8 +139,10 @@ export function useSellReview({
     feeWaived: preview.feeWaived,
     previewLoading: preview.loading,
     previewError: preview.error,
+    canSign,
     kontorListingSats: kontorFee.listingSats,
     kontorListingLoading: kontorFee.loading,
+    kontorListingError: kontorFee.error,
     kontorMinerFeeSats,
     kontorTotalSats,
     kontorMinerCalibrated: kontorMiner.calibrated,

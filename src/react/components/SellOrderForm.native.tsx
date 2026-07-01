@@ -49,6 +49,11 @@ export interface SellOrderFormProps {
   defaultSatsPerVbyte?: number;
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
+  /**
+   * Dismiss handler. When provided, the result screen shows a "Close" button
+   * beside "New order" (e.g. to close the surrounding modal).
+   */
+  onClose?: () => void;
   style?: StyleProp<ViewStyle>;
   styles?: SellOrderFormStyles;
 }
@@ -119,6 +124,7 @@ export function SellOrderForm({
   defaultSatsPerVbyte,
   onSuccess,
   onError,
+  onClose,
   style,
   styles: stylesProp,
 }: SellOrderFormProps) {
@@ -391,6 +397,7 @@ export function SellOrderForm({
         onRetry={retry}
         onComplete={reset}
         completeLabel="New order"
+        onClose={onClose}
         sheet={common}
         styles={{
           button: stylesProp?.button,

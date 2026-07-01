@@ -78,6 +78,51 @@ export function sellingDisplay(
   }
 }
 
+/**
+ * Map an owned asset to the `(asset, listing_type)` identifiers expected by the
+ * Horizon Market asset-image endpoint. Brand-only fungibles (XCP/ZELD/KOR) pass
+ * their well-known name so the endpoint returns the brand logo.
+ */
+function assetImageIdentity(a: AssetOption): {
+  asset: string;
+  listingType: "counterparty" | "ordinal" | "zeld" | "kontor";
+} {
+  switch (a.type) {
+    case "counterparty":
+      return { asset: a.assetName, listingType: "counterparty" };
+    case "zeld":
+      return { asset: "ZELD", listingType: "zeld" };
+    case "kor":
+      return { asset: "KOR", listingType: "kontor" };
+    case "kontor-nft":
+      return { asset: a.nftId, listingType: "kontor" };
+    case "ordinal":
+      return { asset: a.inscriptionId, listingType: "ordinal" };
+  }
+}
+
+/**
+ * URL of the Horizon Market asset-image endpoint for an owned asset, usable
+ * directly as an `<img src>` / `Image` source: it 302-redirects to the real
+ * artwork (and 404s when the asset has no renderable image, so callers should
+ * fall back to a placeholder on error). `variant` picks the full image or the
+ * thumbnail. The network follows the request host, so `baseUrl` must already
+ * point at the deployment for the active network.
+ */
+export function assetImageUrl(
+  baseUrl: string,
+  a: AssetOption,
+  variant: "image" | "thumbnail" = "thumbnail",
+): string {
+  const { asset, listingType } = assetImageIdentity(a);
+  const params = new URLSearchParams({
+    asset,
+    listing_type: listingType,
+    redirect: variant,
+  });
+  return `${baseUrl.replace(/\/$/, "")}/api/atomic-swaps/asset-image?${params.toString()}`;
+}
+
 export function assetKey(a: AssetOption): string {
   if (a.type === "zeld") return `zeld:${a.address}`;
   if (a.type === "counterparty") return `cp:${a.address}:${a.assetName}`;

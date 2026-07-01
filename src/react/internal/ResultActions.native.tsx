@@ -7,6 +7,9 @@ export interface ResultActionsProps {
   onRetry: () => void;
   onComplete: () => void;
   completeLabel: string;
+  /** Optional dismiss action; when set, a "Close" button is shown on success. */
+  onClose?: () => void;
+  closeLabel?: string;
   sheet: CommonSheet;
   styles?: {
     button?: StyleProp<ViewStyle>;
@@ -22,6 +25,8 @@ export function ResultActions({
   onRetry,
   onComplete,
   completeLabel,
+  onClose,
+  closeLabel = "Close",
   sheet,
   styles,
 }: ResultActionsProps) {
@@ -57,6 +62,16 @@ export function ResultActions({
           {completeLabel}
         </Text>
       </Pressable>
+      {onClose && (
+        <Pressable
+          onPress={onClose}
+          style={[sheet.buttonSecondary, sheet.flex1, styles?.buttonSecondary]}
+        >
+          <Text style={[sheet.buttonSecondaryText, styles?.buttonSecondaryText]}>
+            {closeLabel}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }

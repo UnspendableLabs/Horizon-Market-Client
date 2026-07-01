@@ -121,9 +121,10 @@ export function Header() {
         />
       </Modal>
 
-      {/* Sell modal */}
+      {/* Sell modal — kept open on success so the result screen (success message
+          + "New order" / "Close") is shown; "Close" dismisses the modal. */}
       <Modal open={sellOpen} onClose={() => setSellOpen(false)} title="Sell">
-        <SellOrderForm onSuccess={() => setSellOpen(false)} />
+        <SellOrderForm onClose={() => setSellOpen(false)} />
       </Modal>
 
       {/* Wallet modal */}

@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  Alert,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -9,9 +11,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AssetOption } from "../hooks/useAssets.js";
+import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
-import { formatSats, formatUsd, sellingDisplay } from "./format.js";
+import { assetImageUrl, formatSats, formatUsd, sellingDisplay } from "./format.js";
 import {
   FEE_OPTIONS,
   type FeeOption,
@@ -98,6 +101,7 @@ function createSheet(theme: ResolvedTheme) {
       alignItems: "center",
       justifyContent: "center",
     },
+    avatarImage: { width: 56, height: 56, borderRadius: 14 },
     avatarText: { color: "#fff", fontWeight: "700", fontSize: 13 },
     assetName: {
       fontSize: theme.typography.fontSizeLg,
@@ -105,6 +109,7 @@ function createSheet(theme: ResolvedTheme) {
       color: theme.colors.text,
     },
     muted: { fontSize: theme.typography.fontSizeBase, color: theme.colors.textMuted },
+    sellingSub: { fontSize: theme.typography.fontSizeBase, color: theme.colors.text },
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -130,7 +135,7 @@ function createSheet(theme: ResolvedTheme) {
       alignItems: "flex-end",
       justifyContent: "space-between",
     },
-    bigNumber: { fontSize: 36, fontWeight: "700", color: theme.colors.text },
+    bigNumber: { fontSize: 27, fontWeight: "700", color: theme.colors.text },
     satsTag: { flexDirection: "row", alignItems: "center", gap: 6 },
     btcCircle: {
       width: 22,
@@ -150,7 +155,23 @@ function createSheet(theme: ResolvedTheme) {
     },
     breakValue: { color: theme.colors.text, fontWeight: "600", textAlign: "right" },
     free: { color: theme.colors.success, fontWeight: "600" },
-    note: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted, lineHeight: 18 },
+    breakLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    infoDot: {
+      width: 15,
+      height: 15,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.textMuted,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    infoDotText: {
+      color: theme.colors.textMuted,
+      fontSize: 9,
+      fontWeight: "700",
+      fontStyle: "italic",
+      lineHeight: 11,
+    },
     error: { fontSize: theme.typography.fontSizeSm, color: theme.colors.error },
     button: {
       padding: theme.spacing.md,
@@ -179,6 +200,71 @@ function SatsTag({ sheet }: { sheet: ReturnType<typeof createSheet> }) {
       </View>
       <Text style={sheet.satsLabel}>Sats</Text>
     </View>
+  );
+}
+
+/** Explanations shown via the tappable (i) hints, keeping the panel compact. */
+const FEE_HINTS = {
+  attach:
+    "Miner fee to place your asset on its own UTXO (Counterparty attach / ZELD transfer) so the swap can be created.",
+  network:
+    "Miner fee for the separate transaction that pays the platform listing fee.",
+  listing: "Platform fee for listing your asset on the marketplace.",
+};
+
+/** Small circled "i" that reveals its explanation in an alert on tap. */
+function InfoHint({
+  title,
+  text,
+  sheet,
+}: {
+  title: string;
+  text: string;
+  sheet: ReturnType<typeof createSheet>;
+}) {
+  return (
+    <Pressable
+      hitSlop={8}
+      onPress={() => Alert.alert(title, text)}
+      accessibilityRole="button"
+      accessibilityLabel={`${title} — more info`}
+    >
+      <View style={sheet.infoDot}>
+        <Text style={sheet.infoDotText}>i</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Asset thumbnail: the real artwork from the Horizon Market asset-image endpoint,
+ * falling back to a colored monogram badge when it's missing or fails to load.
+ */
+function AssetAvatar({
+  asset,
+  imageUrl,
+  sheet,
+}: {
+  asset: AssetOption;
+  imageUrl: string;
+  sheet: ReturnType<typeof createSheet>;
+}) {
+  // Track the failed URL so switching assets re-attempts the new image.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (failedUrl === imageUrl) {
+    const badge = avatarBadge(asset);
+    return (
+      <View style={[sheet.avatar, { backgroundColor: badge.bg }]}>
+        <Text style={sheet.avatarText}>{badge.label}</Text>
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      onError={() => setFailedUrl(imageUrl)}
+      style={sheet.avatarImage}
+    />
   );
 }
 
@@ -212,6 +298,7 @@ export function SellReview({
 }: SellReviewProps) {
   const theme = useTheme();
   const sheet = useMemo(() => createSheet(theme), [theme]);
+  const { baseUrl } = useHorizonMarket();
 
   const {
     estimates,
@@ -225,23 +312,18 @@ export function SellReview({
     feeWaived,
     previewLoading,
     previewError,
+    canSign,
     kontorListingSats,
     kontorListingLoading,
+    kontorListingError,
     kontorMinerFeeSats,
     kontorTotalSats,
   } = review;
 
   const selling = sellingDisplay(asset, quantity);
-  const badge = avatarBadge(asset);
+  const imageUrl = assetImageUrl(baseUrl, asset);
   const priceUsd = formatUsd(priceSats, btcUsd);
   const totalUsd = cost ? formatUsd(cost.total, btcUsd) : null;
-
-  const attachNote =
-    asset.type === "counterparty" && (cost?.attach ?? 0) > 0
-      ? `Your ${asset.assetName} isn't on a dedicated UTXO yet, so it's moved there automatically before the listing goes live.`
-      : asset.type === "zeld" && cost && (cost.attach > 0 || !feeWaived)
-        ? "The listing fee is sent in the same transaction as your ZELD transfer to create the swap UTXO."
-        : null;
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -249,12 +331,12 @@ export function SellReview({
       <View style={sheet.section}>
         <Text style={sheet.sectionLabel}>You&apos;re selling</Text>
         <View style={sheet.sellingRow}>
-          <View style={[sheet.avatar, { backgroundColor: badge.bg }]}>
-            <Text style={sheet.avatarText}>{badge.label}</Text>
-          </View>
+          <AssetAvatar asset={asset} imageUrl={imageUrl} sheet={sheet} />
           <View style={{ gap: 2 }}>
             <Text style={sheet.assetName}>{selling.name}</Text>
-            {selling.sub ? <Text style={sheet.muted}>{selling.sub}</Text> : null}
+            {selling.sub ? (
+              <Text style={sheet.sellingSub}>{selling.sub}</Text>
+            ) : null}
           </View>
         </View>
       </View>
@@ -302,7 +384,14 @@ export function SellReview({
             </View>
             <View style={sheet.divider} />
             <View style={sheet.breakRow}>
-              <Text style={sheet.muted}>Listing fee</Text>
+              <View style={sheet.breakLabelRow}>
+                <Text style={sheet.muted}>Listing fee</Text>
+                <InfoHint
+                  title="Listing fee"
+                  text={FEE_HINTS.listing}
+                  sheet={sheet}
+                />
+              </View>
               {kontorListingSats != null ? (
                 <SatsValue sats={kontorListingSats} btcUsd={btcUsd} sheet={sheet} />
               ) : (
@@ -312,7 +401,16 @@ export function SellReview({
               )}
             </View>
             <View style={sheet.breakRow}>
-              <Text style={sheet.muted}>Attach miner fee</Text>
+              <View style={sheet.breakLabelRow}>
+                <Text style={sheet.muted}>Attach miner fee</Text>
+                <InfoHint
+                  title="Attach miner fee"
+                  text={`Estimated from a recent on-chain attach reveal at ${
+                    feeRate ?? estimates?.halfHourFee ?? "…"
+                  } sat/vB (assumes one funding input); the exact total is set when you sign.`}
+                  sheet={sheet}
+                />
+              </View>
               {kontorMinerFeeSats != null ? (
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={sheet.breakValue}>
@@ -328,11 +426,11 @@ export function SellReview({
                 <Text style={sheet.breakValue}>…</Text>
               )}
             </View>
-            <Text style={sheet.note}>
-              Miner fee estimated from a recent on-chain attach reveal at{" "}
-              {feeRate ?? estimates?.halfHourFee ?? "…"} sat/vB (assumes one
-              funding input); the exact total is set when you sign.
-            </Text>
+            {kontorListingError ? (
+              <Text style={sheet.error}>
+                Couldn&apos;t estimate fees: {kontorListingError.message}
+              </Text>
+            ) : null}
           </>
         ) : (
           <>
@@ -351,18 +449,39 @@ export function SellReview({
                 <View style={sheet.divider} />
                 {cost.attach > 0 ? (
                   <View style={sheet.breakRow}>
-                    <Text style={sheet.muted}>Attach fee</Text>
+                    <View style={sheet.breakLabelRow}>
+                      <Text style={sheet.muted}>Attach fee</Text>
+                      <InfoHint
+                        title="Attach fee"
+                        text={FEE_HINTS.attach}
+                        sheet={sheet}
+                      />
+                    </View>
                     <SatsValue sats={cost.attach} btcUsd={btcUsd} sheet={sheet} />
                   </View>
                 ) : null}
                 {cost.network > 0 ? (
                   <View style={sheet.breakRow}>
-                    <Text style={sheet.muted}>Network fee</Text>
+                    <View style={sheet.breakLabelRow}>
+                      <Text style={sheet.muted}>Network fee</Text>
+                      <InfoHint
+                        title="Network fee"
+                        text={FEE_HINTS.network}
+                        sheet={sheet}
+                      />
+                    </View>
                     <SatsValue sats={cost.network} btcUsd={btcUsd} sheet={sheet} />
                   </View>
                 ) : null}
                 <View style={sheet.breakRow}>
-                  <Text style={sheet.muted}>Listing fee</Text>
+                  <View style={sheet.breakLabelRow}>
+                    <Text style={sheet.muted}>Listing fee</Text>
+                    <InfoHint
+                      title="Listing fee"
+                      text={FEE_HINTS.listing}
+                      sheet={sheet}
+                    />
+                  </View>
                   {feeWaived || cost.listing === 0 ? (
                     <Text style={sheet.free}>Free</Text>
                   ) : (
@@ -377,8 +496,6 @@ export function SellReview({
                 Couldn&apos;t estimate fees: {previewError.message}
               </Text>
             ) : null}
-
-            {attachNote ? <Text style={sheet.note}>{attachNote}</Text> : null}
           </>
         )}
       </View>
@@ -396,9 +513,13 @@ export function SellReview({
       </View>
 
       <Pressable
-        disabled={isSubmitting}
+        disabled={isSubmitting || !canSign}
         onPress={onSign}
-        style={[sheet.button, isSubmitting && sheet.disabled, stylesProp?.button]}
+        style={[
+          sheet.button,
+          (isSubmitting || !canSign) && sheet.disabled,
+          stylesProp?.button,
+        ]}
       >
         <Text style={[sheet.buttonText, stylesProp?.buttonText]}>
           {isSubmitting ? "Signing…" : "Sign"}

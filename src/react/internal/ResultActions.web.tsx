@@ -10,6 +10,9 @@ export interface ResultActionsProps {
   onRetry: () => void;
   onComplete: () => void;
   completeLabel: string;
+  /** Optional dismiss action; when set, a "Close" button is shown on success. */
+  onClose?: () => void;
+  closeLabel?: string;
   classNames?: {
     button?: string;
     buttonSecondary?: string;
@@ -22,6 +25,8 @@ export function ResultActions({
   onRetry,
   onComplete,
   completeLabel,
+  onClose,
+  closeLabel = "Close",
   classNames,
 }: ResultActionsProps) {
   if (isError) {
@@ -56,6 +61,16 @@ export function ResultActions({
       >
         {completeLabel}
       </button>
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className={classNames?.buttonSecondary}
+          style={{ ...secondaryButton, flex: 1 }}
+        >
+          {closeLabel}
+        </button>
+      )}
     </div>
   );
 }

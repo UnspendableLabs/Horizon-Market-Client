@@ -8,6 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { resolveFetch } from "../api/resolveFetch.js";
 import { HorizonMarketClient } from "../client.js";
+import { DEFAULT_BASE_URL } from "../config.js";
 import { LocalSigner, type Signer } from "../crypto/signer.js";
 import type { Network } from "../types/index.js";
 import {
@@ -26,6 +27,8 @@ export interface HorizonMarketContextValue {
   network: Network;
   /** Set to `"signet"` when Kontor (KOR token + NFT) listings are enabled. */
   kontorNetwork: "signet" | undefined;
+  /** Resolved Horizon Market API origin (e.g. for the asset-image endpoint). */
+  baseUrl: string;
   ordApiBaseUrl: string | undefined;
   /** TTL (ms) for the persistent owned-balances cache. Defaults to 1h. */
   balancesCacheTtlMs: number | undefined;
@@ -164,12 +167,13 @@ export function HorizonMarketProvider({
       logout,
       network,
       kontorNetwork,
+      baseUrl: baseUrl ?? DEFAULT_BASE_URL,
       ordApiBaseUrl,
       balancesCacheTtlMs,
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, logout, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
   );
 
   return (

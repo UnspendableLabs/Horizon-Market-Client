@@ -38,6 +38,11 @@ export interface SellOrderFormProps {
   defaultSatsPerVbyte?: number;
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
+  /**
+   * Dismiss handler. When provided, the result screen shows a "Close" button
+   * beside "New order" (e.g. to close the surrounding modal).
+   */
+  onClose?: () => void;
   className?: string;
   classNames?: SellOrderFormClassNames;
   style?: CSSProperties;
@@ -87,6 +92,7 @@ export function SellOrderForm({
   defaultSatsPerVbyte,
   onSuccess,
   onError,
+  onClose,
   className,
   classNames,
   style,
@@ -321,10 +327,17 @@ export function SellOrderForm({
   // below rather than `=== false`, otherwise the mempool note never renders.
   const pendingConfirmation =
     Boolean(successResult?.created) && !successResult?.swap.funded;
-  const fundingTxid =
-    successResult?.swap.assetUtxoId?.split(":")[0] ??
-    successResult?.swap.txId ??
-    null;
+  // The tx to track differs by listing type. Counterparty attach / zeld transfer
+  // prep create a NEW asset UTXO, so the funding tx is that UTXO's txid. Ordinals
+  // reuse the existing inscription UTXO — nothing is funded on-chain — so the
+  // pending tx is the standalone platform-fee payment; using assetUtxoId there
+  // would link to the inscription's txid, not the payment.
+  const swap = successResult?.swap;
+  const fundingTxid = !swap
+    ? null
+    : swap.listingType === "ordinal"
+      ? swap.onChainPayment?.txid ?? swap.txId ?? null
+      : swap.assetUtxoId?.split(":")[0] ?? swap.txId ?? null;
   const trackUrl = pendingConfirmation
     ? mempoolTxUrl(network, kontorNetwork, fundingTxid)
     : null;
@@ -372,6 +385,7 @@ export function SellOrderForm({
         onRetry={retry}
         onComplete={reset}
         completeLabel="New order"
+        onClose={onClose}
         classNames={{
           button: classNames?.button,
           buttonSecondary: classNames?.buttonSecondary,

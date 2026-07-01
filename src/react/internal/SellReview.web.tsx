@@ -1,7 +1,8 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { AssetOption } from "../hooks/useAssets.js";
+import { useHorizonMarket } from "../context.js";
 import { webTokens } from "../theme.js";
-import { formatSats, formatUsd, sellingDisplay } from "./format.js";
+import { assetImageUrl, formatSats, formatUsd, sellingDisplay } from "./format.js";
 import { AssetAvatar, BtcGoldIcon } from "./icons.web.js";
 import {
   FEE_OPTIONS,
@@ -60,7 +61,7 @@ const amountRow: CSSProperties = {
 };
 
 const bigNumber: CSSProperties = {
-  fontSize: 40,
+  fontSize: 30,
   fontWeight: 700,
   lineHeight: 1.05,
   color: webTokens.text,
@@ -77,6 +78,21 @@ const satsTag: CSSProperties = {
 const usdLine: CSSProperties = {
   fontSize: webTokens.fontSizeBase,
   color: webTokens.textMuted,
+};
+
+/** "You're selling" quantity/units line — white so the amount reads clearly. */
+const sellingSub: CSSProperties = {
+  fontSize: webTokens.fontSizeBase,
+  color: webTokens.text,
+};
+
+/** A fee-breakdown label paired with its inline info hint. */
+const breakLabel: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  color: webTokens.textMuted,
+  fontSize: webTokens.fontSizeBase,
 };
 
 const divider: CSSProperties = {
@@ -98,11 +114,95 @@ const breakValue: CSSProperties = {
   color: webTokens.text,
 };
 
-const noteText: CSSProperties = {
-  fontSize: webTokens.fontSizeSm,
-  color: webTokens.textMuted,
-  lineHeight: 1.5,
+/** Explanations shown via the inline (i) hints, keeping the panel compact. */
+const FEE_HINTS = {
+  attach:
+    "Miner fee to place your asset on its own UTXO (Counterparty attach / ZELD transfer) so the swap can be created.",
+  network:
+    "Miner fee for the separate transaction that pays the platform listing fee.",
+  listing: "Platform fee for listing your asset on the marketplace.",
+  kontorMiner:
+    "Estimated miner fee for the on-chain attach reveal at the selected fee rate (assumes one funding input); the exact total is set when you sign.",
 };
+
+const infoWrap: CSSProperties = {
+  position: "relative",
+  display: "inline-flex",
+  alignItems: "center",
+};
+
+const infoDot: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 15,
+  height: 15,
+  flexShrink: 0,
+  padding: 0,
+  borderRadius: "50%",
+  border: `1px solid ${webTokens.textMuted}`,
+  background: "transparent",
+  color: webTokens.textMuted,
+  fontSize: 9,
+  fontWeight: 700,
+  fontStyle: "italic",
+  lineHeight: 1,
+  cursor: "pointer",
+};
+
+const tooltipBubble: CSSProperties = {
+  position: "absolute",
+  bottom: "calc(100% + 6px)",
+  left: 0,
+  zIndex: 20,
+  width: "max-content",
+  maxWidth: 240,
+  padding: "8px 10px",
+  background: webTokens.backgroundElevated,
+  color: webTokens.text,
+  border: `1px solid ${webTokens.border}`,
+  borderRadius: webTokens.radiusSm,
+  fontSize: webTokens.fontSizeSm,
+  fontWeight: 400,
+  fontStyle: "normal",
+  lineHeight: 1.4,
+  textAlign: "left",
+  whiteSpace: "normal",
+  boxShadow: "0 8px 24px -6px rgba(0, 0, 0, 0.5)",
+  pointerEvents: "none",
+};
+
+/**
+ * Small circled "i" with an explanation shown on hover, keyboard focus, or tap
+ * (the native `title` tooltip is unreliable — delayed and easy to miss).
+ */
+function InfoHint({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      style={infoWrap}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={text}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        style={infoDot}
+      >
+        i
+      </button>
+      {open && (
+        <span role="tooltip" style={tooltipBubble}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function SatsValue({
   sats,
@@ -142,22 +242,19 @@ export function SellReview({
     feeWaived,
     previewLoading,
     previewError,
+    canSign,
     kontorListingSats,
     kontorListingLoading,
+    kontorListingError,
     kontorMinerFeeSats,
     kontorTotalSats,
   } = review;
 
+  const { baseUrl } = useHorizonMarket();
+  const imageUrl = assetImageUrl(baseUrl, asset);
   const selling = sellingDisplay(asset, quantity);
   const priceUsd = formatUsd(priceSats, btcUsd);
   const totalUsd = cost ? formatUsd(cost.total, btcUsd) : null;
-
-  const attachNote =
-    asset.type === "counterparty" && (cost?.attach ?? 0) > 0
-      ? `Your ${asset.assetName} isn't on a dedicated UTXO yet, so it's moved there automatically before the listing goes live.`
-      : asset.type === "zeld" && cost && (cost.attach > 0 || !feeWaived)
-        ? "The listing fee is sent in the same transaction as your ZELD transfer to create the swap UTXO."
-        : null;
 
   const feeSelect = (
     <select
@@ -183,10 +280,10 @@ export function SellReview({
       <div style={ws.reviewSection}>
         <span style={ws.reviewSectionLabel}>You&apos;re selling</span>
         <div style={sellingRow}>
-          <AssetAvatar asset={asset} size={56} />
+          <AssetAvatar asset={asset} size={56} imageUrl={imageUrl} />
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <span style={assetNameStyle}>{selling.name}</span>
-            {selling.sub && <span style={usdLine}>{selling.sub}</span>}
+            {selling.sub && <span style={sellingSub}>{selling.sub}</span>}
           </div>
         </div>
       </div>
@@ -221,7 +318,10 @@ export function SellReview({
             </div>
             <div style={divider} />
             <div style={breakRow}>
-              <span style={usdLine}>Listing fee</span>
+              <span style={breakLabel}>
+                Listing fee
+                <InfoHint text={FEE_HINTS.listing} />
+              </span>
               {kontorListingSats != null ? (
                 <SatsValue sats={kontorListingSats} btcUsd={btcUsd} />
               ) : (
@@ -231,7 +331,14 @@ export function SellReview({
               )}
             </div>
             <div style={breakRow}>
-              <span style={usdLine}>Attach miner fee</span>
+              <span style={breakLabel}>
+                Attach miner fee
+                <InfoHint
+                  text={`Estimated from a recent on-chain attach reveal at ${
+                    feeRate ?? estimates?.halfHourFee ?? "…"
+                  } sat/vB (assumes one funding input); the exact total is set when you sign.`}
+                />
+              </span>
               {kontorMinerFeeSats != null ? (
                 <div style={{ textAlign: "right" }}>
                   <div style={breakValue}>
@@ -247,11 +354,11 @@ export function SellReview({
                 <span style={breakValue}>…</span>
               )}
             </div>
-            <p style={noteText}>
-              Miner fee estimated from a recent on-chain attach reveal at{" "}
-              {feeRate ?? estimates?.halfHourFee ?? "…"} sat/vB (assumes one
-              funding input); the exact total is set when you sign.
-            </p>
+            {kontorListingError && (
+              <span style={ws.errorText}>
+                Couldn&apos;t estimate fees: {kontorListingError.message}
+              </span>
+            )}
           </>
         ) : (
           <>
@@ -273,18 +380,27 @@ export function SellReview({
                 <div style={divider} />
                 {cost.attach > 0 && (
                   <div style={breakRow}>
-                    <span style={usdLine}>Attach fee</span>
+                    <span style={breakLabel}>
+                      Attach fee
+                      <InfoHint text={FEE_HINTS.attach} />
+                    </span>
                     <SatsValue sats={cost.attach} btcUsd={btcUsd} />
                   </div>
                 )}
                 {cost.network > 0 && (
                   <div style={breakRow}>
-                    <span style={usdLine}>Network fee</span>
+                    <span style={breakLabel}>
+                      Network fee
+                      <InfoHint text={FEE_HINTS.network} />
+                    </span>
                     <SatsValue sats={cost.network} btcUsd={btcUsd} />
                   </div>
                 )}
                 <div style={breakRow}>
-                  <span style={usdLine}>Listing fee</span>
+                  <span style={breakLabel}>
+                    Listing fee
+                    <InfoHint text={FEE_HINTS.listing} />
+                  </span>
                   {feeWaived || cost.listing === 0 ? (
                     <span style={{ ...breakValue, color: webTokens.success }}>
                       Free
@@ -301,8 +417,6 @@ export function SellReview({
                 Couldn&apos;t estimate fees: {previewError.message}
               </span>
             )}
-
-            {attachNote && <p style={noteText}>{attachNote}</p>}
           </>
         )}
       </div>
@@ -325,9 +439,9 @@ export function SellReview({
       <button
         type="button"
         onClick={onSign}
-        disabled={isSubmitting}
+        disabled={isSubmitting || !canSign}
         className={classNames?.button}
-        style={ws.withDisabled(ws.primaryButton, isSubmitting)}
+        style={ws.withDisabled(ws.primaryButton, isSubmitting || !canSign)}
       >
         {isSubmitting ? "Signing…" : "Sign"}
       </button>
