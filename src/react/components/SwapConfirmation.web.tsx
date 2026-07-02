@@ -3,6 +3,8 @@ import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
 import { useSwapConfirmation } from "../hooks/useSwapConfirmation.js";
 import { cx, formatAssetLabel, truncate } from "../internal/format.js";
+import { BuyReview } from "../internal/BuyReview.web.js";
+import { useBuyReview } from "../internal/useBuyReview.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SummaryRow } from "../internal/SummaryRow.web.js";
 import * as ws from "../internal/styles.web.js";
@@ -75,6 +77,14 @@ export function SwapConfirmation({
     onError,
   });
 
+  // Fee rate + composed cost preview for the buy review. Stays idle until the
+  // buy confirm step is shown (so it never composes a quote for a delist).
+  const buyReview = useBuyReview({
+    swap,
+    defaultSatsPerVbyte,
+    active: step === "confirm" && mode === "buy",
+  });
+
   const root = { ...rootStyle, ...style };
   const status = mode === "buy" ? buyStatus : delistStatus;
   const steps = mode === "buy" ? buySteps : delistSteps;
@@ -86,7 +96,34 @@ export function SwapConfirmation({
     valueClassName: classNames?.rowValue,
   };
 
+  if (step === "confirm" && mode === "buy") {
+    return (
+      <div className={cx(classNames?.root, className)} style={root}>
+        <BuyReview
+          swap={swap}
+          review={buyReview}
+          isSubmitting={isSubmitting}
+          onConfirm={() =>
+            void confirmPurchase({
+              ...fillParams,
+              ...(buyReview.feeRate != null
+                ? { satsPerVbyte: buyReview.feeRate }
+                : {}),
+            })
+          }
+          onCancel={onComplete}
+          classNames={{
+            button: classNames?.button,
+            buttonSecondary: classNames?.buttonSecondary,
+          }}
+        />
+      </div>
+    );
+  }
+
   if (step === "confirm") {
+    // Delist confirmation (mode === "sell") — a compact summary of the listing
+    // the seller is removing.
     return (
       <div className={cx(classNames?.root, className)} style={root}>
         <div className={classNames?.details} style={ws.summaryStack}>
@@ -103,12 +140,8 @@ export function SwapConfirmation({
             {...rowClassNames}
           />
           <SummaryRow
-            label={mode === "buy" ? "Seller" : "Listing"}
-            value={
-              mode === "buy"
-                ? truncate(swap.sellerAddress)
-                : `${swap.listingType} · ${truncate(swap.id)}`
-            }
+            label="Listing"
+            value={`${swap.listingType} · ${truncate(swap.id)}`}
             mono
             {...rowClassNames}
           />
@@ -124,19 +157,11 @@ export function SwapConfirmation({
         <button
           type="button"
           disabled={isSubmitting}
-          onClick={() =>
-            mode === "buy" ? void confirmPurchase(fillParams) : void delist()
-          }
+          onClick={() => void delist()}
           className={classNames?.button}
           style={ws.withDisabled(ws.primaryButton, isSubmitting)}
         >
-          {isSubmitting
-            ? mode === "buy"
-              ? "Confirming…"
-              : "Delisting…"
-            : mode === "buy"
-              ? "Confirm Purchase"
-              : "Delist"}
+          {isSubmitting ? "Delisting…" : "Delist"}
         </button>
       </div>
     );

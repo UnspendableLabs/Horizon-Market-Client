@@ -742,7 +742,10 @@ export class HorizonMarketClient {
         }
         return fillKontorSwap(
           first,
-          { kontorFundingUtxos: params.kontorFundingUtxos },
+          {
+            kontorFundingUtxos: params.kontorFundingUtxos,
+            satsPerVbyte: params.satsPerVbyte,
+          },
           this.http,
           this.assertSigner(),
           this.resolveKontorCtx(),

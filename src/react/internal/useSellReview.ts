@@ -7,23 +7,11 @@ import { useKontorListingFee } from "./useKontorListingFee.js";
 import { useKontorMinerFee } from "./useKontorMinerFee.js";
 import { estimateKontorMinerFee } from "./kontorFeeEstimate.js";
 import { buildSellOrderParams } from "./sellFormValidation.js";
+import { type FeeOption, rateForOption } from "./feeRate.js";
 import type { SellOrderFormValues } from "../hooks/useSellOrder.js";
 import type { OpenSellOrderParams } from "../../workflows/sell.js";
 
-/** Preset speed for the sell review's fee-rate selector. */
-export type FeeOption = "slow" | "normal" | "fast";
-
-export const FEE_OPTIONS: FeeOption[] = ["slow", "normal", "fast"];
-
-function rateForOption(
-  option: FeeOption,
-  estimates: FeeEstimates | null,
-): number | undefined {
-  if (!estimates) return undefined;
-  if (option === "fast") return estimates.fastestFee;
-  if (option === "slow") return estimates.hourFee;
-  return estimates.halfHourFee;
-}
+export { FEE_OPTIONS, type FeeOption } from "./feeRate.js";
 
 export interface UseSellReviewArgs {
   formValues: SellOrderFormValues;

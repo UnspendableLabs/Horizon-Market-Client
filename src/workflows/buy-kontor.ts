@@ -22,7 +22,7 @@ import { WorkflowProgressReporter } from "./progress.js";
  */
 export async function fillKontorSwap(
   swap: AtomicSwap,
-  params: { kontorFundingUtxos?: KontorFunding },
+  params: { kontorFundingUtxos?: KontorFunding; satsPerVbyte?: number },
   http: HttpClient,
   signer: Signer,
   ctx: KontorContext,
@@ -60,6 +60,9 @@ export async function fillKontorSwap(
     signing,
     funding,
     indexerUrl: ctx.indexerUrl,
+    // Fee rate for the buyer's commit + swap-reveal composed by the Kontor SDK
+    // during accept(). Mirrors the seller's attach reveal in openKontorSellOrder.
+    feeRate: params.satsPerVbyte,
   });
 
   try {

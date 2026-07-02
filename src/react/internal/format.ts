@@ -101,6 +101,42 @@ export function sellingDisplay(
 }
 
 /**
+ * "You'll receive" headline for the buy review screen: a top line (asset name)
+ * and an optional sub line (quantity + unit), derived from a listed `AtomicSwap`
+ * (which — unlike an owned `AssetOption` — carries its fields flat).
+ */
+export function buyingDisplay(
+  swap: AtomicSwap,
+): { name: string; sub: string | null } {
+  if (swap.listingType === "ordinal") {
+    return {
+      name: "Inscription",
+      sub:
+        swap.inscriptionNumber != null
+          ? `#${swap.inscriptionNumber}`
+          : truncate(swap.assetUtxoId ?? swap.id),
+    };
+  }
+  if (swap.listingType === "kontor") {
+    if (swap.kontorAssetKind === "nft") {
+      return {
+        name: swap.kontorNftId ? `NFT ${truncate(swap.kontorNftId)}` : "NFT",
+        sub: null,
+      };
+    }
+    return {
+      name: "KOR",
+      sub: swap.kontorAmount ? `${swap.kontorAmount} KOR` : null,
+    };
+  }
+  // counterparty / zeld — both carry assetName + assetQuantity.
+  const name = swap.assetName ?? "Asset";
+  const qty = swap.assetQuantity != null ? swap.assetQuantity.toString() : null;
+  const unit = swap.listingType === "zeld" ? name : "units";
+  return { name, sub: qty ? `${qty} ${unit}` : null };
+}
+
+/**
  * Map an owned asset to the `(asset, listing_type)` identifiers expected by the
  * Horizon Market asset-image endpoint. Brand-only fungibles (XCP/ZELD/KOR) pass
  * their well-known name so the endpoint returns the brand logo.
