@@ -20,6 +20,8 @@ import {
 } from "../internal/walletBalances.web.js";
 import { Modal } from "./Modal.web.js";
 import { SellOrderForm } from "./SellOrderForm.web.js";
+import { WithdrawForm } from "./WithdrawForm.web.js";
+import type { WithdrawTarget } from "../hooks/useWithdraw.js";
 
 export interface WalletBalancesClassNames {
   root?: string;
@@ -577,7 +579,7 @@ function OtherAssetTile({
 }: {
   asset: AssetOption;
   onDeposit: (asset: AssetOption) => void;
-  onWithdraw: () => void;
+  onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
   className?: string;
 }) {
@@ -594,7 +596,7 @@ function OtherAssetTile({
         )}
         <div style={iconRow}>
           <IconAction kind="deposit" onClick={() => onDeposit(asset)} />
-          <IconAction kind="withdraw" onClick={onWithdraw} />
+          <IconAction kind="withdraw" onClick={() => onWithdraw(asset)} />
           <IconAction kind="sell" onClick={() => onSell(asset)} />
         </div>
       </div>
@@ -624,6 +626,7 @@ export function WalletBalances({
 
   const [deposit, setDeposit] = useState<DepositInfo | null>(null);
   const [sellAsset, setSellAsset] = useState<AssetOption | null>(null);
+  const [withdraw, setWithdraw] = useState<WithdrawTarget | null>(null);
 
   const openDeposit = (symbol: string, type: DepositType) => {
     if (!addresses) return;
@@ -632,8 +635,6 @@ export function WalletBalances({
   };
   const openDepositForAsset = (asset: AssetOption) =>
     openDeposit(assetDepositLabel(asset), asset.type);
-  // Withdraw is intentionally inert for now (feature not yet built).
-  const handleWithdraw = () => {};
 
   const otherGroups = useMemo(
     () => [
@@ -677,7 +678,12 @@ export function WalletBalances({
         </div>
         <div style={actionRow}>
           <LabeledAction kind="deposit" onClick={() => openDeposit("BTC", "btc")} />
-          <LabeledAction kind="withdraw" onClick={handleWithdraw} />
+          <LabeledAction
+            kind="withdraw"
+            disabled={btcSats === null || btcSats === 0n}
+            title={btcSats ? "Withdraw" : "No BTC to withdraw"}
+            onClick={() => setWithdraw({ type: "btc", balanceSats: btcSats })}
+          />
         </div>
       </div>
 
@@ -688,7 +694,7 @@ export function WalletBalances({
             line={line}
             className={classNames?.token}
             onDeposit={openDeposit}
-            onWithdraw={handleWithdraw}
+            onWithdraw={setWithdraw}
             onSell={setSellAsset}
           />
         ))}
@@ -706,7 +712,7 @@ export function WalletBalances({
                   key={assetKey(a)}
                   asset={a}
                   onDeposit={openDepositForAsset}
-                  onWithdraw={handleWithdraw}
+                  onWithdraw={setWithdraw}
                   onSell={setSellAsset}
                   className={classNames?.tile}
                 />
@@ -751,8 +757,45 @@ export function WalletBalances({
           />
         )}
       </Modal>
+
+      <Modal
+        open={withdraw != null}
+        onClose={() => setWithdraw(null)}
+        title={withdraw ? `Withdraw ${withdrawTitle(withdraw)}` : ""}
+      >
+        {withdraw && (
+          <WithdrawForm
+            key={withdrawKey(withdraw)}
+            target={withdraw}
+            onClose={() => setWithdraw(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
+}
+
+/** Modal heading suffix for a withdraw target. */
+function withdrawTitle(target: WithdrawTarget): string {
+  switch (target.type) {
+    case "btc":
+      return "BTC";
+    case "counterparty":
+      return target.assetName;
+    case "zeld":
+      return "ZELD";
+    case "kor":
+      return "KOR";
+    case "ordinal":
+      return "Ordinal";
+    case "kontor-nft":
+      return "NFT";
+  }
+}
+
+/** Stable key so the WithdrawForm remounts (resets) when the target changes. */
+function withdrawKey(target: WithdrawTarget): string {
+  return target.type === "btc" ? "btc" : assetKey(target);
 }
 
 /** XCP / KOR / ZELD headline cell: brand mark + amount + Deposit/Withdraw/Sell. */
@@ -766,7 +809,7 @@ function TokenCell({
   line: TokenLine;
   className?: string;
   onDeposit: (symbol: string, type: DepositType) => void;
-  onWithdraw: () => void;
+  onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
 }): ReactNode {
   const depositType: DepositType =
@@ -790,7 +833,11 @@ function TokenCell({
           kind="deposit"
           onClick={() => onDeposit(line.symbol, depositType)}
         />
-        <IconAction kind="withdraw" onClick={onWithdraw} />
+        <IconAction
+          kind="withdraw"
+          disabled={!sellAsset}
+          onClick={() => sellAsset && onWithdraw(sellAsset)}
+        />
         <LabeledAction
           kind="sell"
           disabled={!sellAsset}

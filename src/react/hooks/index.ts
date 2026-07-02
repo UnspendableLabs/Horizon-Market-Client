@@ -18,6 +18,17 @@ export type {
   UseSellOrderOptions,
   UseSellOrderResult,
 } from "./useSellOrder.js";
+export { useWithdraw, WITHDRAW_FEE_OPTIONS } from "./useWithdraw.js";
+export type {
+  WithdrawTarget,
+  WithdrawStep,
+  WithdrawStatus,
+  WithdrawFeeOption,
+  WithdrawFormValues,
+  WithdrawResult,
+  UseWithdrawOptions,
+  UseWithdrawResult,
+} from "./useWithdraw.js";
 export { useSwapConfirmation } from "./useSwapConfirmation.js";
 export type {
   SwapConfirmationStep,

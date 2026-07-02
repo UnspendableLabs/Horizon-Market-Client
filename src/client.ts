@@ -48,6 +48,13 @@ import {
   type CounterpartyBalance,
 } from "./api/counterparty.js";
 import { getZeldBalance as apiGetZeldBalance, type ZeldBalance } from "./api/zeld.js";
+import {
+  prepareSend,
+  sendAsset,
+  type PreparedSend,
+  type SendRequest,
+  type SendResult,
+} from "./send/index.js";
 import { resolveFetch } from "./api/resolveFetch.js";
 import type { HorizonMarketClientOptions } from "./config.js";
 import {
@@ -94,6 +101,12 @@ export type { OpenSellOrderParams } from "./workflows/sell.js";
 export type { FillSwapsParams } from "./workflows/buy.js";
 export type { CounterpartyBalance } from "./api/counterparty.js";
 export type { ZeldBalance } from "./api/zeld.js";
+export type {
+  SendRequest,
+  SendResult,
+  SendKind,
+  PreparedSend,
+} from "./send/index.js";
 
 /** The connected wallet's KOR token balance (native Kontor token). */
 export interface KontorBalance {
@@ -349,6 +362,63 @@ export class HorizonMarketClient {
     } finally {
       session.close();
     }
+  }
+
+  // ─── Send / withdraw (all asset types) ───────────────────────────────────────
+
+  /**
+   * Compose, fund and sign a send of any supported asset type *without*
+   * broadcasting — the review-step path used by the wallet UI. Returns a
+   * {@link PreparedSend} whose `feeSats` is the exact miner fee (null for
+   * Kontor, whose fee is set at submit); call `.broadcast()` to publish.
+   *
+   * Requires an authenticated client (`privateKey`/`signer`). BTC / ordinal
+   * funding excludes any `options.protectedUtxoIds` (inscription / asset-bearing
+   * outputs) for asset-safety. Kontor (`kor`/`kontor-nft`) requires the client
+   * to be configured for signet (`kontorNetwork: "signet"`, `network: "testnet"`).
+   */
+  prepareSend(
+    request: SendRequest,
+    options?: { protectedUtxoIds?: readonly string[] },
+  ): Promise<PreparedSend> {
+    return prepareSend(request, this.buildSendDeps(request, options));
+  }
+
+  /**
+   * Compose, sign and broadcast a simple send of any supported asset type — the
+   * unified withdraw path used by the wallet UI. Returns the broadcast txid.
+   * Equivalent to `prepareSend(...).then((p) => p.broadcast())`.
+   */
+  async send(
+    request: SendRequest,
+    options?: { protectedUtxoIds?: readonly string[] },
+  ): Promise<SendResult> {
+    return sendAsset(request, this.buildSendDeps(request, options));
+  }
+
+  /** Assemble the send-composer dependencies from the client's configuration. */
+  private buildSendDeps(
+    request: SendRequest,
+    options?: { protectedUtxoIds?: readonly string[] },
+  ) {
+    const signer = this.assertSigner();
+    const kontorCtx =
+      request.kind === "kor" || request.kind === "kontor-nft"
+        ? this.resolveKontorCtx()
+        : undefined;
+
+    return {
+      signer,
+      fetch: this.fetch,
+      network: this.network,
+      btcNetwork: this.btcNetwork,
+      kontorNetwork: this.kontorNetwork,
+      http: this.http,
+      counterpartyApiBaseUrl: this.counterpartyApiBaseUrl,
+      zeldApiBaseUrl: this.zeldApiBaseUrl,
+      kontorCtx,
+      protectedUtxoIds: options?.protectedUtxoIds,
+    };
   }
 
   // ─── Authentication (platform-fee credits) ──────────────────────────────────

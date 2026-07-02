@@ -11,6 +11,8 @@ export {
   useAssets,
   useBtcBalance,
   useSellOrder,
+  useWithdraw,
+  WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
   useSwapList,
   usePrices,
@@ -25,6 +27,14 @@ export type {
   AssetOption,
   UseAssetsResult,
   UseBtcBalanceResult,
+  WithdrawTarget,
+  WithdrawStep,
+  WithdrawStatus,
+  WithdrawFeeOption,
+  WithdrawFormValues,
+  WithdrawResult,
+  UseWithdrawOptions,
+  UseWithdrawResult,
   SellOrderStep,
   SellOrderStatus,
   SellOrderFormValues,
@@ -70,6 +80,12 @@ export type {
   SellOrderFormProps,
   SellOrderFormClassNames,
 } from "./components/SellOrderForm.web.js";
+
+export { WithdrawForm } from "./components/WithdrawForm.web.js";
+export type {
+  WithdrawFormProps,
+  WithdrawFormClassNames,
+} from "./components/WithdrawForm.web.js";
 
 export { SwapConfirmation } from "./components/SwapConfirmation.web.js";
 export type {

@@ -11,6 +11,17 @@ export type {
   KontorHoldings,
 } from "./client.js";
 
+// Unified send / withdraw (all asset types)
+export { sendAsset, prepareSend } from "./send/index.js";
+export type {
+  SendRequest,
+  SendResult,
+  SendKind,
+  SendDeps,
+  SendNetwork,
+  PreparedSend,
+} from "./send/index.js";
+
 // Kontor (KOR token + NFT) sell params and orphan-recovery error
 export type {
   KontorSellParams,
