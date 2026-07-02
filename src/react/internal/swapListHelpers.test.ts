@@ -10,6 +10,7 @@ import {
   swapDisplayName,
   swapDisplayPricePerUnit,
   swapDisplayQuantity,
+  swapDisplayTitle,
   swapImageUrl,
 } from "./swapListHelpers.js";
 
@@ -181,6 +182,31 @@ describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
 
   it("returns null per-unit price when pricePerUnit is null", () => {
     expect(swapDisplayPricePerUnit(swap({ id: "d", pricePerUnit: null }))).toBeNull();
+  });
+});
+
+describe("swapDisplayTitle", () => {
+  it("prefixes the asset name with a divisible quantity (0.01 XCP)", () => {
+    // 1,000,000 base units of a divisible asset => 0.01 whole units.
+    const s = swap({
+      id: "x",
+      assetName: "XCP",
+      assetDivisibility: true,
+      assetQuantity: 1_000_000n,
+      price: 10000,
+      pricePerUnit: 1_000_000,
+    });
+    expect(swapDisplayTitle(s)).toBe("0.01 XCP");
+  });
+
+  it("uses the bare name when there is no quantity (ordinal)", () => {
+    const s = swap({
+      id: "o",
+      listingType: "ordinal",
+      assetName: "ORDINAL",
+      inscriptionNumber: 42,
+    });
+    expect(swapDisplayTitle(s)).toBe("#42");
   });
 });
 

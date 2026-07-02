@@ -294,14 +294,24 @@ export class HorizonMarketClient {
     });
 
     try {
-      // KOR balance for the session identity.
-      let kor: KontorBalance | null = null;
-      const raw = await bindKontorToken(session).balance(
-        session.identity.holderRef,
+      // KOR balance. Like NFT ownership, a wallet's KOR may be held against the
+      // session's internal signing key OR the bech32m-tweaked taproot output key
+      // (they differ by the BIP341 tweak), so query every plausible holder ref
+      // and take the first non-zero — matching `holderCandidates` below.
+      const candidates = holderCandidates(
+        session.identity.xOnlyPubKey,
+        taprootAddress,
       );
-      if (raw) {
+      let kor: KontorBalance | null = null;
+      const token = bindKontorToken(session);
+      for (const holder of candidates) {
+        const raw = await token.balance(holder);
+        if (!raw) continue;
         const amount = raw.toString();
-        if (amount !== "0") kor = { amount, address: taprootAddress };
+        if (amount !== "0") {
+          kor = { amount, address: taprootAddress };
+          break;
+        }
       }
 
       // NFTs — only when a contract address is configured.
@@ -309,10 +319,6 @@ export class HorizonMarketClient {
       if (this.kontorNftContractAddress) {
         const contractAddress = this.kontorNftContractAddress;
         const nft = bindKontorNft(session, contractAddress);
-        const candidates = holderCandidates(
-          session.identity.xOnlyPubKey,
-          taprootAddress,
-        );
         const seen = new Set<string>();
         for (const holder of candidates) {
           const total = await nft.countNftsByHolder(holder);

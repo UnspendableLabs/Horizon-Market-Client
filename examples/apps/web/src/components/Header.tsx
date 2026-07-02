@@ -178,7 +178,10 @@ function CreditsRow({
             : `${freeCredits ?? 0} free + ${credits ?? 0} paid`
       }
     >
-      <span className="text-xs font-medium" style={{ color: "var(--color-muted)" }}>
+      <span
+        className="text-xs font-semibold uppercase tracking-wider"
+        style={{ color: "var(--color-muted)" }}
+      >
         Credits
       </span>
       {loading && signInError ? (
@@ -317,14 +320,14 @@ export function Header() {
                     border: "1px solid var(--color-border)",
                   }}
                 >
+                  {/* Title — no separator below: the address rows read as its
+                      content rather than a divided-off section. Extra top padding
+                      gives the menu some breathing room above the heading. */}
                   <div
-                    className="px-3 pb-2 mb-1 text-xs font-semibold uppercase tracking-wider"
-                    style={{
-                      color: "var(--color-muted)",
-                      borderBottom: "1px solid var(--color-border)",
-                    }}
+                    className="px-3 pt-3 pb-2 text-xs font-semibold uppercase tracking-wider"
+                    style={{ color: "var(--color-muted)" }}
                   >
-                    Wallet
+                    Addresses
                   </div>
 
                   <AddressRow label="Segwit (P2WPKH)" value={addresses.p2wpkh} />
@@ -337,19 +340,7 @@ export function Header() {
                     style={{ background: "var(--color-border)" }}
                   />
 
-                  {/* Balances live in a Radix Portal (rendered at document.body),
-                      outside the provider's theme-vars wrapper — so re-apply the
-                      `--hm-*` vars here or the SDK component falls back to its
-                      default (light) palette. */}
-                  <div className="px-3 py-2" style={themeToCssVars(theme)}>
-                    <WalletBalanceSummary onShowAll={handleShowAllBalances} />
-                  </div>
-
-                  <DropdownMenu.Separator
-                    className="my-1 h-px"
-                    style={{ background: "var(--color-border)" }}
-                  />
-
+                  {/* Credits sit directly under the addresses. */}
                   <CreditsRow
                     credits={credits}
                     freeCredits={freeCredits}
@@ -361,16 +352,43 @@ export function Header() {
                     style={{ background: "var(--color-border)" }}
                   />
 
-                  <DropdownMenu.Item asChild>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors"
-                      style={{ color: "var(--color-error)" }}
-                    >
-                      <LogOut size={14} />
-                      Disconnect
-                    </button>
-                  </DropdownMenu.Item>
+                  {/* Balances live in a Radix Portal (rendered at document.body),
+                      outside the provider's theme-vars wrapper — so re-apply the
+                      `--hm-*` vars here or the SDK component falls back to its
+                      default (light) palette. "Show all" is rendered in the footer
+                      row below (not via onShowAll) so it can sit opposite
+                      Disconnect. */}
+                  <div className="px-3 py-2" style={themeToCssVars(theme)}>
+                    <WalletBalanceSummary />
+                  </div>
+
+                  <DropdownMenu.Separator
+                    className="my-1 h-px"
+                    style={{ background: "var(--color-border)" }}
+                  />
+
+                  {/* Footer: Disconnect pinned left, "Show all" pinned right. */}
+                  <div className="flex items-center justify-between px-3 py-1">
+                    <DropdownMenu.Item asChild>
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center gap-2 px-1 py-1 text-sm transition-colors"
+                        style={{ color: "var(--color-error)" }}
+                      >
+                        <LogOut size={14} />
+                        Disconnect
+                      </button>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item asChild>
+                      <button
+                        onClick={handleShowAllBalances}
+                        className="px-1 py-1 text-sm font-semibold transition-colors"
+                        style={{ color: "var(--color-primary)" }}
+                      >
+                        Open wallet →
+                      </button>
+                    </DropdownMenu.Item>
+                  </div>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>

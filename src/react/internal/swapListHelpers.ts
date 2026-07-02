@@ -79,6 +79,18 @@ export function swapDisplayQuantity(swap: AtomicSwap): string | null {
 }
 
 /**
+ * Tile title: the asset name prefixed with its quantity for fungible listings
+ * (e.g. "0.01 XCP", "2,000 KOR"), matching horizon.market where the amount sits
+ * beside the asset. 1-of-1 items (ordinals, Kontor NFTs) have no quantity, so
+ * the bare name is used.
+ */
+export function swapDisplayTitle(swap: AtomicSwap): string {
+  const name = swapDisplayName(swap);
+  const quantity = swapDisplayQuantity(swap);
+  return quantity !== null ? `${quantity} ${name}` : name;
+}
+
+/**
  * Per-unit price formatted for display.
  *
  * The server computes `pricePerUnit` as `price * 1e8 / rawQuantity` for every

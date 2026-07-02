@@ -15,8 +15,7 @@ import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
 import {
   swapImageUrl,
-  swapDisplayName,
-  swapDisplayQuantity,
+  swapDisplayTitle,
   swapDisplayPricePerUnit,
 } from "./swapListHelpers.js";
 import type { ResolvedTheme } from "../theme.js";
@@ -131,21 +130,12 @@ export function SwapListItem({
 
   const actionLabel = isMySwap ? "Delist" : "Buy";
   const thumbnail = swapImageUrl(swap);
-  const displayName = swapDisplayName(swap);
-  const displayQuantity = swapDisplayQuantity(swap);
+  // Quantity rides beside the asset name ("0.01 XCP"); the meta line carries
+  // only the per-unit price, matching how horizon.market lays these out.
+  const title = swapDisplayTitle(swap);
   const displayPricePerUnit = swapDisplayPricePerUnit(swap);
-  const showMeta =
-    swap.listingType !== "ordinal" &&
-    (displayQuantity !== null || displayPricePerUnit !== null);
-
-  const metaText =
-    displayQuantity !== null && displayPricePerUnit !== null
-      ? `${displayQuantity} × ${displayPricePerUnit} sats/unit`
-      : displayQuantity !== null
-        ? `Qty: ${displayQuantity}`
-        : displayPricePerUnit !== null
-          ? `${displayPricePerUnit} sats/unit`
-          : null;
+  const showPerUnit =
+    swap.listingType !== "ordinal" && displayPricePerUnit !== null;
 
   return (
     <View style={[common.swapItemCard, style, stylesProp?.root]}>
@@ -166,14 +156,14 @@ export function SwapListItem({
         style={[common.swapItemName, stylesProp?.name]}
         numberOfLines={1}
       >
-        {displayName}
+        {title}
       </Text>
       <Text style={[common.muted, stylesProp?.price]}>
         {swap.price.toLocaleString()} sats
       </Text>
-      {showMeta && metaText !== null && (
+      {showPerUnit && (
         <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
-          {metaText}
+          {displayPricePerUnit} sats/unit
         </Text>
       )}
       <Pressable

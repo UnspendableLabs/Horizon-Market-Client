@@ -3,8 +3,7 @@ import type { AtomicSwap } from "../../types/index.js";
 import { cx } from "./format.js";
 import {
   swapImageUrl,
-  swapDisplayName,
-  swapDisplayQuantity,
+  swapDisplayTitle,
   swapDisplayPricePerUnit,
 } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
@@ -118,12 +117,12 @@ export function SwapListItem({
   const itemStyle = { ...ws.swapItemGrid, ...style };
 
   const thumbnail = swapImageUrl(swap);
-  const displayName = swapDisplayName(swap);
-  const displayQuantity = swapDisplayQuantity(swap);
+  // Quantity rides beside the asset name ("0.01 XCP"); the meta line carries
+  // only the per-unit price, matching how horizon.market lays these out.
+  const title = swapDisplayTitle(swap);
   const displayPricePerUnit = swapDisplayPricePerUnit(swap);
-  const showMeta =
-    swap.listingType !== "ordinal" &&
-    (displayQuantity !== null || displayPricePerUnit !== null);
+  const showPerUnit =
+    swap.listingType !== "ordinal" && displayPricePerUnit !== null;
 
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
@@ -139,18 +138,14 @@ export function SwapListItem({
       />
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span className={classNames?.name} style={nameStyle}>
-          {displayName}
+          {title}
         </span>
         <span className={classNames?.price} style={priceStyle}>
           {swap.price.toLocaleString()} sats
         </span>
-        {showMeta && (
+        {showPerUnit && (
           <span className={classNames?.meta} style={ws.mutedText}>
-            {displayQuantity !== null && displayPricePerUnit !== null
-              ? `${displayQuantity} × ${displayPricePerUnit} sats/unit`
-              : displayQuantity !== null
-                ? `Qty: ${displayQuantity}`
-                : `${displayPricePerUnit} sats/unit`}
+            {displayPricePerUnit} sats/unit
           </span>
         )}
       </div>
