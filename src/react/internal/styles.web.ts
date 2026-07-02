@@ -292,14 +292,18 @@ export const modalClose: CSSProperties = {
 
 export function filterTab(active: boolean): CSSProperties {
   return {
-    padding: `${webTokens.spacingXs} ${webTokens.spacingMd}`,
+    // Font size matches `input`; vertical padding is 1px shy of spacingSm so the
+    // button lines up to the same height as the sort <select> to its left (the
+    // native select renders ~2px taller for the same nominal padding).
+    padding: `calc(${webTokens.spacingSm} - 1px) ${webTokens.spacingMd}`,
     background: active ? webTokens.primary : "transparent",
     color: active ? webTokens.primaryForeground : webTokens.textMuted,
     border: `${webTokens.borderWidth} solid ${active ? webTokens.primary : webTokens.border}`,
     borderRadius: webTokens.radiusSm,
     cursor: "pointer",
-    fontSize: webTokens.fontSizeSm,
+    fontSize: webTokens.fontSizeBase,
     fontWeight: active ? 600 : 400,
+    boxSizing: "border-box",
   };
 }
 

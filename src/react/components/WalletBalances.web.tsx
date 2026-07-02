@@ -34,6 +34,9 @@ export interface WalletBalancesClassNames {
 }
 
 export interface WalletBalancesProps {
+  /** Optional heading rendered at the left of the header row (title lives on the
+   * same line as the "Updated …" timestamp + Refresh button). */
+  title?: ReactNode;
   className?: string;
   classNames?: WalletBalancesClassNames;
   style?: CSSProperties;
@@ -52,13 +55,90 @@ const headerRow: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
+  gap: webTokens.spacingMd,
+  flexWrap: "wrap",
+};
+
+// "Updated … · Refresh", pinned to the right of the header row.
+const headerMeta: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
   gap: webTokens.spacingSm,
+  marginLeft: "auto",
 };
 
 const refreshButton: CSSProperties = {
   ...ws.secondaryButton,
   padding: "4px 10px",
   fontSize: 12,
+};
+
+// A titled section (title + content) — the title carries equal space above and
+// below (matching the page's inter-block rhythm).
+const section: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 20,
+};
+
+// Section subtitle ("Addresses", "Balances") — a bit more prominent than the
+// per-group header.
+const sectionTitle: CSSProperties = {
+  fontSize: webTokens.fontSizeLg,
+  fontWeight: 700,
+  color: webTokens.text,
+};
+
+// Addresses block: one row per receiving address (label · value · copy).
+const addressList: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingMd,
+};
+
+const addressRow: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: webTokens.spacingMd,
+  padding: "16px 20px",
+  background: webTokens.surface,
+  borderRadius: webTokens.radiusMd,
+};
+
+const addressRowLabel: CSSProperties = {
+  flexShrink: 0,
+  width: 108,
+  fontSize: webTokens.fontSizeBase,
+  fontWeight: 600,
+  color: webTokens.textMuted,
+};
+
+const addressRowValue: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontFamily: "monospace",
+  fontSize: webTokens.fontSizeBase,
+  color: webTokens.text,
+};
+
+// Underline "tab" row for the other-holdings groups (swap-list style): only the
+// active tab carries an underline (no full-width baseline).
+const tabRow: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-end",
+  gap: webTokens.spacingLg,
+  flexWrap: "wrap",
+};
+
+// Empty tab: hint + a Deposit button pointing at the group's receiving address.
+const emptyOthers: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: webTokens.spacingMd,
+  flexWrap: "wrap",
 };
 
 // BTC headline — the largest, top-of-page balance, on a subtly lighter rounded
@@ -134,19 +214,12 @@ const tokenSymbol: CSSProperties = {
   color: webTokens.textMuted,
 };
 
-const groupHeader: CSSProperties = {
-  marginTop: webTokens.spacingSm,
-  fontSize: webTokens.fontSizeSm,
-  fontWeight: 600,
-  color: webTokens.textMuted,
-};
-
 // "Other holdings" grid — each holding is a padded card: media on top, the full
 // asset name on its own line, then the balance + compact actions on one line.
 const othersGrid: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-  gap: 24,
+  gap: 52,
   marginTop: webTokens.spacingSm,
 };
 
@@ -155,9 +228,6 @@ const tile: CSSProperties = {
   flexDirection: "column",
   gap: webTokens.spacingSm,
   minWidth: 0,
-  padding: webTokens.spacingMd,
-  background: webTokens.surface,
-  borderRadius: webTokens.radiusLg,
 };
 
 // Balance on the left, actions pushed to the right, all on one line.
@@ -179,7 +249,7 @@ const mediaBox: CSSProperties = {
 const mediaImg: CSSProperties = {
   ...mediaBox,
   objectFit: "contain",
-  padding: webTokens.spacingMd,
+  padding: 28,
 };
 
 const mediaPlaceholder: CSSProperties = {
@@ -328,12 +398,15 @@ interface DepositInfo {
   address: string;
 }
 
-/** The address to receive an asset on: ordinals land on Taproot, else Segwit. */
+/**
+ * The address to receive an asset on: Kontor NFTs and ordinals land on Taproot,
+ * everything else (BTC, Counterparty tokens) on Segwit.
+ */
 function depositTargetFor(
   type: DepositType,
   addresses: { p2wpkh: string; p2tr?: string },
 ): { label: string; address: string } {
-  if (type === "ordinal") {
+  if (type === "ordinal" || type === "kontor-nft") {
     return {
       label: "Taproot (P2TR)",
       address: addresses.p2tr ?? addresses.p2wpkh,
@@ -509,6 +582,19 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+/** One receiving address: label · truncated value · copy-to-clipboard button. */
+function AddressRow({ label, address }: { label: string; address: string }) {
+  return (
+    <div style={addressRow}>
+      <span style={addressRowLabel}>{label}</span>
+      <span style={addressRowValue} title={address}>
+        {truncate(address, 12, 8)}
+      </span>
+      <CopyButton value={address} />
+    </div>
+  );
+}
+
 /** Mountain + sun "no image" pictogram (matches the swap list's placeholder). */
 function NoImageIcon({ size }: { size: number }) {
   return (
@@ -615,6 +701,7 @@ function OtherAssetTile({
  * sell-order flow with the asset pre-selected; "Withdraw" is a placeholder.
  */
 export function WalletBalances({
+  title,
   className,
   classNames,
   style,
@@ -627,6 +714,7 @@ export function WalletBalances({
   const [deposit, setDeposit] = useState<DepositInfo | null>(null);
   const [sellAsset, setSellAsset] = useState<AssetOption | null>(null);
   const [withdraw, setWithdraw] = useState<WithdrawTarget | null>(null);
+  const [otherTab, setOtherTab] = useState<string | null>(null);
 
   const openDeposit = (symbol: string, type: DepositType) => {
     if (!addresses) return;
@@ -640,30 +728,73 @@ export function WalletBalances({
     () => [
       {
         label: "Counterparty",
+        depositType: "counterparty" as DepositType,
+        depositSymbol: "Counterparty assets",
         options: others.filter((a) => a.type === "counterparty"),
       },
-      { label: "Kontor", options: others.filter((a) => a.type === "kontor-nft") },
-      { label: "Ordinals", options: others.filter((a) => a.type === "ordinal") },
+      {
+        label: "Kontor",
+        depositType: "kontor-nft" as DepositType,
+        depositSymbol: "Kontor NFTs",
+        options: others.filter((a) => a.type === "kontor-nft"),
+      },
+      {
+        label: "Ordinals",
+        depositType: "ordinal" as DepositType,
+        depositSymbol: "Ordinals",
+        options: others.filter((a) => a.type === "ordinal"),
+      },
     ],
     [others],
   );
 
+  // Active other-holdings tab: user choice, else the first group that has any
+  // holdings, else the first tab.
+  const activeLabel =
+    otherTab ??
+    otherGroups.find((g) => g.options.length > 0)?.label ??
+    otherGroups[0].label;
+  const activeGroup =
+    otherGroups.find((g) => g.label === activeLabel) ?? otherGroups[0];
+
   const usd = btcSats === null ? null : formatUsd(Number(btcSats), btcUsd);
 
   return (
-    <div className={cx(classNames?.root, className)} style={{ ...root, ...style }}>
+    <div
+      className={cx(classNames?.root, className)}
+      style={{ ...root, ...style }}
+    >
       <div className={classNames?.header} style={headerRow}>
-        <span style={ws.mutedText}>Updated {formatRelativeTime(lastFetchedAt)}</span>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={isFetching}
-          className={classNames?.buttonSecondary}
-          style={ws.withDisabled(refreshButton, isFetching)}
-        >
-          {isFetching ? "Refreshing…" : "Refresh"}
-        </button>
+        {title}
+        <div style={headerMeta}>
+          <span style={ws.mutedText}>
+            Updated {formatRelativeTime(lastFetchedAt)}
+          </span>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={isFetching}
+            className={classNames?.buttonSecondary}
+            style={ws.withDisabled(refreshButton, isFetching)}
+          >
+            {isFetching ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
+
+      {addresses && (
+        <div style={section}>
+          <div style={sectionTitle}>Addresses</div>
+          <div style={addressList}>
+            <AddressRow label="Segwit (P2WPKH)" address={addresses.p2wpkh} />
+            {addresses.p2tr && (
+              <AddressRow label="Taproot (P2TR)" address={addresses.p2tr} />
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={sectionTitle}>Balances</div>
 
       <div className={classNames?.btc} style={btcCard}>
         <div style={balanceInfo}>
@@ -677,7 +808,10 @@ export function WalletBalances({
           </div>
         </div>
         <div style={actionRow}>
-          <LabeledAction kind="deposit" onClick={() => openDeposit("BTC", "btc")} />
+          <LabeledAction
+            kind="deposit"
+            onClick={() => openDeposit("BTC", "btc")}
+          />
           <LabeledAction
             kind="withdraw"
             disabled={btcSats === null || btcSats === 0n}
@@ -700,27 +834,46 @@ export function WalletBalances({
         ))}
       </div>
 
-      {otherGroups.map((group) =>
-        group.options.length === 0 ? null : (
-          <div key={group.label}>
-            <div className={classNames?.groupHeader} style={groupHeader}>
+      <div style={section}>
+        <div className={classNames?.groupHeader} style={tabRow}>
+          {otherGroups.map((group) => (
+            <button
+              key={group.label}
+              type="button"
+              onClick={() => setOtherTab(group.label)}
+              style={ws.metaTab(group.label === activeLabel)}
+            >
               {group.label}
-            </div>
-            <div style={othersGrid}>
-              {group.options.map((a) => (
-                <OtherAssetTile
-                  key={assetKey(a)}
-                  asset={a}
-                  onDeposit={openDepositForAsset}
-                  onWithdraw={setWithdraw}
-                  onSell={setSellAsset}
-                  className={classNames?.tile}
-                />
-              ))}
-            </div>
+            </button>
+          ))}
+        </div>
+        {activeGroup.options.length === 0 ? (
+          <div style={emptyOthers}>
+            <span style={ws.mutedText}>
+              No {activeGroup.label} holdings yet.
+            </span>
+            <LabeledAction
+              kind="deposit"
+              onClick={() =>
+                openDeposit(activeGroup.depositSymbol, activeGroup.depositType)
+              }
+            />
           </div>
-        ),
-      )}
+        ) : (
+          <div style={{ ...othersGrid, marginTop: 0 }}>
+            {activeGroup.options.map((a) => (
+              <OtherAssetTile
+                key={assetKey(a)}
+                asset={a}
+                onDeposit={openDepositForAsset}
+                onWithdraw={setWithdraw}
+                onSell={setSellAsset}
+                className={classNames?.tile}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <Modal
         open={deposit != null}
@@ -730,8 +883,8 @@ export function WalletBalances({
         {deposit && (
           <div style={depositBody}>
             <p style={depositHint}>
-              Send {deposit.symbol} from your exchange or preferred wallet to your{" "}
-              {deposit.label} address below.
+              Send {deposit.symbol} from your exchange or preferred wallet to
+              your {deposit.label} address below.
             </p>
             <div style={ws.label}>
               <span>{deposit.label}</span>
