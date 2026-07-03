@@ -28,7 +28,14 @@ export default defineConfig([
     entry: { "react/index.native": "src/react/index.native.ts" },
     format: ["esm", "cjs"],
     dts: true,
-    splitting: false,
+    // Code-splitting is REQUIRED here (ESM output). The client reaches every
+    // Kontor module through a dynamic `import()` so the WebAssembly-backed
+    // `@kontor/sdk` never evaluates at startup — but without splitting, esbuild
+    // inlines those modules into the single bundle and hoists their top-level
+    // `import … from "@kontor/sdk"` to the entry, re-introducing the eager WASM
+    // load that crashes React Native / Hermes. Splitting keeps the Kontor code
+    // in separate async chunks, loaded only when a Kontor operation runs.
+    splitting: true,
     sourcemap: true,
     target: "es2020",
     // `react-native-svg` (wallet/brand icons) and `expo-clipboard` (address copy)

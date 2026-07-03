@@ -351,34 +351,63 @@ describe("Kontor key safety (private key never leaves the client)", () => {
 });
 
 describe("Kontor dispatch gating", () => {
-  it("throws when kontorNetwork is not configured", () => {
+  // Kontor modules load via dynamic import() now (so the WASM never evaluates at
+  // startup on engines without WebAssembly), which makes these dispatch paths
+  // async — the config guards reject rather than throw synchronously.
+  it("rejects when kontorNetwork is not configured", async () => {
     const client = new HorizonMarketClient({
       privateKey: TEST_KEY,
       network: "testnet",
     });
-    expect(() =>
+    await expect(
       client.openSellOrder({
         listingType: "kontor",
         kontorAssetKind: "token",
         korAmount: "1",
         priceSats: 1000,
       }),
-    ).toThrow(/signet/);
+    ).rejects.toThrow(/signet/);
   });
 
-  it("throws when the client network is not testnet", () => {
+  it("rejects when the client network is not testnet", async () => {
     const client = new HorizonMarketClient({
       privateKey: TEST_KEY,
       network: "mainnet",
       kontorNetwork: "signet",
     });
-    expect(() =>
+    await expect(
       client.openSellOrder({
         listingType: "kontor",
         kontorAssetKind: "token",
         korAmount: "1",
         priceSats: 1000,
       }),
-    ).toThrow(/testnet/);
+    ).rejects.toThrow(/testnet/);
+  });
+
+  // A properly-configured Kontor write on an engine without WebAssembly (e.g.
+  // React Native / Hermes) must reject with a clean KontorUnavailableError —
+  // BEFORE the WASM-backed workflow chunk is dynamically imported (which would
+  // otherwise throw a raw ReferenceError). Guards the write-path contract.
+  it("rejects with KontorUnavailableError when WebAssembly is absent", async () => {
+    const client = new HorizonMarketClient({
+      privateKey: TEST_KEY,
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    const saved = (globalThis as { WebAssembly?: unknown }).WebAssembly;
+    delete (globalThis as { WebAssembly?: unknown }).WebAssembly;
+    try {
+      await expect(
+        client.openSellOrder({
+          listingType: "kontor",
+          kontorAssetKind: "token",
+          korAmount: "1",
+          priceSats: 1000,
+        }),
+      ).rejects.toMatchObject({ name: "KontorUnavailableError" });
+    } finally {
+      (globalThis as { WebAssembly?: unknown }).WebAssembly = saved;
+    }
   });
 });

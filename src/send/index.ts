@@ -8,7 +8,7 @@ import { prepareBtc } from "./btc.js";
 import { prepareCounterparty } from "./counterparty.js";
 import { prepareZeld } from "./zeld.js";
 import { prepareOrdinal } from "./ordinal.js";
-import { prepareKontorToken, prepareKontorNft } from "./kontor.js";
+import { assertKontorRuntime } from "../kontor/runtime.js";
 
 export type {
   SendRequest,
@@ -31,8 +31,12 @@ export type {
  * - `counterparty` (incl. XCP) — counterparty-core compose → sign
  * - `zeld` — local bitcoinjs PSBT with a ZELD OP_RETURN distribution
  * - `kor` / `kontor-nft` — `@kontor/sdk` contract transfer (composed at submit)
+ *
+ * The Kontor branches load `./kontor.js` (and its WASM-backed `@kontor/sdk`
+ * dependency) via dynamic `import()` so this module — and the withdraw path that
+ * uses it — never evaluates the WASM at startup on engines that lack it.
  */
-export function prepareSend(
+export async function prepareSend(
   request: SendRequest,
   deps: SendDeps,
 ): Promise<PreparedSend> {
@@ -77,29 +81,31 @@ export function prepareSend(
         },
         deps,
       );
-    case "kor":
-      return Promise.resolve(
-        prepareKontorToken(
-          {
-            toAddress: request.toAddress,
-            amount: request.amount,
-            satsPerVbyte: request.satsPerVbyte,
-          },
-          deps,
-        ),
+    case "kor": {
+      assertKontorRuntime();
+      const { prepareKontorToken } = await import("./kontor.js");
+      return prepareKontorToken(
+        {
+          toAddress: request.toAddress,
+          amount: request.amount,
+          satsPerVbyte: request.satsPerVbyte,
+        },
+        deps,
       );
-    case "kontor-nft":
-      return Promise.resolve(
-        prepareKontorNft(
-          {
-            contractAddress: request.contractAddress,
-            nftId: request.nftId,
-            toAddress: request.toAddress,
-            satsPerVbyte: request.satsPerVbyte,
-          },
-          deps,
-        ),
+    }
+    case "kontor-nft": {
+      assertKontorRuntime();
+      const { prepareKontorNft } = await import("./kontor.js");
+      return prepareKontorNft(
+        {
+          contractAddress: request.contractAddress,
+          nftId: request.nftId,
+          toAddress: request.toAddress,
+          satsPerVbyte: request.satsPerVbyte,
+        },
+        deps,
       );
+    }
   }
 }
 

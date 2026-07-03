@@ -1,8 +1,8 @@
-import { LocalKey } from "@kontor/sdk";
 import * as btc from "bitcoinjs-lib";
 import { ECPair } from "./ecc.js";
 import { signPsbtHex as signPsbtHexImpl } from "./psbt-signer.js";
 import { signBip322 } from "./bip322.js";
+import { assertKontorRuntime } from "../kontor/runtime.js";
 
 export interface Signer {
   getAddresses(): {
@@ -109,6 +109,12 @@ export class LocalSigner implements Signer {
    * and only broadcasts the signed result. `chain` is a `@kontor/sdk` `Chain`.
    */
   async getKontorSigning(chain: unknown): Promise<unknown> {
+    // `@kontor/sdk` is WASM-backed and evaluates at import time — load it lazily
+    // (and only when a Kontor operation actually runs) so the module never
+    // executes on engines without WebAssembly (e.g. React Native / Hermes),
+    // where it would throw at startup. Fail fast with a clear error there.
+    assertKontorRuntime();
+    const { LocalKey } = await import("@kontor/sdk");
     return LocalKey.fromPrivateKey({
       privateKey: this.privateKeyHex,
       chain: chain as never,

@@ -47,39 +47,44 @@ SDK's public default; on any other network the Counterparty/ZELD APIs are called
 only when their URL is set (so balances are never read against the wrong
 network).
 
-## ⚠️ Known blocker — not verified on a device
+## Kontor (KOR / NFTs) is unavailable on native — everything else works
 
-This native example is **unverified on a real device or simulator**, and is
-**expected to crash at startup** in its current form. The reason:
+`@kontor/sdk` (a transitive dependency of the client SDK) is **WebAssembly-
+backed**: it instantiates its WASM component at **module-load time** (a top-level
+`new WebAssembly.Global(...)` and `await $init`) and relies on the JSPI
+(`WebAssembly.promising`) stack-switching proposal. **Hermes** — React Native's
+default JS engine — ships **no `WebAssembly`** at all, and no polyfill can host a
+component that must actually compile and stack-switch. So **Kontor cannot run on
+React Native today**, full stop.
 
-- `@kontor/sdk` (a transitive dependency of the client SDK) is **WebAssembly-
-  backed** and touches `WebAssembly.*` at **module-load time** — a top-level
-  `new WebAssembly.Global(...)` and a top-level `await $init` that compiles and
-  instantiates the embedded WASM module.
-- **Hermes**, React Native's default JS engine, has **no `WebAssembly`**. So
-  merely *importing* `@kontor/sdk` throws
-  `ReferenceError: WebAssembly is not defined`.
-- The client SDK imports `@kontor/sdk` **eagerly and unconditionally**
-  (`dist/react/index.native.js` → `import { LocalKey } from "@kontor/sdk"`, via
-  `crypto/signer.ts`). The `<HorizonMarketProvider>` pulls that module in, so the
-  crash happens at app startup on **both mainnet and signet** — it is **not**
-  limited to Kontor (KOR / NFT) reads, and **not** limited to signet.
+Previously this crashed the app at *startup*, because the SDK imported
+`@kontor/sdk` eagerly (via `crypto/signer.ts`), so `<HorizonMarketProvider>`
+pulled the WASM in on mount. **That is now fixed in the SDK**: every Kontor code
+path is reached through a dynamic `import()` guarded by a WebAssembly-availability
+check (`src/kontor/runtime.ts`), and the native build code-splits those paths into
+lazy chunks (`tsup` `splitting: true`). The WASM module therefore **never
+evaluates at startup**, and the app boots on Hermes.
 
-### Things that do NOT fix it
+What this means in practice:
 
-- A Metro `WebAssembly` shim/polyfill: the top-level `await $init` must actually
-  compile and run the module, which Hermes cannot do regardless of a stub object.
+| Feature | Depends on Kontor? | On native |
+| --- | --- | --- |
+| BTC swaps, buy/sell | no | ✅ works |
+| Counterparty / XCP (+ all CP tokens) | no | ✅ works |
+| ZELD | no | ✅ works |
+| Wallet, BTC balances, withdraw | no | ✅ works |
+| **KOR token + Kontor NFTs** | yes | ⚠️ gracefully disabled |
 
-### What a real fix would require
+Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet,
+so on **mainnet the native app is fully functional**. On **signet**, everything
+works except Kontor: KOR/NFT balance reads degrade to empty holdings, and Kontor
+sell/buy/delist throw a clear `KontorUnavailableError` instead of crashing the
+host app. The **web** example is unaffected (browsers ship WebAssembly, so Kontor
+works there).
 
-- An **SDK change** to lazy-load `@kontor/sdk` (e.g. dynamic `import()` only when
-  a Kontor operation runs), so the WASM module never evaluates on import. That is
-  **out of scope** for this example (we do not modify the SDK's `src/`).
-
-The rest of this example — polyfills, Web3Auth wiring, the network switch, the
-footer, and `SessionRestorer` — is implemented and typechecks cleanly
-(`npx tsc --noEmit`), but cannot be exercised end-to-end until the SDK can load
-on Hermes. The **web** example is unaffected (browsers ship WebAssembly).
+> Note: this example is not yet verified end-to-end on a physical device /
+> simulator, but it typechecks cleanly (`npx tsc --noEmit`) and the SDK bundle no
+> longer evaluates WASM at load (verified against `dist/react/index.native.js`).
 
 ## Web3Auth
 

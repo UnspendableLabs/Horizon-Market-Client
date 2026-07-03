@@ -35,14 +35,15 @@ import {
 } from "./workflows/sell.js";
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
-import { openKontorSellOrder } from "./workflows/sell-kontor.js";
-import { fillKontorSwap } from "./workflows/buy-kontor.js";
-import { delistKontorSwap } from "./workflows/delist-kontor.js";
-import { resolveKontorChain } from "./kontor/chain.js";
 import type { KontorContext } from "./kontor/context.js";
-import { makeKontorReadSession } from "./kontor/session.js";
-import { bindKontorToken, bindKontorNft } from "./kontor/contracts.js";
-import { holderCandidates } from "./kontor/holders.js";
+// Kontor is WASM-backed (`@kontor/sdk`) and can't load on engines without
+// WebAssembly (React Native / Hermes). All Kontor modules below are therefore
+// imported *dynamically* at their use sites so the WASM never evaluates at
+// startup; only these runtime guards are imported statically (they're WASM-free).
+import {
+  assertKontorRuntime,
+  kontorRuntimeAvailable,
+} from "./kontor/runtime.js";
 import {
   getCounterpartyBalances as apiGetCounterpartyBalances,
   type CounterpartyBalance,
@@ -217,7 +218,11 @@ export class HorizonMarketClient {
    * usable with the current configuration. Kontor is signet-only today, and
    * signet uses testnet address params, so the client `network` must be "testnet".
    */
-  private resolveKontorCtx(): KontorContext {
+  private async resolveKontorCtx(): Promise<KontorContext> {
+    // Fail fast with a clear error on engines without a WASM runtime, before the
+    // dynamic import below would throw a raw `ReferenceError` evaluating the SDK.
+    assertKontorRuntime();
+    const { resolveKontorChain } = await import("./kontor/chain.js");
     const chain = resolveKontorChain(this.kontorNetwork);
     if (!chain) {
       throw new Error(
@@ -290,6 +295,23 @@ export class HorizonMarketClient {
   async getKontorHoldings(): Promise<KontorHoldings> {
     const signer = this.signer;
     if (!signer || !this.kontorNetwork) return { kor: null, nfts: [] };
+
+    // Kontor's WASM runtime can't load on engines without WebAssembly (e.g. React
+    // Native / Hermes) — degrade to empty holdings there rather than crashing the
+    // wallet balances read that calls this.
+    if (!kontorRuntimeAvailable()) return { kor: null, nfts: [] };
+
+    const [
+      { resolveKontorChain },
+      { makeKontorReadSession },
+      { bindKontorToken, bindKontorNft },
+      { holderCandidates },
+    ] = await Promise.all([
+      import("./kontor/chain.js"),
+      import("./kontor/session.js"),
+      import("./kontor/contracts.js"),
+      import("./kontor/holders.js"),
+    ]);
 
     const chain = resolveKontorChain(this.kontorNetwork);
     if (!chain || this.network !== "testnet") return { kor: null, nfts: [] };
@@ -377,11 +399,11 @@ export class HorizonMarketClient {
    * outputs) for asset-safety. Kontor (`kor`/`kontor-nft`) requires the client
    * to be configured for signet (`kontorNetwork: "signet"`, `network: "testnet"`).
    */
-  prepareSend(
+  async prepareSend(
     request: SendRequest,
     options?: { protectedUtxoIds?: readonly string[] },
   ): Promise<PreparedSend> {
-    return prepareSend(request, this.buildSendDeps(request, options));
+    return prepareSend(request, await this.buildSendDeps(request, options));
   }
 
   /**
@@ -393,18 +415,18 @@ export class HorizonMarketClient {
     request: SendRequest,
     options?: { protectedUtxoIds?: readonly string[] },
   ): Promise<SendResult> {
-    return sendAsset(request, this.buildSendDeps(request, options));
+    return sendAsset(request, await this.buildSendDeps(request, options));
   }
 
   /** Assemble the send-composer dependencies from the client's configuration. */
-  private buildSendDeps(
+  private async buildSendDeps(
     request: SendRequest,
     options?: { protectedUtxoIds?: readonly string[] },
   ) {
     const signer = this.assertSigner();
     const kontorCtx =
       request.kind === "kor" || request.kind === "kontor-nft"
-        ? this.resolveKontorCtx()
+        ? await this.resolveKontorCtx()
         : undefined;
 
     return {
@@ -694,16 +716,24 @@ export class HorizonMarketClient {
    * New attach-prep or zeld transfer-prep listings may be `funded: false` until the
    * prep tx confirms — poll `getSwap` before calling `fillSwaps`.
    */
-  openSellOrder(
+  async openSellOrder(
     params: OpenSellOrderParams,
     options?: WorkflowOptions,
   ): Promise<{ swap: AtomicSwap; created: boolean }> {
     if (params.listingType === "kontor") {
+      // Resolve the ctx first: it runs `assertKontorRuntime()` and throws a clean
+      // `KontorUnavailableError` on WASM-less engines *before* importing the
+      // Kontor workflow chunk (whose static `@kontor/sdk` reach would otherwise
+      // throw a raw `ReferenceError` at the import).
+      const kontorCtx = await this.resolveKontorCtx();
+      const { openKontorSellOrder } = await import(
+        "./workflows/sell-kontor.js"
+      );
       return openKontorSellOrder(
         params,
         this.http,
         this.assertSigner(),
-        this.resolveKontorCtx(),
+        kontorCtx,
         options,
       );
     }
@@ -740,6 +770,10 @@ export class HorizonMarketClient {
               ")",
           );
         }
+        // Resolve the ctx (asserts the WASM runtime) before importing the Kontor
+        // workflow chunk, so a WASM-less engine gets a clean KontorUnavailableError.
+        const kontorCtx = await this.resolveKontorCtx();
+        const { fillKontorSwap } = await import("./workflows/buy-kontor.js");
         return fillKontorSwap(
           first,
           {
@@ -748,7 +782,7 @@ export class HorizonMarketClient {
           },
           this.http,
           this.assertSigner(),
-          this.resolveKontorCtx(),
+          kontorCtx,
           options,
         );
       }
@@ -767,12 +801,18 @@ export class HorizonMarketClient {
     if (this.kontorNetwork) {
       const swap = await this.getSwap(swapId);
       if (swap.listingType === "kontor") {
+        // Resolve the ctx (asserts the WASM runtime) before importing the Kontor
+        // workflow chunk, so a WASM-less engine gets a clean KontorUnavailableError.
+        const kontorCtx = await this.resolveKontorCtx();
+        const { delistKontorSwap } = await import(
+          "./workflows/delist-kontor.js"
+        );
         return delistKontorSwap(
           swap,
           { fundingUtxos: options?.fundingUtxos },
           this.http,
           this.assertSigner(),
-          this.resolveKontorCtx(),
+          kontorCtx,
           options,
         );
       }
