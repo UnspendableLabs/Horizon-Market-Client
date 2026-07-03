@@ -82,6 +82,7 @@ export function SwapList({
     setPage,
     totalPages,
     refetch,
+    removeSwap,
     isItemMySwap,
     pendingSwap,
     loginModalOpen,
@@ -285,8 +286,14 @@ export function SwapList({
           <SwapConfirmation
             swap={pendingSwap}
             mode={confirmationMode}
-            onBuySuccess={() => refetch()}
-            onDelistSuccess={() => refetch()}
+            onBuySuccess={() => {
+              removeSwap(pendingSwap.id);
+              refetch();
+            }}
+            onDelistSuccess={() => {
+              removeSwap(pendingSwap.id);
+              refetch();
+            }}
             onComplete={closeConfirmationModal}
             styles={stylesProp?.confirmation}
           />

@@ -71,6 +71,14 @@ export interface UseSwapListResult {
   setPage: (p: number) => void;
   totalPages: number;
   refetch: () => void;
+  /**
+   * Optimistically drop a swap from the list by id. Used after a successful buy
+   * or delist: the on-chain fill has broadcast but the indexer hasn't marked the
+   * swap `filled`/`delisted` yet, so a plain `refetch()` would re-fetch the same
+   * item. The id is remembered for the session and filtered out of any later
+   * fetch result too, so a lagging indexer can't make it reappear.
+   */
+  removeSwap: (swapId: string) => void;
   isItemMySwap: (swap: AtomicSwap) => boolean;
   pendingSwap: AtomicSwap | null;
   loginModalOpen: boolean;
@@ -116,6 +124,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   );
 
   const fetchSeqRef = useRef(0);
+  // Swap ids removed after a buy/delist. Kept out of the list even if a lagging
+  // indexer still returns them as unfilled on a subsequent fetch.
+  const dismissedIdsRef = useRef<Set<string>>(new Set());
 
   // Kontor is signet-only. Without `kontorNetwork="signet"` on the provider, a
   // `listingType: "kontor"` query returns nothing, so skip it and let the UI
@@ -143,6 +154,15 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   }, []);
 
   const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const removeSwap = useCallback((swapId: string) => {
+    dismissedIdsRef.current.add(swapId);
+    setSwaps((prev) => {
+      const next = prev.filter((s) => s.id !== swapId);
+      if (next.length !== prev.length) setTotal((t) => Math.max(0, t - 1));
+      return next;
+    });
+  }, []);
 
   // Drop "My swaps" filter when the user logs out.
   useEffect(() => {
@@ -185,8 +205,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
     const applyResult = (items: AtomicSwap[], count: number) => {
       if (seq !== fetchSeqRef.current) return;
-      setSwaps(items);
-      setTotal(count);
+      const dismissed = dismissedIdsRef.current;
+      const filtered = dismissed.size
+        ? items.filter((s) => !dismissed.has(s.id))
+        : items;
+      setSwaps(filtered);
+      setTotal(count - (items.length - filtered.length));
     };
 
     const applyError = (err: unknown) => {
@@ -315,6 +339,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     setPage,
     totalPages,
     refetch,
+    removeSwap,
     isItemMySwap,
     pendingSwap,
     loginModalOpen,
