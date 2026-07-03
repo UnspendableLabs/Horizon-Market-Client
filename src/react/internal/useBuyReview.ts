@@ -2,7 +2,7 @@ import { useState } from "react";
 import { usePrices } from "../hooks/usePrices.js";
 import { useFeeEstimates, type FeeEstimates } from "../hooks/useFeeEstimates.js";
 import { useBuyQuotePreview } from "./useBuyQuotePreview.js";
-import { formatSats } from "./format.js";
+import { formatSats, formatUsd } from "./format.js";
 import { type FeeOption, rateForOption } from "./feeRate.js";
 import type { AtomicSwap } from "../../types/index.js";
 
@@ -45,6 +45,8 @@ export interface UseBuyReviewResult {
   minerFeeSats: number | null;
   /** price + royalty + miner fee (null until the quote resolves). */
   totalSats: number | null;
+  /** USD value of {@link totalSats} (null until composed / without a price). */
+  totalUsd: string | null;
   /**
    * "You'll pay" headline string: the formatted total once composed, a "price +
    * royalty +" running subtotal for a not-yet-composed Kontor buy, or a loading /
@@ -95,6 +97,8 @@ export function useBuyReview({
       ? priceSats + (royaltySats ?? 0) + minerFeeSats
       : null;
 
+  const totalUsd = totalSats != null ? formatUsd(totalSats, btcUsd) : null;
+
   // A failed compose means the real purchase can't be composed either.
   const canConfirm = isKontor ? true : preview.error == null;
 
@@ -131,6 +135,7 @@ export function useBuyReview({
     royaltySats,
     minerFeeSats,
     totalSats,
+    totalUsd,
     totalDisplay,
     networkFeeHint,
     minerFeePending,

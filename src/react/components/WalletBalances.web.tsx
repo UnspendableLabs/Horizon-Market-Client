@@ -11,6 +11,7 @@ import {
 } from "../internal/format.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
+import { NoImageIcon } from "../internal/icons.web.js";
 import {
   TokenMark,
   type TokenLine,
@@ -552,27 +553,6 @@ function AddressRow({ label, address }: { label: string; address: string }) {
 }
 
 /** Mountain + sun "no image" pictogram (matches the swap list's placeholder). */
-function NoImageIcon({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-  );
-}
-
 /** Square artwork panel with a placeholder fallback (swap-list style). */
 function AssetMedia({ asset }: { asset: AssetOption }) {
   const { baseUrl } = useHorizonMarket();
@@ -650,7 +630,6 @@ export function WalletBalances({
 }: WalletBalancesProps) {
   const {
     btc,
-    btcSats,
     primary,
     isFetching,
     lastFetchedAt,
@@ -667,6 +646,8 @@ export function WalletBalances({
     setSellAsset,
     withdraw,
     setWithdraw,
+    canWithdrawBtc,
+    openBtcWithdraw,
     openDeposit,
     openDepositForAsset,
   } = useWalletBalancesController();
@@ -726,9 +707,9 @@ export function WalletBalances({
           />
           <LabeledAction
             kind="withdraw"
-            disabled={btcSats === null || btcSats === 0n}
-            title={btcSats ? "Withdraw" : "No BTC to withdraw"}
-            onClick={() => setWithdraw({ type: "btc", balanceSats: btcSats })}
+            disabled={!canWithdrawBtc}
+            title={canWithdrawBtc ? "Withdraw" : "No BTC to withdraw"}
+            onClick={openBtcWithdraw}
           />
         </div>
       </div>

@@ -16,7 +16,6 @@ import * as ws from "./styles.web.js";
 export interface BuyReviewClassNames {
   button?: string;
   buttonSecondary?: string;
-  summary?: string;
 }
 
 export interface BuyReviewProps {
@@ -284,7 +283,7 @@ export function BuyReview({
     priceSats,
     royaltySats,
     minerFeeSats,
-    totalSats,
+    totalUsd,
     totalDisplay,
     networkFeeHint,
     minerFeePending,
@@ -293,7 +292,6 @@ export function BuyReview({
   } = review;
 
   const buying = buyingDisplay(swap);
-  const totalUsd = totalSats != null ? formatUsd(totalSats, btcUsd) : null;
 
   const feeSelect = (
     <select

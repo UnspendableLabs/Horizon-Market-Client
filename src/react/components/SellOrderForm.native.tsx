@@ -19,10 +19,8 @@ import { useTheme } from "../hooks/useTheme.js";
 import {
   assetImageUrl,
   assetKey,
-  counterpartyXcpFirst,
   describeAsset,
   formatRelativeTime,
-  kontorKorFirst,
 } from "../internal/format.js";
 import { AssetAvatar } from "../internal/icons.native.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
@@ -154,7 +152,6 @@ export function SellOrderForm({
   const { baseUrl } = useHorizonMarket();
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const {
-    assets,
     showQuantity,
     submitDisabled,
     maxQuantity,
@@ -176,6 +173,7 @@ export function SellOrderForm({
     error,
     assetPlaceholder,
     nonFatalErrors,
+    assetGroups,
     resultView,
   } = useSellOrderFormController({ defaultSatsPerVbyte, initialAsset, onSuccess, onError });
 
@@ -189,27 +187,11 @@ export function SellOrderForm({
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // The shared controller owns the grouping/order/filtering; map its groups to
+  // the SectionList `{title,data}` shape.
   const sections = useMemo(
-    () =>
-      [
-        {
-          title: "Counterparty",
-          data: counterpartyXcpFirst(assets.counterpartyAssets),
-        },
-        { title: "ZELD", data: assets.zeldAssets },
-        {
-          title: "Kontor",
-          data: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
-        },
-        { title: "Ordinals", data: assets.ordinals },
-      ].filter((s) => s.data.length > 0),
-    [
-      assets.counterpartyAssets,
-      assets.zeldAssets,
-      assets.korAssets,
-      assets.kontorNfts,
-      assets.ordinals,
-    ],
+    () => assetGroups.map((g) => ({ title: g.label, data: g.options })),
+    [assetGroups],
   );
 
   if (step === "form") {

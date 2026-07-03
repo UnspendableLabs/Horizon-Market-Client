@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   View,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
@@ -32,9 +33,13 @@ export interface SwapListStyles {
   root?: StyleProp<ViewStyle>;
   toolbar?: StyleProp<ViewStyle>;
   filterTabs?: StyleProp<ViewStyle>;
+  sortSelect?: StyleProp<ViewStyle>;
+  mySwapsToggle?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
   pagination?: StyleProp<ViewStyle>;
+  error?: StyleProp<TextStyle>;
+  empty?: StyleProp<TextStyle>;
   loginPanel?: LoginPanelStyles;
   confirmation?: SwapConfirmationStyles;
 }
@@ -104,9 +109,9 @@ export function SwapList({
       ) : isLoading ? (
         <Text style={common.muted}>Loading…</Text>
       ) : error ? (
-        <Text style={common.error}>{error.message}</Text>
+        <Text style={[common.error, stylesProp?.error]}>{error.message}</Text>
       ) : swaps.length === 0 ? (
-        <Text style={common.muted}>No swaps found.</Text>
+        <Text style={[common.muted, stylesProp?.empty]}>No swaps found.</Text>
       ) : (
         <View style={[{ gap: 24 }, stylesProp?.grid]}>
           {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
@@ -209,7 +214,7 @@ export function SwapList({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={common.swapToolbar}
+        contentContainerStyle={[common.swapToolbar, stylesProp?.sortSelect]}
       >
         {SORT_OPTIONS.map((key) => {
           const active = sortOption === key;
@@ -237,9 +242,10 @@ export function SwapList({
       {canShowMySwaps && (
         <TouchableOpacity
           onPress={() => setShowMySwaps(!showMySwaps)}
-          style={
-            showMySwaps ? common.filterTabActive : common.filterTabInactive
-          }
+          style={[
+            showMySwaps ? common.filterTabActive : common.filterTabInactive,
+            stylesProp?.mySwapsToggle,
+          ]}
         >
           <Text
             style={

@@ -131,6 +131,10 @@ export interface UseWalletBalancesControllerResult extends WalletTokenSummary {
   setSellAsset: (asset: AssetOption | null) => void;
   withdraw: WithdrawTarget | null;
   setWithdraw: (target: WithdrawTarget | null) => void;
+  /** True when the BTC balance is loaded and non-zero (withdraw is possible). */
+  canWithdrawBtc: boolean;
+  /** Open the BTC withdraw modal (no-op unless {@link canWithdrawBtc}). */
+  openBtcWithdraw: () => void;
   /** Open the deposit modal for a named symbol + deposit type. */
   openDeposit: (symbol: string, type: DepositType) => void;
   /** Open the deposit modal for a specific owned asset. */
@@ -198,6 +202,14 @@ export function useWalletBalancesController(): UseWalletBalancesControllerResult
 
   const usd = btcSats === null ? null : formatUsd(Number(btcSats), btcUsd);
 
+  // Single source of truth for the BTC withdraw affordance, shared by both
+  // renderers so the enable rule + target can't drift between platforms.
+  const canWithdrawBtc = btcSats !== null && btcSats !== 0n;
+  const openBtcWithdraw = () => {
+    if (btcSats === null || btcSats === 0n) return;
+    setWithdraw({ type: "btc", balanceSats: btcSats });
+  };
+
   return {
     ...summary,
     usd,
@@ -212,6 +224,8 @@ export function useWalletBalancesController(): UseWalletBalancesControllerResult
     setSellAsset,
     withdraw,
     setWithdraw,
+    canWithdrawBtc,
+    openBtcWithdraw,
     openDeposit,
     openDepositForAsset,
   };

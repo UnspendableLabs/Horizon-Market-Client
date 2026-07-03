@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import { cx } from "./format.js";
+import { NoImageIcon } from "./icons.web.js";
 import { swapListItemView } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
@@ -40,27 +41,6 @@ const priceStyle: CSSProperties = {
 };
 
 /** Mountain + sun "no image" pictogram (matches the common image-placeholder icon). */
-function NoImageIcon({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </svg>
-  );
-}
-
 function ThumbnailOrPlaceholder({
   thumbnailUrl,
   assetName,

@@ -258,7 +258,7 @@ export function SellReview({
                   style={[sheet.chip, active && sheet.chipActive]}
                 >
                   <Text style={[sheet.chipText, active && sheet.chipTextActive]}>
-                    {FEE_LABELS[opt]} {rate ?? "…"} sat/vB
+                    {FEE_LABELS[opt]} · {rate ?? "…"} sat/vB
                   </Text>
                 </Pressable>
               );

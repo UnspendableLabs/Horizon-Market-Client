@@ -108,8 +108,15 @@ export function Modal({
       onRequestClose={onClose}
     >
       <Pressable style={sheet.overlay} onPress={onClose}>
-        {/* Stop taps on the card from bubbling to the dismiss-on-backdrop press. */}
-        <Pressable style={[sheet.card, style]} onPress={() => {}}>
+        {/* Stop taps on the card from bubbling to the dismiss-on-backdrop press.
+            `accessibilityViewIsModal` mirrors the web's role="dialog"/aria-modal:
+            it scopes the screen reader to the card while it's open. */}
+        <Pressable
+          style={[sheet.card, style]}
+          onPress={() => {}}
+          accessibilityViewIsModal
+          accessibilityLabel={typeof title === "string" ? title : undefined}
+        >
           <View style={sheet.header}>
             {title != null ? (
               <Text style={sheet.title}>{title}</Text>

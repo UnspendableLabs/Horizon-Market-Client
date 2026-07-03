@@ -75,6 +75,11 @@ function createSheet(theme: ResolvedTheme) {
       gap: theme.spacing.md,
       flexWrap: "wrap",
     },
+    titleText: {
+      fontSize: theme.typography.fontSizeLg,
+      fontWeight: "700",
+      color: theme.colors.text,
+    },
     headerMeta: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
     updated: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted },
     refreshButton: {
@@ -234,12 +239,15 @@ function ActionGlyph({ kind, size, color }: { kind: ActionKind; size: number; co
 function LabeledAction({
   kind,
   disabled,
+  hint,
   onPress,
   sheet,
   color,
 }: {
   kind: ActionKind;
   disabled?: boolean;
+  /** Reason surfaced to assistive tech when disabled (native has no hover title). */
+  hint?: string;
   onPress: () => void;
   sheet: Sheet;
   color: string;
@@ -248,6 +256,8 @@ function LabeledAction({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityHint={disabled ? hint : undefined}
       style={[sheet.labeledAction, disabled && sheet.disabled]}
     >
       <ActionGlyph kind={kind} size={14} color={color} />
@@ -259,12 +269,15 @@ function LabeledAction({
 function IconAction({
   kind,
   disabled,
+  hint,
   onPress,
   sheet,
   color,
 }: {
   kind: ActionKind;
   disabled?: boolean;
+  /** Reason surfaced to assistive tech when disabled (native has no hover title). */
+  hint?: string;
   onPress: () => void;
   sheet: Sheet;
   color: string;
@@ -273,6 +286,8 @@ function IconAction({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityHint={disabled ? hint : undefined}
       style={[sheet.iconAction, disabled && sheet.disabled]}
       accessibilityLabel={ACTION_LABEL[kind]}
     >
@@ -391,6 +406,7 @@ function TokenCell({
         <IconAction
           kind="withdraw"
           disabled={!sellAsset}
+          hint={sellAsset ? undefined : `No ${line.symbol} to withdraw`}
           onPress={() => sellAsset && onWithdraw(sellAsset)}
           sheet={sheet}
           color={color}
@@ -398,6 +414,7 @@ function TokenCell({
         <LabeledAction
           kind="sell"
           disabled={!sellAsset}
+          hint={sellAsset ? undefined : `No ${line.symbol} to sell`}
           onPress={() => sellAsset && onSell(sellAsset)}
           sheet={sheet}
           color={color}
@@ -423,7 +440,8 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
 
   const {
     btc,
-    btcSats,
+    // btcSats is intentionally not destructured — the BTC withdraw affordance
+    // now comes from `canWithdrawBtc` / `openBtcWithdraw` on the controller.
     primary,
     isFetching,
     lastFetchedAt,
@@ -440,6 +458,8 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
     setSellAsset,
     withdraw,
     setWithdraw,
+    canWithdrawBtc,
+    openBtcWithdraw,
     openDeposit,
     openDepositForAsset,
   } = useWalletBalancesController();
@@ -447,7 +467,13 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
       <View style={[sheet.headerRow, stylesProp?.header]}>
-        {title}
+        {/* A bare-string title would crash RN ("Text strings must be rendered
+            within a <Text>"), so wrap strings; render any other node as-is. */}
+        {typeof title === "string" ? (
+          <Text style={sheet.titleText}>{title}</Text>
+        ) : (
+          title
+        )}
         <View style={sheet.headerMeta}>
           <Text style={sheet.updated}>Updated {formatRelativeTime(lastFetchedAt)}</Text>
           <Pressable
@@ -493,8 +519,9 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
           <LabeledAction kind="deposit" onPress={() => openDeposit("BTC", "btc")} sheet={sheet} color={iconColor} />
           <LabeledAction
             kind="withdraw"
-            disabled={btcSats === null || btcSats === 0n}
-            onPress={() => setWithdraw({ type: "btc", balanceSats: btcSats })}
+            disabled={!canWithdrawBtc}
+            hint={canWithdrawBtc ? undefined : "No BTC to withdraw"}
+            onPress={openBtcWithdraw}
             sheet={sheet}
             color={iconColor}
           />

@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useHorizonMarket } from "../context.js";
-import { useAssets } from "../hooks/useAssets.js";
+import { useAssets, type AssetOption } from "../hooks/useAssets.js";
 import {
   useSellOrder,
   type UseSellOrderOptions,
@@ -10,7 +10,25 @@ import {
   isSellFormValid,
   showQuantityForAsset,
 } from "./sellFormValidation.js";
-import { assetBalanceLabel, assetKey, mempoolTxUrl } from "./format.js";
+import {
+  assetBalanceLabel,
+  assetKey,
+  counterpartyXcpFirst,
+  kontorKorFirst,
+  mempoolTxUrl,
+} from "./format.js";
+
+/**
+ * A labeled group of sellable assets (Counterparty / ZELD / Kontor / Ordinals),
+ * already ordered (XCP-first, KOR-first) and filtered to non-empty. Shared by
+ * both renderers so the grouping/order/labels can't drift between platforms;
+ * each maps it to its own list shape (`{label,options}` ↔ SectionList
+ * `{title,data}`).
+ */
+export interface AssetGroup {
+  label: string;
+  options: AssetOption[];
+}
 
 /**
  * Derived view of the result step, shared by both renderers so the "submitted
@@ -41,6 +59,8 @@ export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
   assetPlaceholder: string;
   /** Per-group balance-load errors, pre-formatted for display. */
   nonFatalErrors: string[];
+  /** Sellable assets grouped + ordered for the picker (see {@link AssetGroup}). */
+  assetGroups: AssetGroup[];
   /** Derived result-step messaging + pending-tx link (see {@link SellResultView}). */
   resultView: SellResultView;
 }
@@ -101,6 +121,32 @@ export function useSellOrderFormController(
     assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
   ].filter((m): m is string => Boolean(m));
 
+  // Grouped + ordered sellable assets, non-empty groups only. Hoisted here so the
+  // group labels and the XCP-first / KOR-first ordering live in one place; the
+  // web and native pickers just render this list in their own shape.
+  const assetGroups: AssetGroup[] = useMemo(
+    () =>
+      [
+        {
+          label: "Counterparty",
+          options: counterpartyXcpFirst(assets.counterpartyAssets),
+        },
+        { label: "ZELD", options: assets.zeldAssets },
+        {
+          label: "Kontor",
+          options: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
+        },
+        { label: "Ordinals", options: assets.ordinals },
+      ].filter((g) => g.options.length > 0),
+    [
+      assets.counterpartyAssets,
+      assets.zeldAssets,
+      assets.korAssets,
+      assets.kontorNfts,
+      assets.ordinals,
+    ],
+  );
+
   // Result-step view. A freshly created listing whose asset UTXO isn't confirmed
   // yet (counterparty attach / zeld transfer prep) won't appear in the market
   // until its funding tx confirms — so it's "submitted", not "live", and we
@@ -145,6 +191,7 @@ export function useSellOrderFormController(
     refresh: assets.refresh,
     assetPlaceholder,
     nonFatalErrors,
+    assetGroups,
     resultView,
   };
 }

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { CSSProperties } from "react";
 import type { WorkflowProgressEvent } from "../../types/index.js";
 import { cx } from "../internal/format.js";
-import { reduceSteps, type StepView } from "../internal/progress.js";
+import { reduceSteps, stepVisual, type StepView } from "../internal/progress.js";
 import { webTokens } from "../theme.js";
 
 export interface WorkflowProgressClassNames {
@@ -142,21 +142,10 @@ function Step({
   step: StepView;
   classNames?: WorkflowProgressClassNames;
 }) {
-  const colorFor = {
-    complete: webTokens.success,
-    running: webTokens.pending,
-    error: webTokens.error,
-    pending: webTokens.textMuted,
-  }[step.state];
-
-  const icon =
-    step.state === "complete"
-      ? "✓"
-      : step.state === "running"
-        ? null
-        : step.state === "error"
-          ? "✗"
-          : "○";
+  // Icon + colors come from the shared `stepVisual` mapping (see progress.ts) so
+  // web and native never drift; we only translate the semantic keys to tokens.
+  const { icon, iconColorKey, labelColorKey } = stepVisual(step.state);
+  const colorFor = webTokens[iconColorKey];
 
   return (
     <div
@@ -183,10 +172,7 @@ function Step({
       </span>
       <span
         className={classNames?.label}
-        style={{
-          color:
-            step.state === "pending" ? webTokens.textMuted : webTokens.text,
-        }}
+        style={{ color: webTokens[labelColorKey] }}
       >
         {step.label}
       </span>

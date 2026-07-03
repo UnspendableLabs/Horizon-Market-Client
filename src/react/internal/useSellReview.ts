@@ -74,8 +74,6 @@ export interface UseSellReviewResult {
   kontorMinerFeeSats: number | null;
   /** Estimated Kontor total (listing + miner fee) in sats (≈). */
   kontorTotalSats: number | null;
-  /** True when the miner-fee vsize was measured from a live same-kind listing. */
-  kontorMinerCalibrated: boolean;
 }
 
 /**
@@ -167,6 +165,5 @@ export function useSellReview({
     kontorListingError: kontorFee.error,
     kontorMinerFeeSats,
     kontorTotalSats,
-    kontorMinerCalibrated: kontorMiner.calibrated,
   };
 }

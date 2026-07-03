@@ -62,7 +62,9 @@ function createSheet(theme: ResolvedTheme) {
       justifyContent: "center",
       overflow: "hidden",
     },
-    avatarLabel: { color: "#fff", fontWeight: "700", fontSize: 13 },
+    // Matches the web avatar's derived label size for a 56px tile:
+    // Math.max(11, Math.round(56 / 4.5)) = 12.
+    avatarLabel: { color: "#fff", fontWeight: "700", fontSize: 12 },
     assetName: {
       fontSize: theme.typography.fontSizeLg,
       fontWeight: "600",
@@ -191,22 +193,26 @@ function SatsValue({ sats, btcUsd, sheet }: { sats: number; btcUsd: number | nul
   );
 }
 
-/** Purchase thumbnail: listing artwork with a colored monogram fallback. */
+/** Purchase thumbnail: listing artwork, else a colored monogram fallback. */
 function SwapAvatar({ swap, sheet }: { swap: AtomicSwap; sheet: Sheet }) {
   const [failed, setFailed] = useState(false);
   const url = swap.thumbnailUrl ?? swap.imageUrl;
   const { label, bg } = swapMonogram(swap);
   const showImage = Boolean(url) && !failed;
+  // Render image XOR monogram (mirrors web): painting the monogram under the
+  // artwork would bleed through a transparent PNG, so only show it when there's
+  // no image (or the image failed to load).
   return (
-    <View style={[sheet.avatar, { backgroundColor: bg }]}>
-      <Text style={sheet.avatarLabel}>{label}</Text>
+    <View style={[sheet.avatar, showImage ? null : { backgroundColor: bg }]}>
       {showImage ? (
         <Image
           source={{ uri: url as string }}
           onError={() => setFailed(true)}
           style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
         />
-      ) : null}
+      ) : (
+        <Text style={sheet.avatarLabel}>{label}</Text>
+      )}
     </View>
   );
 }
@@ -231,7 +237,7 @@ export function BuyReview({
     priceSats,
     royaltySats,
     minerFeeSats,
-    totalSats,
+    totalUsd,
     totalDisplay,
     networkFeeHint,
     minerFeePending,
@@ -240,7 +246,6 @@ export function BuyReview({
   } = review;
 
   const buying = buyingDisplay(swap);
-  const totalUsd = totalSats != null ? formatUsd(totalSats, btcUsd) : null;
 
   return (
     <View style={{ gap: theme.spacing.md }}>
@@ -284,7 +289,7 @@ export function BuyReview({
                   style={[sheet.chip, active && sheet.chipActive]}
                 >
                   <Text style={[sheet.chipText, active && sheet.chipTextActive]}>
-                    {FEE_LABELS[opt]} {rate ?? "…"} sat/vB
+                    {FEE_LABELS[opt]} · {rate ?? "…"} sat/vB
                   </Text>
                 </Pressable>
               );

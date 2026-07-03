@@ -3,7 +3,7 @@
 import "./lib/polyfills.js";
 
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View } from "react-native";
+import { BackHandler, StyleSheet, View } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700Bold } from "@expo-google-fonts/montserrat";
@@ -82,6 +82,19 @@ export default function App() {
     void persistNetwork(next);
     setNetwork(next);
   };
+
+  // Android hardware back mirrors the web app's browser back between the wallet
+  // and market views (web drives this via `hashchange` in route.ts). From the
+  // wallet screen, back returns to the market instead of exiting the app; on the
+  // market screen we don't intercept, so the OS default (exit) applies.
+  useEffect(() => {
+    if (screen !== "wallet") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setScreen("market");
+      return true;
+    });
+    return () => sub.remove();
+  }, [screen]);
 
   if (!fontsLoaded) return null;
 

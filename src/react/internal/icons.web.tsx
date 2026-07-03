@@ -4,6 +4,32 @@ import { assetMonogram, isXcpAsset } from "./assetMonogram.js";
 import { webTokens } from "../theme.js";
 
 /**
+ * Placeholder glyph for missing artwork (swap tiles / wallet monograms). Shared
+ * so the web renderers don't each carry their own copy (native counterpart:
+ * `NoImageIcon` in icons.native).
+ */
+export function NoImageIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </svg>
+  );
+}
+
+/**
  * Orange Bitcoin mark shown beside "Sats" amounts (mirrors Horizon Market's
  * `BtcGold` icon).
  */

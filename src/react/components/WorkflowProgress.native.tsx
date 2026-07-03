@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import type { WorkflowProgressEvent } from "../../types/index.js";
 import { useTheme } from "../hooks/useTheme.js";
-import { reduceSteps, type StepView } from "../internal/progress.js";
+import { reduceSteps, stepVisual, type StepView } from "../internal/progress.js";
 import type { ResolvedTheme } from "../theme.js";
 
 export interface WorkflowProgressStyles {
@@ -146,26 +146,11 @@ function Step({
   sheet: ReturnType<typeof createSheet>;
   stylesProp?: WorkflowProgressStyles;
 }) {
-  const color =
-    step.state === "complete"
-      ? theme.colors.success
-      : step.state === "running"
-        ? theme.colors.pending
-        : step.state === "error"
-          ? theme.colors.error
-          : theme.colors.textMuted;
-
-  const icon =
-    step.state === "complete"
-      ? "✓"
-      : step.state === "error"
-        ? "✗"
-        : step.state === "pending"
-          ? "○"
-          : null;
-
-  const labelColor =
-    step.state === "pending" ? theme.colors.textMuted : theme.colors.text;
+  // Icon + colors come from the shared `stepVisual` mapping (see progress.ts) so
+  // native and web never drift; we only translate the semantic keys to theme.
+  const { icon, iconColorKey, labelColorKey } = stepVisual(step.state);
+  const color = theme.colors[iconColorKey];
+  const labelColor = theme.colors[labelColorKey];
 
   return (
     <View style={[sheet.stepRow, stylesProp?.step]}>

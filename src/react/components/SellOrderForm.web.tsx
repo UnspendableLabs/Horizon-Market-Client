@@ -1,13 +1,7 @@
-import { useMemo } from "react";
 import type { CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import type { AssetOption } from "../hooks/useAssets.js";
-import {
-  counterpartyXcpFirst,
-  cx,
-  formatRelativeTime,
-  kontorKorFirst,
-} from "../internal/format.js";
+import { cx, formatRelativeTime } from "../internal/format.js";
 import { AssetSelect } from "../internal/AssetSelect.web.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SellReview } from "../internal/SellReview.web.js";
@@ -87,11 +81,6 @@ const mempoolLink: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-interface AssetGroupDef {
-  label: string;
-  options: AssetOption[];
-}
-
 export function SellOrderForm({
   defaultSatsPerVbyte,
   initialAsset,
@@ -125,6 +114,7 @@ export function SellOrderForm({
     error,
     assetPlaceholder,
     nonFatalErrors,
+    assetGroups,
     resultView,
   } = useSellOrderFormController({
     defaultSatsPerVbyte,
@@ -140,28 +130,6 @@ export function SellOrderForm({
     defaultSatsPerVbyte,
     active: step === "confirm",
   });
-
-  const groups: AssetGroupDef[] = useMemo(
-    () => [
-      {
-        label: "Counterparty",
-        options: counterpartyXcpFirst(assets.counterpartyAssets),
-      },
-      { label: "ZELD", options: assets.zeldAssets },
-      {
-        label: "Kontor",
-        options: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
-      },
-      { label: "Ordinals", options: assets.ordinals },
-    ],
-    [
-      assets.counterpartyAssets,
-      assets.zeldAssets,
-      assets.korAssets,
-      assets.kontorNfts,
-      assets.ordinals,
-    ],
-  );
 
   const root = { ...rootStyle, ...style };
 
@@ -185,7 +153,7 @@ export function SellOrderForm({
         <div className={classNames?.label} style={ws.label}>
           <span>Asset</span>
           <AssetSelect
-            groups={groups}
+            groups={assetGroups}
             value={formValues.asset}
             onChange={(asset) => setFormValues({ asset })}
             placeholder={assetPlaceholder}
