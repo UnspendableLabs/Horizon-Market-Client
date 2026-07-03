@@ -49,8 +49,6 @@ function makeFetch(opts: {
   prevOuts?: Record<string, { value: number; script: string }[]>;
   onBroadcast?: (rawHex: string) => void;
 }): typeof globalThis.fetch {
-  const scriptHex = (addr: string) =>
-    Buffer.from(btc.address.toOutputScript(addr, btcNetwork)).toString("hex");
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
