@@ -5,7 +5,7 @@ import type {
   WorkflowProgressEvent,
 } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
-import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
+import { CLIENT_NOT_INITIALIZED, mempoolTxUrl } from "../internal/format.js";
 
 export type SwapConfirmationStep = "confirm" | "progress" | "result";
 export type SwapConfirmationStatus =
@@ -16,6 +16,8 @@ export type SwapConfirmationStatus =
 
 export interface UseSwapConfirmationOptions {
   swapId: string;
+  /** Which flow this instance drives — selects the unified status/steps/message. */
+  mode: "buy" | "sell";
   defaultSatsPerVbyte?: number;
   onBuySuccess?: (sales: PendingSale[]) => void;
   onDelistSuccess?: () => void;
@@ -30,6 +32,23 @@ export interface UseSwapConfirmationResult {
   delistSteps: WorkflowProgressEvent[];
   totalBuySteps: number | null;
   totalDelistSteps: number | null;
+  /** Status for the active `mode` (buy → buyStatus, sell → delistStatus). */
+  status: SwapConfirmationStatus;
+  /** Progress events for the active `mode`. */
+  steps: WorkflowProgressEvent[];
+  /** Total steps for the active `mode` (null until known). */
+  totalSteps: number | null;
+  /**
+   * Result-screen success line for the active `mode`, or undefined until the
+   * flow succeeds ("Purchase complete!" for buy, "Listing removed." for delist).
+   */
+  successMessage: string | undefined;
+  /**
+   * mempool.space link to the buy's settlement tx, or null. Only set on a
+   * successful buy that produced a txid — lets the result screen present the tx
+   * as a link instead of a truncated id, mirroring the sell confirmation.
+   */
+  trackUrl: string | null;
   sales: PendingSale[] | null;
   error: Error | null;
   isSubmitting: boolean;
@@ -59,8 +78,8 @@ const idleSwapState = {
 export function useSwapConfirmation(
   options: UseSwapConfirmationOptions,
 ): UseSwapConfirmationResult {
-  const { client } = useHorizonMarket();
-  const { swapId, defaultSatsPerVbyte } = options;
+  const { client, network, kontorNetwork } = useHorizonMarket();
+  const { swapId, defaultSatsPerVbyte, mode } = options;
 
   const optsRef = useRef(options);
   optsRef.current = options;
@@ -222,6 +241,24 @@ export function useSwapConfirmation(
     else void delist();
   }, [lastAction, confirmPurchase, delist]);
 
+  // Unified view of the active flow so both renderers read one status/steps/
+  // message instead of each re-selecting buy-vs-delist and rebuilding the label.
+  const status = mode === "buy" ? buyStatus : delistStatus;
+  const steps = mode === "buy" ? buySteps : delistSteps;
+  const totalSteps = mode === "buy" ? totalBuySteps : totalDelistSteps;
+  const successMessage =
+    status === "success"
+      ? mode === "buy"
+        ? "Purchase complete!"
+        : "Listing removed."
+      : undefined;
+  // On a successful buy, surface the settlement tx as a mempool.space link (see
+  // the sell confirmation) instead of a truncated id baked into the message.
+  const trackUrl =
+    mode === "buy" && buyStatus === "success"
+      ? mempoolTxUrl(network, kontorNetwork, sales?.[0]?.txId)
+      : null;
+
   return {
     step,
     buyStatus,
@@ -230,6 +267,11 @@ export function useSwapConfirmation(
     delistSteps,
     totalBuySteps,
     totalDelistSteps,
+    status,
+    steps,
+    totalSteps,
+    successMessage,
+    trackUrl,
     sales,
     error,
     isSubmitting,

@@ -13,6 +13,8 @@ export {
   useAssets,
   useBtcBalance,
   useSellOrder,
+  useWithdraw,
+  WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
   useSwapList,
   usePrices,
@@ -27,6 +29,14 @@ export type {
   AssetOption,
   UseAssetsResult,
   UseBtcBalanceResult,
+  WithdrawTarget,
+  WithdrawStep,
+  WithdrawStatus,
+  WithdrawFeeOption,
+  WithdrawFormValues,
+  WithdrawResult,
+  UseWithdrawOptions,
+  UseWithdrawResult,
   SellOrderStep,
   SellOrderStatus,
   SellOrderFormValues,
@@ -73,6 +83,12 @@ export type {
   SellOrderFormStyles,
 } from "./components/SellOrderForm.native.js";
 
+export { WithdrawForm } from "./components/WithdrawForm.native.js";
+export type {
+  WithdrawFormProps,
+  WithdrawFormStyles,
+} from "./components/WithdrawForm.native.js";
+
 export { SwapConfirmation } from "./components/SwapConfirmation.native.js";
 export type {
   SwapConfirmationProps,
@@ -90,3 +106,15 @@ export type {
   SwapListProps,
   SwapListStyles,
 } from "./components/SwapList.native.js";
+
+export { WalletBalances } from "./components/WalletBalances.native.js";
+export type {
+  WalletBalancesProps,
+  WalletBalancesStyles,
+} from "./components/WalletBalances.native.js";
+
+export { WalletBalanceSummary } from "./components/WalletBalanceSummary.native.js";
+export type {
+  WalletBalanceSummaryProps,
+  WalletBalanceSummaryStyles,
+} from "./components/WalletBalanceSummary.native.js";

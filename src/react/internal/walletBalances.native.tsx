@@ -1,10 +1,10 @@
 import { useHorizonMarket } from "../context.js";
 import { assetImageUrl } from "./format.js";
-import { AssetAvatar, BtcGoldIcon } from "./icons.web.js";
+import { AssetAvatar, BtcGoldIcon } from "./icons.native.js";
 import { type TokenLine } from "./useWalletTokenSummary.js";
 
-// The aggregation logic is platform-neutral and shared with the native renderer;
-// re-export it here so existing web imports (`./walletBalances.web.js`) keep working.
+// The aggregation logic is platform-neutral and shared with the web renderer;
+// re-export it here so native imports can pull the hook + types from one place.
 export {
   useWalletTokenSummary,
   type TokenSymbol,

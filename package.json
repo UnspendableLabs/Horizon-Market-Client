@@ -55,13 +55,21 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-native": ">=0.72.0"
+    "react-native": ">=0.72.0",
+    "react-native-svg": ">=13.0.0",
+    "expo-clipboard": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-native": {
+      "optional": true
+    },
+    "react-native-svg": {
+      "optional": true
+    },
+    "expo-clipboard": {
       "optional": true
     }
   },
@@ -76,9 +84,11 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "eslint": "^9.0.0",
+    "expo-clipboard": "^7.0.0",
     "prettier": "^3.2.0",
     "react": "^18.0.0",
     "react-native": "^0.72.0",
+    "react-native-svg": "^15.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.60.0",

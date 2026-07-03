@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useHorizonMarket } from "../context.js";
 import { useAssets } from "../hooks/useAssets.js";
 import {
   useSellOrder,
@@ -9,7 +10,20 @@ import {
   isSellFormValid,
   showQuantityForAsset,
 } from "./sellFormValidation.js";
-import { assetBalanceLabel, assetKey } from "./format.js";
+import { assetBalanceLabel, assetKey, mempoolTxUrl } from "./format.js";
+
+/**
+ * Derived view of the result step, shared by both renderers so the "submitted
+ * vs live" messaging and the pending-tx mempool link stay identical.
+ */
+export interface SellResultView {
+  /** A freshly created listing whose funding tx hasn't confirmed yet. */
+  pendingConfirmation: boolean;
+  /** mempool.space link to the pending funding tx, or null. */
+  trackUrl: string | null;
+  /** Success banner copy, or undefined when not on a successful result. */
+  successMessage: string | undefined;
+}
 
 export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
   assets: ReturnType<typeof useAssets>;
@@ -23,6 +37,12 @@ export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
   isFetching: boolean;
   /** Re-fetch all owned balances, bypassing the cache (forwarded from useAssets). */
   refresh: () => void;
+  /** Placeholder for the asset field: loading / empty / prompt. */
+  assetPlaceholder: string;
+  /** Per-group balance-load errors, pre-formatted for display. */
+  nonFatalErrors: string[];
+  /** Derived result-step messaging + pending-tx link (see {@link SellResultView}). */
+  resultView: SellResultView;
 }
 
 /**
@@ -36,6 +56,7 @@ export function useSellOrderFormController(
 ): UseSellOrderFormControllerResult {
   const sellOrder = useSellOrder(options);
   const assets = useAssets();
+  const { network, kontorNetwork } = useHorizonMarket();
 
   const selected = sellOrder.formValues.asset;
 
@@ -65,6 +86,54 @@ export function useSellOrderFormController(
   const maxQuantity =
     selected && showQuantity ? assetBalanceLabel(selected) || null : null;
 
+  const assetPlaceholder =
+    assets.isFetching && !assets.allAssets.length
+      ? "Loading your assets…"
+      : assets.isEmpty
+        ? "No assets to sell"
+        : "Select an asset…";
+
+  const nonFatalErrors = [
+    assets.errors.counterparty &&
+      `Counterparty: ${assets.errors.counterparty.message}`,
+    assets.errors.zeld && `ZELD: ${assets.errors.zeld.message}`,
+    assets.errors.ordinals && `Ordinals: ${assets.errors.ordinals.message}`,
+    assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
+  ].filter((m): m is string => Boolean(m));
+
+  // Result-step view. A freshly created listing whose asset UTXO isn't confirmed
+  // yet (counterparty attach / zeld transfer prep) won't appear in the market
+  // until its funding tx confirms — so it's "submitted", not "live", and we
+  // surface a mempool.space link to that tx. `funded` can arrive falsy-but-not-
+  // strictly-false over the wire, so mirror the falsy check for both.
+  const successResult =
+    sellOrder.status === "success" ? sellOrder.result : null;
+  const pendingConfirmation =
+    Boolean(successResult?.created) && !successResult?.swap.funded;
+  // The tx to track differs by listing type. Counterparty attach / zeld transfer
+  // prep create a NEW asset UTXO, so the funding tx is that UTXO's txid. Ordinals
+  // reuse the existing inscription UTXO — nothing is funded on-chain — so the
+  // pending tx is the standalone platform-fee payment.
+  const swap = successResult?.swap;
+  const fundingTxid = !swap
+    ? null
+    : swap.listingType === "ordinal"
+      ? swap.onChainPayment?.txid ?? swap.txId ?? null
+      : swap.assetUtxoId?.split(":")[0] ?? swap.txId ?? null;
+  const resultView: SellResultView = {
+    pendingConfirmation,
+    trackUrl: pendingConfirmation
+      ? mempoolTxUrl(network, kontorNetwork, fundingTxid)
+      : null,
+    successMessage: successResult
+      ? !successResult.created
+        ? "Listing already exists (no changes)."
+        : successResult.swap.funded
+          ? "Your listing is live!"
+          : "Sell order submitted!"
+      : undefined,
+  };
+
   return {
     ...sellOrder,
     assets,
@@ -74,5 +143,8 @@ export function useSellOrderFormController(
     lastFetchedAt: assets.lastFetchedAt,
     isFetching: assets.isFetching,
     refresh: assets.refresh,
+    assetPlaceholder,
+    nonFatalErrors,
+    resultView,
   };
 }

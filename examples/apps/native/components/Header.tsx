@@ -12,9 +12,15 @@ import {
   Modal,
   LoginPanel,
   SellOrderForm,
+  WalletBalanceSummary,
 } from "@unspendablelabs/horizon-market-client/react";
 import { getPrivateKey, logout as web3authLogout } from "../lib/web3auth.js";
 import { colors, radii, spacing, fonts } from "../lib/theme.js";
+
+interface HeaderProps {
+  /** Navigate to the standalone Wallet screen (lifted to App). */
+  onOpenWallet: () => void;
+}
 
 /* ── Logo (text-based, matches the Horizon Market wordmark style) ─ */
 
@@ -31,9 +37,11 @@ function HorizonLogo() {
 
 function AddressRow({ label, value }: { label: string; value: string }) {
   const copy = () => {
-    Clipboard.setStringAsync(value).then(() => {
-      Alert.alert("Copied", `${label} address copied.`);
-    });
+    Clipboard.setStringAsync(value)
+      .then(() => {
+        Alert.alert("Copied", `${label} address copied.`);
+      })
+      .catch(() => {});
   };
 
   const short = `${value.slice(0, 8)}…${value.slice(-6)}`;
@@ -52,27 +60,43 @@ function AddressRow({ label, value }: { label: string; value: string }) {
 function CreditsRow({
   credits,
   freeCredits,
+  signInError,
 }: {
   credits: number | null;
   freeCredits: number | null;
+  signInError: string | null;
 }) {
   const loading = credits === null && freeCredits === null;
   const total = (credits ?? 0) + (freeCredits ?? 0);
   return (
     <View style={styles.creditsRow}>
       <Text style={styles.creditsLabel}>Credits</Text>
-      <Text style={styles.creditsValue}>{loading ? "…" : String(total)}</Text>
+      {loading && signInError ? (
+        <Text style={styles.signInError} numberOfLines={1}>
+          {signInError}
+        </Text>
+      ) : (
+        <Text style={styles.creditsValue}>{loading ? "…" : String(total)}</Text>
+      )}
     </View>
   );
 }
 
 /* ── Header ────────────────────────────────────────────────── */
 
-export function Header() {
-  const { addresses, logout, credits, freeCredits } = useHorizonMarket();
+export function Header({ onOpenWallet }: HeaderProps) {
+  const { addresses, logout, credits, freeCredits, signInError } =
+    useHorizonMarket();
   const [loginOpen, setLoginOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
+
+  // "Open wallet" jumps to the wallet screen — close the menu first so it isn't
+  // left floating over the new view.
+  const handleOpenWallet = () => {
+    setWalletOpen(false);
+    onOpenWallet();
+  };
 
   const handleSell = () => {
     if (addresses) {
@@ -133,10 +157,11 @@ export function Header() {
         onClose={() => setLoginOpen(false)}
         title="Login or sign up"
       >
+        {/* No onError handler: keep the modal open on failure so LoginPanel's own
+            inline "✗ {message}" error surface is shown (mirrors the web Header). */}
         <LoginPanel
           getPrivateKey={getPrivateKey}
           onSuccess={handleLoginSuccess}
-          onError={() => setLoginOpen(false)}
         />
       </Modal>
 
@@ -159,20 +184,34 @@ export function Header() {
 
         <View style={styles.walletDivider} />
 
-        <CreditsRow credits={credits} freeCredits={freeCredits} />
+        <CreditsRow
+          credits={credits}
+          freeCredits={freeCredits}
+          signInError={signInError}
+        />
 
         <View style={styles.walletDivider} />
 
-        <TouchableOpacity
-          style={styles.disconnectButton}
-          onPress={() => {
-            setWalletOpen(false);
-            void handleLogout();
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.disconnectText}>Disconnect</Text>
-        </TouchableOpacity>
+        {/* Compact balance summary (BTC / XCP / KOR / ZELD) from the SDK. */}
+        <WalletBalanceSummary />
+
+        <View style={styles.walletDivider} />
+
+        {/* Footer: Disconnect (left) + Open wallet (right). */}
+        <View style={styles.walletFooter}>
+          <TouchableOpacity
+            onPress={() => {
+              setWalletOpen(false);
+              void handleLogout();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.disconnectText}>Disconnect</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleOpenWallet} activeOpacity={0.7}>
+            <Text style={styles.openWalletText}>Open wallet →</Text>
+          </TouchableOpacity>
+        </View>
       </Modal>
     </>
   );
@@ -315,14 +354,29 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sansSemiBold,
   },
 
-  disconnectButton: {
-    paddingVertical: 12,
+  signInError: {
+    flexShrink: 1,
+    fontSize: 12,
+    color: colors.error,
+    fontFamily: fonts.sans,
+  },
+
+  walletFooter: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
   },
 
   disconnectText: {
     fontSize: 14,
     color: colors.error,
+    fontFamily: fonts.sansSemiBold,
+  },
+
+  openWalletText: {
+    fontSize: 14,
+    color: colors.primary,
     fontFamily: fonts.sansSemiBold,
   },
 });

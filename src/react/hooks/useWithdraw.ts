@@ -1,10 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
-import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
+import {
+  CLIENT_NOT_INITIALIZED,
+  formatUsd,
+  sellingDisplay,
+} from "../internal/format.js";
 import type { PreparedSend, SendKind, SendRequest } from "../../client.js";
 import type { KontorAssetKind } from "../../types/index.js";
 import { useKontorMinerFee } from "../internal/useKontorMinerFee.js";
 import { estimateKontorMinerFee } from "../internal/kontorFeeEstimate.js";
+import { usePrices } from "./usePrices.js";
 import { useAssets, type AssetOption } from "./useAssets.js";
 import { useFeeEstimates, type FeeEstimates } from "./useFeeEstimates.js";
 
@@ -24,6 +29,13 @@ export const WITHDRAW_FEE_OPTIONS: WithdrawFeeOption[] = [
   "normal",
   "fast",
 ];
+
+/** Display labels for the withdraw fee-rate presets (shared by both renderers). */
+export const WITHDRAW_FEE_LABELS: Record<WithdrawFeeOption, string> = {
+  slow: "Slow",
+  normal: "Normal",
+  fast: "Fast",
+};
 
 function rateForOption(
   option: WithdrawFeeOption,
@@ -46,6 +58,16 @@ export interface WithdrawResult {
   txid: string;
 }
 
+/** Resolved network-fee view for the review step (exact for BTC, estimated for Kontor). */
+export interface WithdrawReviewFee {
+  /** True when `sats` is the composed tx's exact fee (Bitcoin family). */
+  exact: boolean;
+  /** Fee in sats — exact for BTC, estimated for Kontor, null until known. */
+  sats: number | null;
+  /** Formatted USD value of `sats`, or null. */
+  usd: string | null;
+}
+
 export interface UseWithdrawOptions {
   target: WithdrawTarget;
   onSuccess?: (txid: string) => void;
@@ -63,6 +85,16 @@ export interface UseWithdrawResult {
   needsQuantity: boolean;
   /** Human-readable available balance for the target, or null. */
   availableDisplay: string | null;
+  /** Field label for the destination input (P2TR wording for Kontor). */
+  destinationLabel: string;
+  /** Placeholder for the destination input ("tb1p…" for Kontor, else "bc1…"). */
+  destinationPlaceholder: string;
+  /** Name + sub line for the review's "You're withdrawing" block. */
+  withdrawingDisplay: { name: string; sub: string | null };
+  /** Resolved network-fee view for the review step. */
+  reviewFee: WithdrawReviewFee;
+  /** True when the form can't yet be submitted (composing, or required fields empty). */
+  submitDisabled: boolean;
   formValues: WithdrawFormValues;
   setFormValues: (update: Partial<WithdrawFormValues>) => void;
   /** Selected fee-rate speed preset (form step). */
@@ -136,6 +168,17 @@ function formatSatsAsBtc(sats: bigint): string {
   const whole = sats / 100_000_000n;
   const frac = (sats % 100_000_000n).toString().padStart(8, "0");
   return `${whole}.${frac}`;
+}
+
+/** Name + sub line for the review's "You're withdrawing" block. */
+function targetDisplay(
+  target: WithdrawTarget,
+  quantity: string,
+): { name: string; sub: string | null } {
+  if (target.type === "btc") {
+    return { name: "BTC", sub: `${quantity || "0"} BTC` };
+  }
+  return sellingDisplay(target, quantity);
 }
 
 function availableFor(target: WithdrawTarget): string | null {
@@ -258,6 +301,7 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
   const { client } = useHorizonMarket();
   const { ordinals, refresh: refreshAssets } = useAssets();
   const { estimates } = useFeeEstimates();
+  const { btcUsd } = usePrices();
 
   const optsRef = useRef(options);
   optsRef.current = options;
@@ -431,6 +475,30 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
   const assetLabel = useMemo(() => assetLabelFor(target), [target]);
   const availableDisplay = useMemo(() => availableFor(target), [target]);
 
+  const destinationLabel = isKontor
+    ? "Recipient (P2TR address)"
+    : "Destination address";
+  const destinationPlaceholder = isKontor ? "tb1p…" : "bc1…";
+  const withdrawingDisplay = targetDisplay(target, formValues.quantity);
+  const submitDisabled =
+    isPreparing ||
+    !formValues.destination.trim() ||
+    (needsQuantity && !formValues.quantity.trim());
+
+  // Bitcoin family: the exact fee from the composed tx. Kontor: an estimate at
+  // the selected rate (the SDK finalises the exact fee at submit).
+  const reviewFeeExact = !isKontor && feeSats != null;
+  const reviewFeeSats = isKontor
+    ? estimatedFeeSats
+    : feeSats != null
+      ? Number(feeSats)
+      : null;
+  const reviewFee: WithdrawReviewFee = {
+    exact: reviewFeeExact,
+    sats: reviewFeeSats,
+    usd: reviewFeeSats != null ? formatUsd(reviewFeeSats, btcUsd) : null,
+  };
+
   return {
     target,
     kind,
@@ -438,6 +506,11 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
     assetLabel,
     needsQuantity,
     availableDisplay,
+    destinationLabel,
+    destinationPlaceholder,
+    withdrawingDisplay,
+    reviewFee,
+    submitDisabled,
     formValues,
     setFormValues,
     feeOption,

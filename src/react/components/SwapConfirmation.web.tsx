@@ -2,12 +2,14 @@ import type { CSSProperties } from "react";
 import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
 import { useSwapConfirmation } from "../hooks/useSwapConfirmation.js";
+import { useHorizonMarket } from "../context.js";
 import { cx, formatAssetLabel, truncate } from "../internal/format.js";
 import { BuyReview } from "../internal/BuyReview.web.js";
 import { useBuyReview } from "../internal/useBuyReview.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SummaryRow } from "../internal/SummaryRow.web.js";
 import * as ws from "../internal/styles.web.js";
+import { webTokens } from "../theme.js";
 import {
   WorkflowProgress,
   type WorkflowProgressClassNames,
@@ -41,6 +43,19 @@ export interface SwapConfirmationProps {
 
 const rootStyle: CSSProperties = ws.panelBody;
 
+const pendingNote: CSSProperties = {
+  fontSize: webTokens.fontSizeSm,
+  color: webTokens.textMuted,
+  lineHeight: 1.5,
+};
+
+const mempoolLink: CSSProperties = {
+  color: webTokens.primary,
+  fontWeight: 600,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+};
+
 export function SwapConfirmation({
   swap,
   mode,
@@ -56,13 +71,11 @@ export function SwapConfirmation({
 }: SwapConfirmationProps) {
   const {
     step,
-    buyStatus,
-    delistStatus,
-    buySteps,
-    delistSteps,
-    totalBuySteps,
-    totalDelistSteps,
-    sales,
+    status,
+    steps,
+    totalSteps,
+    successMessage,
+    trackUrl,
     error,
     confirmPurchase,
     delist,
@@ -71,6 +84,7 @@ export function SwapConfirmation({
     reset,
   } = useSwapConfirmation({
     swapId: swap.id,
+    mode,
     defaultSatsPerVbyte,
     onBuySuccess,
     onDelistSuccess,
@@ -85,10 +99,14 @@ export function SwapConfirmation({
     active: step === "confirm" && mode === "buy",
   });
 
+  // Ordinals must be received on a taproot address. Auto-fill it from the
+  // connected wallet so callers (e.g. SwapList) don't have to thread fillParams;
+  // an explicit fillParams.buyerTaprootAddress still wins.
+  const { addresses } = useHorizonMarket();
+  const buyerTaprootAddress =
+    swap.listingType === "ordinal" ? addresses?.p2tr : undefined;
+
   const root = { ...rootStyle, ...style };
-  const status = mode === "buy" ? buyStatus : delistStatus;
-  const steps = mode === "buy" ? buySteps : delistSteps;
-  const totalSteps = mode === "buy" ? totalBuySteps : totalDelistSteps;
 
   const rowClassNames = {
     className: classNames?.row,
@@ -105,6 +123,7 @@ export function SwapConfirmation({
           isSubmitting={isSubmitting}
           onConfirm={() =>
             void confirmPurchase({
+              ...(buyerTaprootAddress ? { buyerTaprootAddress } : {}),
               ...fillParams,
               ...(buyReview.feeRate != null
                 ? { satsPerVbyte: buyReview.feeRate }
@@ -180,16 +199,6 @@ export function SwapConfirmation({
     );
   }
 
-  const firstSale = sales?.[0];
-  const successMessage =
-    status === "success"
-      ? mode === "buy"
-        ? firstSale
-          ? `Purchase complete! tx ${firstSale.txId.slice(0, 12)}…`
-          : "Purchase complete!"
-        : "Listing removed."
-      : undefined;
-
   return (
     <div className={cx(classNames?.root, className)} style={root}>
       <WorkflowProgress
@@ -200,6 +209,19 @@ export function SwapConfirmation({
         errorMessage={error?.message}
         classNames={classNames?.progress}
       />
+      {trackUrl && (
+        <div style={pendingNote}>
+          {"Your purchase is settling on-chain. "}
+          <a
+            href={trackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={mempoolLink}
+          >
+            Track it on mempool.space →
+          </a>
+        </div>
+      )}
       <ResultActions
         isError={status === "error"}
         onBack={reset}

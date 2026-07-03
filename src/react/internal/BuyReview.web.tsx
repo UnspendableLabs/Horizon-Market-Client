@@ -2,8 +2,10 @@ import { useState, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import { webTokens } from "../theme.js";
 import { buyingDisplay, formatSats, formatUsd, truncate } from "./format.js";
+import { swapMonogram } from "./swapListHelpers.js";
 import { BtcGoldIcon } from "./icons.web.js";
 import {
+  FEE_HINTS,
   FEE_LABELS,
   FEE_OPTIONS,
   type FeeOption,
@@ -123,14 +125,6 @@ const pendingNote: CSSProperties = {
   lineHeight: 1.5,
 };
 
-/** Explanations shown via the inline (i) hints, keeping the panel compact. */
-const FEE_HINTS = {
-  price: "Sats paid to the seller — the listed price.",
-  royalty: "Creator royalty forwarded on-chain when you buy.",
-  network:
-    "Estimated miner fee for the purchase transaction at the selected fee rate; the exact total is set when you confirm.",
-};
-
 const infoWrap: CSSProperties = {
   position: "relative",
   display: "inline-flex",
@@ -220,34 +214,6 @@ function SatsValue({ sats, btcUsd }: { sats: number; btcUsd: number | null }) {
   );
 }
 
-const HUE_COLORS = [
-  "#ef4444",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#06b6d4",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-];
-
-function swapMonogram(swap: AtomicSwap): { label: string; bg: string } {
-  if (swap.listingType === "zeld") return { label: "ZELD", bg: "#2563eb" };
-  if (swap.listingType === "ordinal")
-    return { label: "ORD", bg: "#f97316" };
-  if (swap.listingType === "kontor")
-    return swap.kontorAssetKind === "nft"
-      ? { label: "NFT", bg: "#a855f7" }
-      : { label: "KOR", bg: "#f59e0b" };
-  const name = swap.assetName ?? "?";
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  return {
-    label: name.slice(0, 4),
-    bg: HUE_COLORS[Math.abs(hash) % HUE_COLORS.length],
-  };
-}
-
 /**
  * Purchase thumbnail. Uses the listing's own artwork (`thumbnailUrl` / `imageUrl`)
  * with a colored monogram fallback when it's missing or fails to load.
@@ -310,10 +276,8 @@ export function BuyReview({
   classNames,
 }: BuyReviewProps) {
   const {
-    estimates,
     feeOption,
     setFeeOption,
-    feeRate,
     rateFor,
     btcUsd,
     isKontor,
@@ -321,7 +285,9 @@ export function BuyReview({
     royaltySats,
     minerFeeSats,
     totalSats,
-    previewLoading,
+    totalDisplay,
+    networkFeeHint,
+    minerFeePending,
     previewError,
     canConfirm,
   } = review;
@@ -383,17 +349,7 @@ export function BuyReview({
 
         <div style={amountRow}>
           <div>
-            <div style={bigNumber}>
-              {totalSats != null
-                ? isKontor
-                  ? `≈ ${formatSats(totalSats)}`
-                  : formatSats(totalSats)
-                : isKontor
-                  ? `${formatSats(priceSats + (royaltySats ?? 0))} +`
-                  : previewLoading
-                    ? "…"
-                    : "—"}
-            </div>
+            <div style={bigNumber}>{totalDisplay}</div>
             {totalUsd && <div style={usdLine}>{totalUsd}</div>}
           </div>
           <div style={satsTag}>
@@ -425,24 +381,12 @@ export function BuyReview({
         <div style={breakRow}>
           <span style={breakLabel}>
             Network fee
-            <InfoHint
-              text={
-                isKontor
-                  ? `Miner fee for the buyer's on-chain commit + swap reveal, composed at ${
-                      feeRate ?? estimates?.halfHourFee ?? "…"
-                    } sat/vB when you confirm. The exact total is set at that point.`
-                  : `Estimated miner fee at ${
-                      feeRate ?? estimates?.halfHourFee ?? "…"
-                    } sat/vB; the exact total is set when you confirm.`
-              }
-            />
+            <InfoHint text={networkFeeHint} />
           </span>
           {minerFeeSats != null ? (
             <SatsValue sats={minerFeeSats} btcUsd={btcUsd} />
           ) : (
-            <span style={breakValue}>
-              {isKontor ? "set at confirm" : previewLoading ? "…" : "—"}
-            </span>
+            <span style={breakValue}>{minerFeePending}</span>
           )}
         </div>
 

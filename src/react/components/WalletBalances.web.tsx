@@ -1,27 +1,33 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { AssetOption } from "../hooks/useAssets.js";
-import { usePrices } from "../hooks/usePrices.js";
 import { useHorizonMarket } from "../context.js";
 import {
   assetImageUrl,
   assetKey,
   cx,
   formatRelativeTime,
-  formatUsd,
   truncate,
 } from "../internal/format.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
 import {
   TokenMark,
-  useWalletTokenSummary,
   type TokenLine,
 } from "../internal/walletBalances.web.js";
+import {
+  ACTION_LABEL,
+  otherLabel,
+  tokenDepositType,
+  useWalletBalancesController,
+  withdrawKey,
+  withdrawTitle,
+  type ActionKind,
+  type DepositType,
+} from "../internal/useWalletBalancesController.js";
 import { Modal } from "./Modal.web.js";
 import { SellOrderForm } from "./SellOrderForm.web.js";
 import { WithdrawForm } from "./WithdrawForm.web.js";
-import type { WithdrawTarget } from "../hooks/useWithdraw.js";
 
 export interface WalletBalancesClassNames {
   root?: string;
@@ -380,56 +386,6 @@ const copyButton: CSSProperties = {
   cursor: "pointer",
 };
 
-type ActionKind = "deposit" | "withdraw" | "sell";
-/** Deposit picks the address a given asset is (or would be) received on. */
-type DepositType = AssetOption["type"] | "btc";
-
-const ACTION_LABEL: Record<ActionKind, string> = {
-  deposit: "Deposit",
-  withdraw: "Withdraw",
-  sell: "Sell",
-};
-
-interface DepositInfo {
-  /** Human-readable name of what's being received (e.g. "BTC", "XCP", "NFT"). */
-  symbol: string;
-  /** The address type + value to display. */
-  label: string;
-  address: string;
-}
-
-/**
- * The address to receive an asset on: Kontor NFTs and ordinals land on Taproot,
- * everything else (BTC, Counterparty tokens) on Segwit.
- */
-function depositTargetFor(
-  type: DepositType,
-  addresses: { p2wpkh: string; p2tr?: string },
-): { label: string; address: string } {
-  if (type === "ordinal" || type === "kontor-nft") {
-    return {
-      label: "Taproot (P2TR)",
-      address: addresses.p2tr ?? addresses.p2wpkh,
-    };
-  }
-  return { label: "Segwit (P2WPKH)", address: addresses.p2wpkh };
-}
-
-/** Short display name for an "other" holding, used in the deposit modal. */
-function assetDepositLabel(a: AssetOption): string {
-  switch (a.type) {
-    case "counterparty":
-      return a.assetName;
-    case "zeld":
-      return "ZELD";
-    case "kor":
-      return "KOR";
-    case "kontor-nft":
-      return "NFT";
-    case "ordinal":
-      return "Inscription";
-  }
-}
 
 /* ── Icons (stroke-based, currentColor — no icon-lib dependency) ─────────── */
 
@@ -617,20 +573,6 @@ function NoImageIcon({ size }: { size: number }) {
   );
 }
 
-/** Name + optional sub-line (balance / id) for an "other" holding. */
-function otherLabel(a: AssetOption): { name: string; sub: string | null } {
-  switch (a.type) {
-    case "counterparty":
-      return { name: a.assetName, sub: a.quantityNormalized };
-    case "kontor-nft":
-      return { name: `NFT ${truncate(a.nftId)}`, sub: null };
-    case "ordinal":
-      return { name: "Inscription", sub: truncate(a.inscriptionId) };
-    default:
-      return { name: "", sub: null };
-  }
-}
-
 /** Square artwork panel with a placeholder fallback (swap-list style). */
 function AssetMedia({ asset }: { asset: AssetOption }) {
   const { baseUrl } = useHorizonMarket();
@@ -706,58 +648,28 @@ export function WalletBalances({
   classNames,
   style,
 }: WalletBalancesProps) {
-  const { btc, btcSats, primary, others, isFetching, lastFetchedAt, refresh } =
-    useWalletTokenSummary();
-  const { btcUsd } = usePrices();
-  const { addresses } = useHorizonMarket();
-
-  const [deposit, setDeposit] = useState<DepositInfo | null>(null);
-  const [sellAsset, setSellAsset] = useState<AssetOption | null>(null);
-  const [withdraw, setWithdraw] = useState<WithdrawTarget | null>(null);
-  const [otherTab, setOtherTab] = useState<string | null>(null);
-
-  const openDeposit = (symbol: string, type: DepositType) => {
-    if (!addresses) return;
-    const target = depositTargetFor(type, addresses);
-    setDeposit({ symbol, label: target.label, address: target.address });
-  };
-  const openDepositForAsset = (asset: AssetOption) =>
-    openDeposit(assetDepositLabel(asset), asset.type);
-
-  const otherGroups = useMemo(
-    () => [
-      {
-        label: "Counterparty",
-        depositType: "counterparty" as DepositType,
-        depositSymbol: "Counterparty assets",
-        options: others.filter((a) => a.type === "counterparty"),
-      },
-      {
-        label: "Kontor",
-        depositType: "kontor-nft" as DepositType,
-        depositSymbol: "Kontor NFTs",
-        options: others.filter((a) => a.type === "kontor-nft"),
-      },
-      {
-        label: "Ordinals",
-        depositType: "ordinal" as DepositType,
-        depositSymbol: "Ordinals",
-        options: others.filter((a) => a.type === "ordinal"),
-      },
-    ],
-    [others],
-  );
-
-  // Active other-holdings tab: user choice, else the first group that has any
-  // holdings, else the first tab.
-  const activeLabel =
-    otherTab ??
-    otherGroups.find((g) => g.options.length > 0)?.label ??
-    otherGroups[0].label;
-  const activeGroup =
-    otherGroups.find((g) => g.label === activeLabel) ?? otherGroups[0];
-
-  const usd = btcSats === null ? null : formatUsd(Number(btcSats), btcUsd);
+  const {
+    btc,
+    btcSats,
+    primary,
+    isFetching,
+    lastFetchedAt,
+    refresh,
+    usd,
+    addresses,
+    otherGroups,
+    activeGroup,
+    activeLabel,
+    setOtherTab,
+    deposit,
+    closeDeposit,
+    sellAsset,
+    setSellAsset,
+    withdraw,
+    setWithdraw,
+    openDeposit,
+    openDepositForAsset,
+  } = useWalletBalancesController();
 
   return (
     <div
@@ -877,7 +789,7 @@ export function WalletBalances({
 
       <Modal
         open={deposit != null}
-        onClose={() => setDeposit(null)}
+        onClose={closeDeposit}
         title={deposit ? `Deposit ${deposit.symbol}` : ""}
       >
         {deposit && (
@@ -928,29 +840,6 @@ export function WalletBalances({
   );
 }
 
-/** Modal heading suffix for a withdraw target. */
-function withdrawTitle(target: WithdrawTarget): string {
-  switch (target.type) {
-    case "btc":
-      return "BTC";
-    case "counterparty":
-      return target.assetName;
-    case "zeld":
-      return "ZELD";
-    case "kor":
-      return "KOR";
-    case "ordinal":
-      return "Ordinal";
-    case "kontor-nft":
-      return "NFT";
-  }
-}
-
-/** Stable key so the WithdrawForm remounts (resets) when the target changes. */
-function withdrawKey(target: WithdrawTarget): string {
-  return target.type === "btc" ? "btc" : assetKey(target);
-}
-
 /** XCP / KOR / ZELD headline cell: brand mark + amount + Deposit/Withdraw/Sell. */
 function TokenCell({
   line,
@@ -965,12 +854,7 @@ function TokenCell({
   onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
 }): ReactNode {
-  const depositType: DepositType =
-    line.symbol === "XCP"
-      ? "counterparty"
-      : line.symbol === "KOR"
-        ? "kor"
-        : "zeld";
+  const depositType = tokenDepositType(line.symbol);
   const sellAsset = line.sellAsset;
   return (
     <div className={className} style={tokenCell}>

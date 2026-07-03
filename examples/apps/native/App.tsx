@@ -10,6 +10,7 @@ import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700
 import { HorizonMarketProvider, SwapList, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "./components/Header.js";
 import { Footer } from "./components/Footer.js";
+import { WalletScreen } from "./components/WalletScreen.js";
 import { getPrivateKey } from "./lib/web3auth.js";
 import { colors, HORIZON_THEME } from "./lib/theme.js";
 import {
@@ -54,6 +55,11 @@ export default function App() {
   // provider (key={network}) so SessionRestorer re-derives addresses for the
   // newly selected network from the same Web3Auth key.
   const [network, setNetwork] = useState<UiNetwork>(getInitialNetwork);
+
+  // Minimal screen switch (RN has no hash routing like the web app's route.ts).
+  // Kept in App, *outside* the key={network} boundary, so it survives a network
+  // remount. The Header (inside the provider) lifts "open wallet" up via a prop.
+  const [screen, setScreen] = useState<"market" | "wallet">("market");
 
   // True once the user taps the footer toggle — guards the async hydration below
   // from clobbering a fresh manual choice if AsyncStorage resolves after the tap.
@@ -100,8 +106,12 @@ export default function App() {
             theme={HORIZON_THEME}
           >
             <SessionRestorer />
-            <Header />
-            <SwapList getPrivateKey={getPrivateKey} scrollable style={styles.list} />
+            <Header onOpenWallet={() => setScreen("wallet")} />
+            {screen === "wallet" ? (
+              <WalletScreen onBack={() => setScreen("market")} />
+            ) : (
+              <SwapList getPrivateKey={getPrivateKey} scrollable style={styles.list} />
+            )}
           </HorizonMarketProvider>
         </View>
 

@@ -31,7 +31,9 @@ export default defineConfig([
     splitting: false,
     sourcemap: true,
     target: "es2020",
-    external: ["react", "react-native"],
+    // `react-native-svg` (wallet/brand icons) and `expo-clipboard` (address copy)
+    // are optional peers resolved by the consuming app, not bundled here.
+    external: ["react", "react-native", "react-native-svg", "expo-clipboard"],
     esbuildOptions(options) {
       options.jsx = "automatic";
     },

@@ -1,11 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import { cx } from "./format.js";
-import {
-  swapImageUrl,
-  swapDisplayTitle,
-  swapDisplayPricePerUnit,
-} from "./swapListHelpers.js";
+import { swapListItemView } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
 
@@ -112,17 +108,12 @@ export function SwapListItem({
   classNames,
   style,
 }: SwapListItemProps) {
-  const actionLabel = isMySwap ? "Delist" : "Buy";
-  const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
-  const itemStyle = { ...ws.swapItemGrid, ...style };
-
-  const thumbnail = swapImageUrl(swap);
   // Quantity rides beside the asset name ("0.01 XCP"); the meta line carries
   // only the per-unit price, matching how horizon.market lays these out.
-  const title = swapDisplayTitle(swap);
-  const displayPricePerUnit = swapDisplayPricePerUnit(swap);
-  const showPerUnit =
-    swap.listingType !== "ordinal" && displayPricePerUnit !== null;
+  const { actionLabel, thumbnail, title, priceLabel, pricePerUnit, showPerUnit } =
+    swapListItemView(swap, isMySwap);
+  const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
+  const itemStyle = { ...ws.swapItemGrid, ...style };
 
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
@@ -141,11 +132,11 @@ export function SwapListItem({
           {title}
         </span>
         <span className={classNames?.price} style={priceStyle}>
-          {swap.price.toLocaleString()} sats
+          {priceLabel}
         </span>
         {showPerUnit && (
           <span className={classNames?.meta} style={ws.mutedText}>
-            {displayPricePerUnit} sats/unit
+            {pricePerUnit} sats/unit
           </span>
         )}
       </div>

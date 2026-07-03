@@ -206,9 +206,14 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     const applyResult = (items: AtomicSwap[], count: number) => {
       if (seq !== fetchSeqRef.current) return;
       const dismissed = dismissedIdsRef.current;
-      const filtered = dismissed.size
-        ? items.filter((s) => !dismissed.has(s.id))
-        : items;
+      // Drop swaps that aren't purchasable: `pending` (a buy tx is already in the
+      // mempool) or `anomalous`. The marketplace query can't exclude these
+      // server-side — `listSwaps` has no `pending` filter — so once the indexer
+      // flags a just-bought swap `pending`, it keeps coming back in the feed. This
+      // guard hides it and, unlike the in-memory `removeSwap`, survives a reload.
+      const filtered = items.filter(
+        (s) => !s.pending && !s.anomalous && !dismissed.has(s.id),
+      );
       setSwaps(filtered);
       setTotal(count - (items.length - filtered.length));
     };

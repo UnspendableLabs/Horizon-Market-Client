@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Linking,
   Modal,
   Pressable,
   SectionList,
@@ -52,6 +53,8 @@ export interface SellOrderFormStyles {
 
 export interface SellOrderFormProps {
   defaultSatsPerVbyte?: number;
+  /** Pre-select an asset to list (e.g. launched from a wallet balance). */
+  initialAsset?: AssetOption | null;
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
   /**
@@ -125,11 +128,21 @@ function createSheet(theme: ResolvedTheme) {
       borderRadius: theme.radii.sm,
       alignSelf: "flex-start",
     },
+    pendingNote: {
+      color: theme.colors.textMuted,
+      fontSize: theme.typography.fontSizeSm,
+      lineHeight: 20,
+    },
+    mempoolLink: {
+      color: theme.colors.primary,
+      fontWeight: "600",
+    },
   });
 }
 
 export function SellOrderForm({
   defaultSatsPerVbyte,
+  initialAsset,
   onSuccess,
   onError,
   onClose,
@@ -160,9 +173,11 @@ export function SellOrderForm({
     steps,
     totalSteps,
     status,
-    result,
     error,
-  } = useSellOrderFormController({ defaultSatsPerVbyte, onSuccess, onError });
+    assetPlaceholder,
+    nonFatalErrors,
+    resultView,
+  } = useSellOrderFormController({ defaultSatsPerVbyte, initialAsset, onSuccess, onError });
 
   // Fee rate + cost preview + live price for the review screen. Idle until the
   // confirm step is shown.
@@ -196,14 +211,6 @@ export function SellOrderForm({
       assets.ordinals,
     ],
   );
-
-  const nonFatalErrors = [
-    assets.errors.counterparty &&
-      `Counterparty: ${assets.errors.counterparty.message}`,
-    assets.errors.zeld && `ZELD: ${assets.errors.zeld.message}`,
-    assets.errors.ordinals && `Ordinals: ${assets.errors.ordinals.message}`,
-    assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
-  ].filter((m): m is string => Boolean(m));
 
   if (step === "form") {
     return (
@@ -241,9 +248,7 @@ export function SellOrderForm({
             >
               {formValues.asset
                 ? describeAsset(formValues.asset)
-                : assets.isEmpty
-                  ? "No assets to sell"
-                  : "Select an asset…"}
+                : assetPlaceholder}
             </Text>
           </Pressable>
         </View>
@@ -403,21 +408,30 @@ export function SellOrderForm({
   }
 
   return (
-    <View style={[common.root, style, stylesProp?.root]}>
+    <View style={[common.panelBody, style, stylesProp?.root]}>
       <WorkflowProgress
         steps={steps}
         totalSteps={totalSteps}
         status={status}
-        successMessage={
-          status === "success" && result
-            ? result.created
-              ? "Your listing is live!"
-              : "Listing already exists (no changes)."
-            : undefined
-        }
+        successMessage={resultView.successMessage}
         errorMessage={error?.message}
         styles={stylesProp?.progress}
       />
+      {resultView.pendingConfirmation && (
+        <Text style={sheet.pendingNote}>
+          Your order will appear in the marketplace once its transaction is
+          confirmed on-chain.
+          {resultView.trackUrl && (
+            <Text
+              style={sheet.mempoolLink}
+              onPress={() => Linking.openURL(resultView.trackUrl!)}
+            >
+              {" "}
+              Track it on mempool.space →
+            </Text>
+          )}
+        </Text>
+      )}
       <ResultActions
         isError={status === "error"}
         onBack={goBack}

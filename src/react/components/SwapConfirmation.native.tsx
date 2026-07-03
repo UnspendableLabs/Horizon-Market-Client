@@ -1,5 +1,8 @@
+import { useMemo } from "react";
 import {
+  Linking,
   Pressable,
+  StyleSheet,
   Text,
   View,
   type StyleProp,
@@ -9,10 +12,15 @@ import {
 import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
 import { useSwapConfirmation } from "../hooks/useSwapConfirmation.js";
+import { useHorizonMarket } from "../context.js";
 import { formatAssetLabel, truncate } from "../internal/format.js";
+import { BuyReview } from "../internal/BuyReview.native.js";
+import { useBuyReview } from "../internal/useBuyReview.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
 import { SummaryRow } from "../internal/SummaryRow.native.js";
+import { useTheme } from "../hooks/useTheme.js";
+import type { ResolvedTheme } from "../theme.js";
 import {
   WorkflowProgress,
   type WorkflowProgressStyles,
@@ -45,6 +53,20 @@ export interface SwapConfirmationProps {
   styles?: SwapConfirmationStyles;
 }
 
+function createSheet(theme: ResolvedTheme) {
+  return StyleSheet.create({
+    pendingNote: {
+      color: theme.colors.textMuted,
+      fontSize: theme.typography.fontSizeSm,
+      lineHeight: 20,
+    },
+    mempoolLink: {
+      color: theme.colors.primary,
+      fontWeight: "600",
+    },
+  });
+}
+
 export function SwapConfirmation({
   swap,
   mode,
@@ -58,15 +80,15 @@ export function SwapConfirmation({
   styles: stylesProp,
 }: SwapConfirmationProps) {
   const common = useCommonSheet();
+  const theme = useTheme();
+  const sheet = useMemo(() => createSheet(theme), [theme]);
   const {
     step,
-    buyStatus,
-    delistStatus,
-    buySteps,
-    delistSteps,
-    totalBuySteps,
-    totalDelistSteps,
-    sales,
+    status,
+    steps,
+    totalSteps,
+    successMessage,
+    trackUrl,
     error,
     confirmPurchase,
     delist,
@@ -75,17 +97,59 @@ export function SwapConfirmation({
     reset,
   } = useSwapConfirmation({
     swapId: swap.id,
+    mode,
     defaultSatsPerVbyte,
     onBuySuccess,
     onDelistSuccess,
     onError,
   });
 
-  const status = mode === "buy" ? buyStatus : delistStatus;
-  const steps = mode === "buy" ? buySteps : delistSteps;
-  const totalSteps = mode === "buy" ? totalBuySteps : totalDelistSteps;
+  // Buy review: compose the quote (price / royalty / miner fee / total) and let
+  // the buyer pick a fee rate, only while the confirm step is shown.
+  const buyReview = useBuyReview({
+    swap,
+    defaultSatsPerVbyte,
+    active: step === "confirm" && mode === "buy",
+  });
+
+  // Ordinals must be received on a taproot address. Auto-fill it from the
+  // connected wallet so callers (e.g. SwapList) don't have to thread fillParams;
+  // an explicit fillParams.buyerTaprootAddress still wins.
+  const { addresses } = useHorizonMarket();
+  const buyerTaprootAddress =
+    swap.listingType === "ordinal" ? addresses?.p2tr : undefined;
+
+  if (step === "confirm" && mode === "buy") {
+    return (
+      <View style={[common.panelBody, style, stylesProp?.root]}>
+        <BuyReview
+          swap={swap}
+          review={buyReview}
+          isSubmitting={isSubmitting}
+          onConfirm={() =>
+            void confirmPurchase({
+              ...(buyerTaprootAddress ? { buyerTaprootAddress } : {}),
+              ...fillParams,
+              ...(buyReview.feeRate != null
+                ? { satsPerVbyte: buyReview.feeRate }
+                : {}),
+            })
+          }
+          onCancel={onComplete}
+          styles={{
+            button: stylesProp?.button,
+            buttonText: stylesProp?.buttonText,
+            buttonSecondary: stylesProp?.buttonSecondary,
+            buttonSecondaryText: stylesProp?.buttonSecondaryText,
+          }}
+        />
+      </View>
+    );
+  }
 
   if (step === "confirm") {
+    // Delist confirmation (mode === "sell") — a compact summary of the listing
+    // the seller is removing. (Buy is handled by the BuyReview branch above.)
     return (
       <View style={[common.panelBody, style, stylesProp?.root]}>
         <View style={[common.summaryStack, stylesProp?.details]}>
@@ -108,12 +172,8 @@ export function SwapConfirmation({
             valueStyle={stylesProp?.rowValue}
           />
           <SummaryRow
-            label={mode === "buy" ? "Seller" : "Listing"}
-            value={
-              mode === "buy"
-                ? truncate(swap.sellerAddress)
-                : `${swap.listingType} · ${truncate(swap.id)}`
-            }
+            label="Listing"
+            value={`${swap.listingType} · ${truncate(swap.id)}`}
             sheet={common}
             mono
             rowStyle={stylesProp?.row}
@@ -134,9 +194,7 @@ export function SwapConfirmation({
         </View>
         <Pressable
           disabled={isSubmitting}
-          onPress={() =>
-            mode === "buy" ? void confirmPurchase(fillParams) : void delist()
-          }
+          onPress={() => void delist()}
           style={[
             common.button,
             isSubmitting && common.buttonDisabled,
@@ -144,13 +202,7 @@ export function SwapConfirmation({
           ]}
         >
           <Text style={[common.buttonText, stylesProp?.buttonText]}>
-            {isSubmitting
-              ? mode === "buy"
-                ? "Confirming…"
-                : "Delisting…"
-              : mode === "buy"
-                ? "Confirm Purchase"
-                : "Delist"}
+            {isSubmitting ? "Delisting…" : "Delist"}
           </Text>
         </Pressable>
       </View>
@@ -170,18 +222,8 @@ export function SwapConfirmation({
     );
   }
 
-  const firstSale = sales?.[0];
-  const successMessage =
-    status === "success"
-      ? mode === "buy"
-        ? firstSale
-          ? `Purchase complete! tx ${firstSale.txId.slice(0, 12)}…`
-          : "Purchase complete!"
-        : "Listing removed."
-      : undefined;
-
   return (
-    <View style={[common.root, style, stylesProp?.root]}>
+    <View style={[common.panelBody, style, stylesProp?.root]}>
       <WorkflowProgress
         steps={steps}
         totalSteps={totalSteps}
@@ -190,6 +232,18 @@ export function SwapConfirmation({
         errorMessage={error?.message}
         styles={stylesProp?.progress}
       />
+      {trackUrl && (
+        <Text style={sheet.pendingNote}>
+          Your purchase is settling on-chain.
+          <Text
+            style={sheet.mempoolLink}
+            onPress={() => Linking.openURL(trackUrl)}
+          >
+            {" "}
+            Track it on mempool.space →
+          </Text>
+        </Text>
+      )}
       <ResultActions
         isError={status === "error"}
         onBack={reset}

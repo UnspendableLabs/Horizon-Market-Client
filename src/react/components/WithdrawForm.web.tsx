@@ -1,13 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useHorizonMarket } from "../context.js";
-import { usePrices } from "../hooks/usePrices.js";
 import {
   assetImageUrl,
   cx,
   formatSats,
-  formatUsd,
   mempoolTxUrl,
-  sellingDisplay,
 } from "../internal/format.js";
 import { AssetAvatar, BtcGoldIcon } from "../internal/icons.web.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
@@ -15,6 +12,7 @@ import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
 import {
   useWithdraw,
+  WITHDRAW_FEE_LABELS as FEE_LABELS,
   WITHDRAW_FEE_OPTIONS,
   type WithdrawFeeOption,
   type WithdrawTarget,
@@ -43,11 +41,6 @@ export interface WithdrawFormProps {
   style?: CSSProperties;
 }
 
-const FEE_LABELS: Record<WithdrawFeeOption, string> = {
-  slow: "Slow",
-  normal: "Normal",
-  fast: "Fast",
-};
 
 const rootStyle: CSSProperties = ws.panelBody;
 
@@ -165,17 +158,6 @@ function TargetAvatar({
   );
 }
 
-/** Name + sub line for the review's "You're withdrawing" block. */
-function targetDisplay(
-  target: WithdrawTarget,
-  quantity: string,
-): { name: string; sub: string | null } {
-  if (target.type === "btc") {
-    return { name: "BTC", sub: `${quantity || "0"} BTC` };
-  }
-  return sellingDisplay(target, quantity);
-}
-
 /**
  * Withdraw (send) flow for a single wallet asset, rendered inside a {@link Modal}
  * by {@link WalletBalances}. Steps through `form → review → sending → result`.
@@ -195,19 +177,12 @@ export function WithdrawForm({
 }: WithdrawFormProps) {
   const w = useWithdraw({ target, onSuccess, onError });
   const { network, kontorNetwork, baseUrl } = useHorizonMarket();
-  const { btcUsd } = usePrices();
 
   const root = { ...rootStyle, ...style };
-  const destinationLabel = w.isKontor
-    ? "Recipient (P2TR address)"
-    : "Destination address";
 
   // ─── Form step ─────────────────────────────────────────────────────────────
   if (w.step === "form") {
-    const submitDisabled =
-      w.isPreparing ||
-      !w.formValues.destination.trim() ||
-      (w.needsQuantity && !w.formValues.quantity.trim());
+    const submitDisabled = w.submitDisabled;
     return (
       <div className={cx(classNames?.root, className)} style={root}>
         {w.availableDisplay && (
@@ -219,12 +194,12 @@ export function WithdrawForm({
           </div>
         )}
         <label className={classNames?.label} style={ws.label}>
-          {destinationLabel}
+          {w.destinationLabel}
           <input
             type="text"
             value={w.formValues.destination}
             onChange={(e) => w.setFormValues({ destination: e.target.value.trim() })}
-            placeholder={w.isKontor ? "tb1p…" : "bc1…"}
+            placeholder={w.destinationPlaceholder}
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
@@ -303,16 +278,8 @@ export function WithdrawForm({
 
   // ─── Review step (mirrors SellReview design) ─────────────────────────────────
   if (w.step === "confirm") {
-    const display = targetDisplay(target, w.formValues.quantity);
-    // Bitcoin family: exact fee from the composed tx. Kontor: an estimate at the
-    // selected rate (the SDK finalises the exact fee at submit).
-    const feeExact = !w.isKontor && w.feeSats != null;
-    const feeSats = w.isKontor
-      ? w.estimatedFeeSats
-      : w.feeSats != null
-        ? Number(w.feeSats)
-        : null;
-    const feeUsd = feeSats != null ? formatUsd(feeSats, btcUsd) : null;
+    const display = w.withdrawingDisplay;
+    const { exact: feeExact, sats: feeSats, usd: feeUsd } = w.reviewFee;
     return (
       <div className={cx(classNames?.root, className)} style={root}>
         {/* You're withdrawing */}

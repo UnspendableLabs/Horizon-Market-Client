@@ -14,18 +14,13 @@ import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
 import { assetImageUrl, formatSats, formatUsd, sellingDisplay } from "./format.js";
-import { AssetAvatar } from "./icons.native.js";
+import { AssetAvatar, BtcGoldIcon } from "./icons.native.js";
 import {
+  FEE_HINTS,
+  FEE_LABELS,
   FEE_OPTIONS,
-  type FeeOption,
   type UseSellReviewResult,
 } from "./useSellReview.js";
-
-const FEE_LABELS: Record<FeeOption, string> = {
-  slow: "Slow",
-  normal: "Normal",
-  fast: "Fast",
-};
 
 export interface SellReviewStyles {
   button?: StyleProp<ViewStyle>;
@@ -71,9 +66,10 @@ function createSheet(theme: ResolvedTheme) {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
+      flexWrap: "wrap",
       gap: theme.spacing.sm,
     },
-    feeChips: { flexDirection: "row", gap: 4 },
+    feeChips: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
     chip: {
       paddingHorizontal: theme.spacing.sm,
       paddingVertical: 4,
@@ -94,15 +90,6 @@ function createSheet(theme: ResolvedTheme) {
     },
     bigNumber: { fontSize: 27, fontWeight: "700", color: theme.colors.text },
     satsTag: { flexDirection: "row", alignItems: "center", gap: 6 },
-    btcCircle: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: "#F7931A",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    btcGlyph: { color: "#fff", fontWeight: "700", fontSize: 13 },
     satsLabel: { color: theme.colors.text, fontWeight: "600" },
     divider: { height: 1, backgroundColor: theme.colors.border, marginVertical: theme.spacing.xs },
     breakRow: {
@@ -148,26 +135,15 @@ function createSheet(theme: ResolvedTheme) {
   });
 }
 
-/** Orange Bitcoin badge + "Sats" label (placeholder for the BtcGold mark). */
+/** Orange Bitcoin (BtcGold) mark + "Sats" label. */
 function SatsTag({ sheet }: { sheet: ReturnType<typeof createSheet> }) {
   return (
     <View style={sheet.satsTag}>
-      <View style={sheet.btcCircle}>
-        <Text style={sheet.btcGlyph}>₿</Text>
-      </View>
+      <BtcGoldIcon size={22} />
       <Text style={sheet.satsLabel}>Sats</Text>
     </View>
   );
 }
-
-/** Explanations shown via the tappable (i) hints, keeping the panel compact. */
-const FEE_HINTS = {
-  attach:
-    "Miner fee to place your asset on its own UTXO (Counterparty attach / ZELD transfer) so the swap can be created.",
-  network:
-    "Miner fee for the separate transaction that pays the platform listing fee.",
-  listing: "Platform fee for listing your asset on the marketplace.",
-};
 
 /** Small circled "i" that reveals its explanation in an alert on tap. */
 function InfoHint({
@@ -282,7 +258,7 @@ export function SellReview({
                   style={[sheet.chip, active && sheet.chipActive]}
                 >
                   <Text style={[sheet.chipText, active && sheet.chipTextActive]}>
-                    {FEE_LABELS[opt]} {rate ?? "…"}
+                    {FEE_LABELS[opt]} {rate ?? "…"} sat/vB
                   </Text>
                 </Pressable>
               );

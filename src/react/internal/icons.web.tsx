@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import type { AssetOption } from "../hooks/useAssets.js";
+import { assetMonogram, isXcpAsset } from "./assetMonogram.js";
 import { webTokens } from "../theme.js";
 
 /**
@@ -51,41 +52,6 @@ function XcpIcon({ size = 56 }: { size?: number }) {
   );
 }
 
-const MONOGRAM_PALETTE = [
-  "#6366f1",
-  "#8b5cf6",
-  "#ec4899",
-  "#f97316",
-  "#14b8a6",
-  "#0ea5e9",
-  "#84cc16",
-];
-
-function hashHue(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-  return MONOGRAM_PALETTE[Math.abs(h) % MONOGRAM_PALETTE.length];
-}
-
-/** Short label + background color for the placeholder monogram of an asset. */
-function monogram(asset: AssetOption): { label: string; bg: string } {
-  switch (asset.type) {
-    case "counterparty":
-      return {
-        label: asset.assetName.slice(0, 4),
-        bg: hashHue(asset.assetName),
-      };
-    case "zeld":
-      return { label: "ZELD", bg: "#2563eb" };
-    case "kor":
-      return { label: "KOR", bg: "#f59e0b" };
-    case "kontor-nft":
-      return { label: "NFT", bg: "#a855f7" };
-    case "ordinal":
-      return { label: "ORD", bg: hashHue(asset.inscriptionId) };
-  }
-}
-
 /** XCP brand mark, or a colored monogram — the fallback when no artwork loads. */
 function AssetPlaceholder({
   asset,
@@ -96,14 +62,14 @@ function AssetPlaceholder({
   size: number;
   tile: CSSProperties;
 }) {
-  if (asset.type === "counterparty" && asset.assetName === "XCP") {
+  if (isXcpAsset(asset)) {
     return (
       <div style={tile}>
         <XcpIcon size={size} />
       </div>
     );
   }
-  const { label, bg } = monogram(asset);
+  const { label, bg } = assetMonogram(asset);
   return (
     <div style={{ ...tile, background: bg }}>
       <span

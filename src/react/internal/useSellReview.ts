@@ -11,7 +11,20 @@ import { type FeeOption, rateForOption } from "./feeRate.js";
 import type { SellOrderFormValues } from "../hooks/useSellOrder.js";
 import type { OpenSellOrderParams } from "../../workflows/sell.js";
 
-export { FEE_OPTIONS, type FeeOption } from "./feeRate.js";
+export { FEE_OPTIONS, FEE_LABELS, type FeeOption } from "./feeRate.js";
+
+/**
+ * Explanations shown via the (i) hints in the sell review, keeping the panel
+ * compact. Shared by the web and native renderers. The Kontor attach miner-fee
+ * hint is built inline (it interpolates the live fee rate) so it isn't here.
+ */
+export const FEE_HINTS = {
+  attach:
+    "Miner fee to place your asset on its own UTXO (Counterparty attach / ZELD transfer) so the swap can be created.",
+  network:
+    "Miner fee for the separate transaction that pays the platform listing fee.",
+  listing: "Platform fee for listing your asset on the marketplace.",
+};
 
 export interface UseSellReviewArgs {
   formValues: SellOrderFormValues;

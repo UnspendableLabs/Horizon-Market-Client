@@ -2,13 +2,11 @@ import { useMemo } from "react";
 import type { CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import type { AssetOption } from "../hooks/useAssets.js";
-import { useHorizonMarket } from "../context.js";
 import {
   counterpartyXcpFirst,
   cx,
   formatRelativeTime,
   kontorKorFirst,
-  mempoolTxUrl,
 } from "../internal/format.js";
 import { AssetSelect } from "../internal/AssetSelect.web.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
@@ -124,16 +122,16 @@ export function SellOrderForm({
     steps,
     totalSteps,
     status,
-    result,
     error,
+    assetPlaceholder,
+    nonFatalErrors,
+    resultView,
   } = useSellOrderFormController({
     defaultSatsPerVbyte,
     initialAsset,
     onSuccess,
     onError,
   });
-
-  const { network, kontorNetwork } = useHorizonMarket();
 
   // Fee rate + cost preview + live price for the review screen. Stays idle until
   // the confirm step is shown (so it never quotes while the form is being filled).
@@ -168,20 +166,6 @@ export function SellOrderForm({
   const root = { ...rootStyle, ...style };
 
   if (step === "form") {
-    const assetPlaceholder =
-      isFetching && !assets.allAssets.length
-        ? "Loading your assets…"
-        : assets.isEmpty
-          ? "No assets to sell"
-          : "Select an asset…";
-    const nonFatalErrors = [
-      assets.errors.counterparty &&
-        `Counterparty: ${assets.errors.counterparty.message}`,
-      assets.errors.zeld && `ZELD: ${assets.errors.zeld.message}`,
-      assets.errors.ordinals && `Ordinals: ${assets.errors.ordinals.message}`,
-      assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
-    ].filter((m): m is string => Boolean(m));
-
     return (
       <div className={cx(classNames?.root, className)} style={root}>
         <div style={updatedRow}>
@@ -310,39 +294,10 @@ export function SellOrderForm({
     );
   }
 
-  // result step. A freshly created listing whose asset UTXO isn't confirmed yet
-  // (counterparty attach / zeld transfer prep) won't appear in the marketplace
-  // until its funding tx confirms — so it's "submitted", not "live", and we
-  // surface a mempool.space link to that tx.
-  const successResult = status === "success" ? result : null;
-  // Pending = a freshly created listing whose funding tx hasn't confirmed yet.
-  // `funded` can arrive falsy-but-not-strictly-false (e.g. undefined) over the
-  // wire, so mirror the falsy check used for the "Sell order submitted!" message
-  // below rather than `=== false`, otherwise the mempool note never renders.
-  const pendingConfirmation =
-    Boolean(successResult?.created) && !successResult?.swap.funded;
-  // The tx to track differs by listing type. Counterparty attach / zeld transfer
-  // prep create a NEW asset UTXO, so the funding tx is that UTXO's txid. Ordinals
-  // reuse the existing inscription UTXO — nothing is funded on-chain — so the
-  // pending tx is the standalone platform-fee payment; using assetUtxoId there
-  // would link to the inscription's txid, not the payment.
-  const swap = successResult?.swap;
-  const fundingTxid = !swap
-    ? null
-    : swap.listingType === "ordinal"
-      ? swap.onChainPayment?.txid ?? swap.txId ?? null
-      : swap.assetUtxoId?.split(":")[0] ?? swap.txId ?? null;
-  const trackUrl = pendingConfirmation
-    ? mempoolTxUrl(network, kontorNetwork, fundingTxid)
-    : null;
-
-  const successMessage = successResult
-    ? !successResult.created
-      ? "Listing already exists (no changes)."
-      : successResult.swap.funded
-        ? "Your listing is live!"
-        : "Sell order submitted!"
-    : undefined;
+  // result step. `resultView` (from the shared controller) carries the
+  // "submitted vs live" messaging and the pending-tx mempool link so web and
+  // native render identical result states.
+  const { pendingConfirmation, trackUrl, successMessage } = resultView;
 
   return (
     <div className={cx(classNames?.root, className)} style={root}>

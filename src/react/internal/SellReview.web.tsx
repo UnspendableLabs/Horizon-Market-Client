@@ -5,17 +5,13 @@ import { webTokens } from "../theme.js";
 import { assetImageUrl, formatSats, formatUsd, sellingDisplay } from "./format.js";
 import { AssetAvatar, BtcGoldIcon } from "./icons.web.js";
 import {
+  FEE_HINTS,
+  FEE_LABELS,
   FEE_OPTIONS,
   type FeeOption,
   type UseSellReviewResult,
 } from "./useSellReview.js";
 import * as ws from "./styles.web.js";
-
-const FEE_LABELS: Record<FeeOption, string> = {
-  slow: "Slow",
-  normal: "Normal",
-  fast: "Fast",
-};
 
 export interface SellReviewClassNames {
   button?: string;
@@ -112,17 +108,6 @@ const breakValue: CSSProperties = {
   textAlign: "right",
   fontWeight: 600,
   color: webTokens.text,
-};
-
-/** Explanations shown via the inline (i) hints, keeping the panel compact. */
-const FEE_HINTS = {
-  attach:
-    "Miner fee to place your asset on its own UTXO (Counterparty attach / ZELD transfer) so the swap can be created.",
-  network:
-    "Miner fee for the separate transaction that pays the platform listing fee.",
-  listing: "Platform fee for listing your asset on the marketplace.",
-  kontorMiner:
-    "Estimated miner fee for the on-chain attach reveal at the selected fee rate (assumes one funding input); the exact total is set when you sign.",
 };
 
 const infoWrap: CSSProperties = {

@@ -121,6 +121,76 @@ export function swapDisplayPricePerUnit(swap: AtomicSwap): string | null {
   return perUnit.toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 
+/** Deterministic palette for the Counterparty-asset monogram fallback. */
+const MONOGRAM_HUES = [
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+];
+
+/**
+ * Monogram fallback for a swap with no artwork: a short label + a background
+ * colour. Kontor / ordinal / zeld listings get fixed brand colours; Counterparty
+ * assets get a stable hue hashed from the asset name. Shared by the web and
+ * native `BuyReview` avatar placeholders so both render identically.
+ */
+export function swapMonogram(swap: AtomicSwap): { label: string; bg: string } {
+  if (swap.listingType === "zeld") return { label: "ZELD", bg: "#2563eb" };
+  if (swap.listingType === "ordinal") return { label: "ORD", bg: "#f97316" };
+  if (swap.listingType === "kontor")
+    return swap.kontorAssetKind === "nft"
+      ? { label: "NFT", bg: "#a855f7" }
+      : { label: "KOR", bg: "#f59e0b" };
+  const name = swap.assetName ?? "?";
+  let hash = 0;
+  for (let i = 0; i < name.length; i++)
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return {
+    label: name.slice(0, 4),
+    bg: MONOGRAM_HUES[Math.abs(hash) % MONOGRAM_HUES.length],
+  };
+}
+
+export interface SwapListItemView {
+  /** "Delist" for the viewer's own listings, "Buy" otherwise. */
+  actionLabel: "Buy" | "Delist";
+  /** Artwork URL, or `null` for the "no image" placeholder. */
+  thumbnail: string | null;
+  /** Quantity-prefixed asset title (e.g. "0.01 XCP"). */
+  title: string;
+  /** Total price rendered as "12,345 sats". */
+  priceLabel: string;
+  /** Per-unit price string, or `null` when it shouldn't be shown. */
+  pricePerUnit: string | null;
+  /** Whether to render the per-unit meta line (hidden for 1-of-1 ordinals). */
+  showPerUnit: boolean;
+}
+
+/**
+ * Derives everything a swap-list tile displays from an {@link AtomicSwap}, so the
+ * web and native tile renderers only lay out the returned values instead of each
+ * re-deriving the label/title/price fields.
+ */
+export function swapListItemView(
+  swap: AtomicSwap,
+  isMySwap: boolean,
+): SwapListItemView {
+  const pricePerUnit = swapDisplayPricePerUnit(swap);
+  return {
+    actionLabel: isMySwap ? "Delist" : "Buy",
+    thumbnail: swapImageUrl(swap),
+    title: swapDisplayTitle(swap),
+    priceLabel: `${swap.price.toLocaleString()} sats`,
+    pricePerUnit,
+    showPerUnit: swap.listingType !== "ordinal" && pricePerUnit !== null,
+  };
+}
+
 export function mergeSwapsById(lists: AtomicSwap[][]): AtomicSwap[] {
   const seen = new Set<string>();
   const merged: AtomicSwap[] = [];

@@ -13,11 +13,8 @@ import {
 import type { AtomicSwap } from "../../types/index.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
-import {
-  swapImageUrl,
-  swapDisplayTitle,
-  swapDisplayPricePerUnit,
-} from "./swapListHelpers.js";
+import { swapListItemView } from "./swapListHelpers.js";
+import { NoImageIcon } from "./icons.native.js";
 import type { ResolvedTheme } from "../theme.js";
 
 export interface SwapListItemStyles {
@@ -43,7 +40,8 @@ function ThumbnailOrPlaceholder({
   thumbnailUrl,
   imageStyle,
   placeholderStyle,
-  iconStyle,
+  iconSize,
+  iconColor,
   labelStyle,
   imageOverride,
   placeholderOverride,
@@ -53,7 +51,8 @@ function ThumbnailOrPlaceholder({
   thumbnailUrl: string | null;
   imageStyle: StyleProp<ImageStyle>;
   placeholderStyle: StyleProp<ViewStyle>;
-  iconStyle: StyleProp<TextStyle>;
+  iconSize: number;
+  iconColor: string;
   labelStyle: StyleProp<TextStyle>;
   imageOverride?: StyleProp<ImageStyle>;
   placeholderOverride?: StyleProp<ViewStyle>;
@@ -73,8 +72,8 @@ function ThumbnailOrPlaceholder({
   }
   return (
     <View style={[placeholderStyle, placeholderOverride]}>
-      {/* Picture-frame glyph (mountain + sun) as the "no image" pictogram. */}
-      <Text style={iconStyle}>🖼️</Text>
+      {/* Mountain + sun "no image" pictogram, matching the web tile placeholder. */}
+      <NoImageIcon size={iconSize} color={iconColor} />
       {showLabel && <Text style={labelStyle}>No image available</Text>}
     </View>
   );
@@ -97,9 +96,6 @@ function createSheet(theme: ResolvedTheme) {
     imageGrid: {
       width: "100%",
       height: "100%",
-    },
-    noImageIconGrid: {
-      fontSize: 40,
     },
     noImageLabel: {
       color: theme.colors.textMuted,
@@ -128,14 +124,10 @@ export function SwapListItem({
   const common = useCommonSheet();
   const sheet = useMemo(() => createSheet(theme), [theme]);
 
-  const actionLabel = isMySwap ? "Delist" : "Buy";
-  const thumbnail = swapImageUrl(swap);
   // Quantity rides beside the asset name ("0.01 XCP"); the meta line carries
   // only the per-unit price, matching how horizon.market lays these out.
-  const title = swapDisplayTitle(swap);
-  const displayPricePerUnit = swapDisplayPricePerUnit(swap);
-  const showPerUnit =
-    swap.listingType !== "ordinal" && displayPricePerUnit !== null;
+  const { actionLabel, thumbnail, title, priceLabel, pricePerUnit, showPerUnit } =
+    swapListItemView(swap, isMySwap);
 
   return (
     <View style={[common.swapItemCard, style, stylesProp?.root]}>
@@ -144,7 +136,8 @@ export function SwapListItem({
           thumbnailUrl={thumbnail}
           imageStyle={[sheet.imageGrid as ImageStyle]}
           placeholderStyle={[common.swapItemPlaceholder, sheet.imageGrid]}
-          iconStyle={sheet.noImageIconGrid}
+          iconSize={44}
+          iconColor={theme.colors.textMuted}
           labelStyle={sheet.noImageLabel}
           imageOverride={stylesProp?.image}
           placeholderOverride={stylesProp?.placeholder}
@@ -159,11 +152,11 @@ export function SwapListItem({
         {title}
       </Text>
       <Text style={[common.muted, stylesProp?.price]}>
-        {swap.price.toLocaleString()} sats
+        {priceLabel}
       </Text>
       {showPerUnit && (
         <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
-          {displayPricePerUnit} sats/unit
+          {pricePerUnit} sats/unit
         </Text>
       )}
       <Pressable
