@@ -16,58 +16,85 @@
  *
  * Requires EXPO_PUBLIC_WEB3AUTH_CLIENT_ID (and optionally
  * EXPO_PUBLIC_WEB3AUTH_NETWORK) in .env.
+ *
+ * ── Lazy loading (critical for startup) ─────────────────────────────────────
+ * @web3auth/react-native-sdk (and its transitive stream/crypto graph) is heavy:
+ * importing it AND constructing the Web3Auth instance at module load adds several
+ * seconds of synchronous JS evaluation. On React Native that runs on the bridge's
+ * startup path, and blocking it that long makes the bridge reset before the app
+ * registers — a white screen that closes ("AppRegistry … n = 0"). So everything
+ * below is imported dynamically and constructed on FIRST use: `getPrivateKey` /
+ * `logout` are only called from effects (session restore, login tap), never during
+ * the initial render, so the market UI boots immediately and Web3Auth spins up in
+ * the background.
  */
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
-import Web3Auth, { LOGIN_PROVIDER } from "@web3auth/react-native-sdk";
-import {
-  CHAIN_NAMESPACES,
-  WEB3AUTH_NETWORK,
-  type WEB3AUTH_NETWORK_TYPE,
-} from "@web3auth/base";
-import { CommonPrivateKeyProvider } from "@web3auth/base-provider";
+import type { WEB3AUTH_NETWORK_TYPE } from "@web3auth/base";
 
 const REDIRECT_URL = "horizonmarket://auth";
 
 const clientId = process.env.EXPO_PUBLIC_WEB3AUTH_CLIENT_ID ?? "";
 
-const web3AuthNetwork: WEB3AUTH_NETWORK_TYPE =
-  (process.env.EXPO_PUBLIC_WEB3AUTH_NETWORK as
-    | WEB3AUTH_NETWORK_TYPE
-    | undefined) ?? WEB3AUTH_NETWORK.SAPPHIRE_MAINNET;
+type Web3AuthModule = typeof import("@web3auth/react-native-sdk");
+type Web3AuthInstance = InstanceType<Web3AuthModule["default"]>;
 
-// chainNamespace OTHER + CommonPrivateKeyProvider → the provider hands back the
-// raw secp256k1 private key (not an EVM/Solana-derived value), so derived
-// addresses match the web app exactly.
-const privateKeyProvider = new CommonPrivateKeyProvider({
-  config: {
-    chainConfig: {
-      chainNamespace: CHAIN_NAMESPACES.OTHER,
-      chainId: "0x1",
-      rpcTarget: "https://rpc.ankr.com/eth",
-    },
-  },
-});
+// Memoized lazy initialization: dynamically import the Web3Auth packages, build the
+// instance, restore any persisted session, and cache the resulting promise so every
+// caller shares one initialized instance.
+let ready: Promise<{
+  web3auth: Web3AuthInstance;
+  LOGIN_PROVIDER: Web3AuthModule["LOGIN_PROVIDER"];
+}> | null = null;
 
-const web3auth = new Web3Auth(WebBrowser, SecureStore, {
-  clientId,
-  network: web3AuthNetwork,
-  redirectUrl: REDIRECT_URL,
-  privateKeyProvider,
-});
+function ensureWeb3Auth() {
+  if (!ready) {
+    ready = (async () => {
+      const [rnSdk, base, baseProvider] = await Promise.all([
+        import("@web3auth/react-native-sdk"),
+        import("@web3auth/base"),
+        import("@web3auth/base-provider"),
+      ]);
+      const Web3Auth = rnSdk.default;
+      const { LOGIN_PROVIDER } = rnSdk;
+      const { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } = base;
+      const { CommonPrivateKeyProvider } = baseProvider;
 
-let initialized = false;
+      const web3AuthNetwork: WEB3AUTH_NETWORK_TYPE =
+        (process.env.EXPO_PUBLIC_WEB3AUTH_NETWORK as
+          | WEB3AUTH_NETWORK_TYPE
+          | undefined) ?? WEB3AUTH_NETWORK.SAPPHIRE_MAINNET;
 
-async function ensureInitialized(): Promise<void> {
-  if (!initialized) {
-    // init() restores any persisted session (from expo-secure-store) and, if
-    // present, sets up web3auth.provider — so a subsequent probe returns the key.
-    await web3auth.init();
-    initialized = true;
+      // chainNamespace OTHER + CommonPrivateKeyProvider → the provider hands back
+      // the raw secp256k1 private key (not an EVM/Solana-derived value), so derived
+      // addresses match the web app exactly.
+      const privateKeyProvider = new CommonPrivateKeyProvider({
+        config: {
+          chainConfig: {
+            chainNamespace: CHAIN_NAMESPACES.OTHER,
+            chainId: "0x1",
+            rpcTarget: "https://rpc.ankr.com/eth",
+          },
+        },
+      });
+
+      const web3auth = new Web3Auth(WebBrowser, SecureStore, {
+        clientId,
+        network: web3AuthNetwork,
+        redirectUrl: REDIRECT_URL,
+        privateKeyProvider,
+      });
+
+      // init() restores any persisted session (from expo-secure-store) and, if
+      // present, sets up web3auth.provider — so a subsequent probe returns the key.
+      await web3auth.init();
+      return { web3auth, LOGIN_PROVIDER };
+    })();
   }
+  return ready;
 }
 
-async function readPrivateKey(): Promise<string> {
+async function readPrivateKey(web3auth: Web3AuthInstance): Promise<string> {
   if (!web3auth.provider) return "";
   const key = (await web3auth.provider.request({
     method: "private_key",
@@ -83,12 +110,12 @@ async function readPrivateKey(): Promise<string> {
  * Returns the hex private key, or "" if no session exists.
  */
 export async function getPrivateKey(email: string): Promise<string> {
-  await ensureInitialized();
+  const { web3auth, LOGIN_PROVIDER } = await ensureWeb3Auth();
 
   if (!email) {
     // Auto-detect an existing session without prompting the user.
     if (web3auth.connected) {
-      return readPrivateKey();
+      return readPrivateKey(web3auth);
     }
     return "";
   }
@@ -105,7 +132,7 @@ export async function getPrivateKey(email: string): Promise<string> {
     throw new Error("Web3Auth connection failed");
   }
 
-  return readPrivateKey();
+  return readPrivateKey(web3auth);
 }
 
 /**
@@ -115,7 +142,7 @@ export async function getPrivateKey(email: string): Promise<string> {
  * button must call this in addition to Horizon Market's own logout.
  */
 export async function logout(): Promise<void> {
-  await ensureInitialized();
+  const { web3auth } = await ensureWeb3Auth();
   if (web3auth.connected) {
     await web3auth.logout();
   }
