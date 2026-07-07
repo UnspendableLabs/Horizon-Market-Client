@@ -7,9 +7,9 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700Bold } from "@expo-google-fonts/montserrat";
 import { HorizonMarketProvider, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "../components/Header.js";
-import { Footer } from "../components/Footer.js";
 import { getPrivateKey } from "../lib/web3auth.js";
 import { colors, HORIZON_THEME } from "../lib/theme.js";
+import { NetworkProvider } from "../lib/network-context.js";
 import {
   NETWORKS,
   getInitialNetwork,
@@ -94,28 +94,29 @@ export default function RootLayout() {
       <SafeAreaView style={styles.root}>
         <StatusBar style="light" backgroundColor={colors.background} />
 
-        {/* The provider remounts on a network switch (key={network}); the Footer
-            below sits outside it so it survives the remount. Header + the routed
-            Stack both live inside the provider so their useHorizonMarket() works. */}
-        <View style={styles.content}>
-          <HorizonMarketProvider
-            key={network}
-            network={sdkNetwork}
-            {...providerConfig}
-            theme={HORIZON_THEME}
-          >
-            <SessionRestorer />
-            <Header onOpenWallet={() => router.push("/wallet")} />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: colors.background },
-              }}
-            />
-          </HorizonMarketProvider>
-        </View>
-
-        <Footer network={network} onChange={handleNetworkChange} />
+        {/* NetworkProvider sits OUTSIDE the HorizonMarketProvider so it survives
+            the provider's key={network} remount. Each screen now renders the
+            Footer at the bottom of its own scroll (so it's only seen when
+            scrolled to the end) and reads the network from this context. */}
+        <NetworkProvider value={{ network, setNetwork: handleNetworkChange }}>
+          <View style={styles.content}>
+            <HorizonMarketProvider
+              key={network}
+              network={sdkNetwork}
+              {...providerConfig}
+              theme={HORIZON_THEME}
+            >
+              <SessionRestorer />
+              <Header onOpenWallet={() => router.push("/wallet")} />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.background },
+                }}
+              />
+            </HorizonMarketProvider>
+          </View>
+        </NetworkProvider>
       </SafeAreaView>
     </SafeAreaProvider>
   );

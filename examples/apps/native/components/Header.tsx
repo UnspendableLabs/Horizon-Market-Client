@@ -7,6 +7,7 @@ import {
   Alert,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import Svg, { Path } from "react-native-svg";
 import {
   useHorizonMarket,
   Modal,
@@ -28,8 +29,29 @@ function HorizonLogo() {
   return (
     <View style={styles.logoContainer}>
       <Text style={styles.logoText}>Horizon</Text>
-      <View style={styles.logoMark} />
     </View>
+  );
+}
+
+/** Wallet mark — the same glyph the web header uses (lucide `Wallet`). */
+function WalletIcon({ size = 22, color = colors.foreground }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 1 1-1v-2a1 1 0 0 0-1-1"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
@@ -145,7 +167,7 @@ export function Header({ onOpenWallet }: HeaderProps) {
               onPress={() => setWalletOpen(true)}
               activeOpacity={0.85}
             >
-              <Text style={styles.walletIcon}>◈</Text>
+              <WalletIcon size={20} color={colors.foreground} />
             </TouchableOpacity>
           )}
         </View>
@@ -249,13 +271,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  logoMark: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
-
   tagline: {
     fontSize: 13,
     color: colors.foreground,
@@ -291,11 +306,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-
-  walletIcon: {
-    fontSize: 20,
-    color: colors.foreground,
   },
 
   /* Wallet modal rows */

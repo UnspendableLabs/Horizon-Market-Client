@@ -3,6 +3,7 @@ import {
   useHorizonMarket,
   WalletBalances,
 } from "@unspendablelabs/horizon-market-client/react";
+import { Footer } from "./Footer.js";
 import { colors, radii, spacing, fonts } from "../lib/theme.js";
 
 interface WalletScreenProps {
@@ -49,6 +50,9 @@ export function WalletScreen({ onBack }: WalletScreenProps) {
           </Text>
         </>
       )}
+
+      {/* Footer at the bottom of the scroll (seen only when scrolled to the end). */}
+      <Footer />
     </ScrollView>
   );
 }
