@@ -133,6 +133,9 @@ function createSheet(theme: ResolvedTheme) {
     tokenAmount: { fontSize: 18, fontWeight: "700", color: theme.colors.text },
     tokenSymbol: { marginTop: 2, fontSize: theme.typography.fontSizeBase, color: theme.colors.textMuted },
     actionRow: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 },
+    // BTC headline: the Deposit / Withdraw buttons stack vertically and stretch
+    // to a common width, right-aligned, so the (large) BTC amount keeps the row.
+    btcActions: { flexDirection: "column", alignItems: "stretch", gap: 6, flexShrink: 0 },
     labeledAction: {
       flexDirection: "row",
       alignItems: "center",
@@ -508,14 +511,14 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
         <View style={sheet.balanceInfo}>
           <TokenMark line={btc} size={44} />
           <View style={{ flexShrink: 1 }}>
-            <Text>
+            <Text numberOfLines={1}>
               <Text style={sheet.btcAmount}>{btc.amount ?? "…"}</Text>{" "}
               <Text style={sheet.btcUnit}>BTC</Text>
             </Text>
             {usd ? <Text style={sheet.btcUsd}>{usd}</Text> : null}
           </View>
         </View>
-        <View style={sheet.actionRow}>
+        <View style={sheet.btcActions}>
           <LabeledAction kind="deposit" onPress={() => openDeposit("BTC", "btc")} sheet={sheet} color={iconColor} />
           <LabeledAction
             kind="withdraw"

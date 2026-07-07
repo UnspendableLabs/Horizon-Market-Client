@@ -56,6 +56,39 @@ export function BtcGoldIcon({ size = 22 }: { size?: number }) {
   );
 }
 
+/**
+ * Kontor brand mark (mirrors Horizon Market's `/kontor-mark.svg`). Shown as the
+ * artwork for KOR token listings, which carry no image of their own.
+ */
+export function KontorIcon({
+  size,
+  color = "#e8e8e8",
+}: {
+  size: number;
+  color?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 34 34"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      <path
+        d="M28.0059 29.6918L22.1093 33.0802L12.7583 16.9667L22.085 0.894165L27.9841 4.28255L24.7991 9.76845L20.6212 16.9667L28.0059 29.6918ZM9.26741 10.9531H13.1904L15.1616 7.55743L11.309 0.920731L8.3692 2.60889L5.40998 4.3067L9.26741 10.9531ZM25.6633 13.5807L23.6872 16.9836L25.6439 20.355H33.417V13.5807H25.6633ZM11.2192 19.6184L5.3857 29.6677L11.2847 33.0536L15.1519 26.3928L11.2192 19.6184ZM11.6659 13.5807H0.020752V20.355H7.73317L11.6659 13.5807Z"
+        fill={color}
+      />
+      <path
+        d="M28.0062 29.6918L22.1096 33.0802L12.7586 16.9667L22.0853 0.894165L27.9843 4.28255L20.6215 16.9667L28.0062 29.6918Z"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
 /** Counterparty (XCP) brand mark. */
 function XcpIcon({ size = 56 }: { size?: number }) {
   return (
@@ -145,6 +178,16 @@ export function AssetAvatar({
     justifyContent: "center",
     overflow: "hidden",
   };
+
+  // The native KOR token renders its brand mark — it has no server artwork of
+  // its own, so a fetched image would be wrong.
+  if (asset.type === "kor") {
+    return (
+      <div style={tile}>
+        <KontorIcon size={size} />
+      </div>
+    );
+  }
 
   if (!imageUrl || failedUrl === imageUrl) {
     return <AssetPlaceholder asset={asset} size={size} tile={tile} />;

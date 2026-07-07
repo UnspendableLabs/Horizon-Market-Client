@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Pressable,
   ScrollView,
@@ -58,6 +59,12 @@ export interface SwapListProps extends UseSwapListOptions {
    * fills the remaining screen space below a sticky header.
    */
   scrollable?: boolean;
+  /**
+   * Content rendered at the very end of the (scrollable) list — e.g. a page
+   * footer that should only come into view once the user scrolls to the bottom,
+   * rather than staying pinned to the screen.
+   */
+  footerSlot?: ReactNode;
   style?: StyleProp<ViewStyle>;
   styles?: SwapListStyles;
 }
@@ -66,6 +73,7 @@ export function SwapList({
   getPrivateKey,
   onSwapSelect,
   scrollable,
+  footerSlot,
   style,
   styles: stylesProp,
   ...hookOptions
@@ -180,8 +188,9 @@ export function SwapList({
         stylesProp?.root,
       ]}
     >
-      {/* Toolbar: asset-type filter + sort as two dropdowns on a single row
-          (native has no <select>; keeps the controls compact). */}
+      {/* Toolbar: asset-type filter + sort dropdowns and, when signed in, the
+          "My swaps" toggle — all on a single row at the same height (native has
+          no <select>; keeps the controls compact). */}
       <View style={[common.swapToolbar, stylesProp?.toolbar]}>
         <Dropdown
           style={[common.flex1, stylesProp?.filterTabs]}
@@ -200,36 +209,39 @@ export function SwapList({
             label: SORT_OPTION_LABELS[key],
           }))}
         />
+        {canShowMySwaps && (
+          <TouchableOpacity
+            onPress={() => setShowMySwaps(!showMySwaps)}
+            style={[
+              common.toolbarToggle,
+              showMySwaps && common.toolbarToggleActive,
+              stylesProp?.mySwapsToggle,
+            ]}
+          >
+            <Text
+              style={[
+                common.toolbarToggleText,
+                showMySwaps && common.toolbarToggleTextActive,
+              ]}
+            >
+              {showMySwaps ? "All swaps" : "My swaps"}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* My swaps toggle */}
-      {canShowMySwaps && (
-        <TouchableOpacity
-          onPress={() => setShowMySwaps(!showMySwaps)}
-          style={[
-            showMySwaps ? common.filterTabActive : common.filterTabInactive,
-            stylesProp?.mySwapsToggle,
-          ]}
-        >
-          <Text
-            style={
-              showMySwaps
-                ? common.filterTabTextActive
-                : common.filterTabTextInactive
-            }
-          >
-            {showMySwaps ? "All swaps" : "My swaps"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Content + Pagination */}
+      {/* Content + Pagination. The footer slot rides at the end of the scroll so
+          it's only revealed once the list is scrolled to the bottom. */}
       {scrollable ? (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 8, gap: 8 }}>
           {contentAndPagination}
+          {footerSlot}
         </ScrollView>
       ) : (
-        contentAndPagination
+        <>
+          {contentAndPagination}
+          {footerSlot}
+        </>
       )}
 
       {/* Login modal */}

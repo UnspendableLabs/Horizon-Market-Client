@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Image,
   Pressable,
@@ -14,7 +15,7 @@ import type { AtomicSwap } from "../../types/index.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
 import { swapListItemView } from "./swapListHelpers.js";
-import { NoImageIcon } from "./icons.native.js";
+import { KontorIcon, NoImageIcon } from "./icons.native.js";
 import type { ResolvedTheme } from "../theme.js";
 
 export interface SwapListItemStyles {
@@ -47,6 +48,7 @@ function ThumbnailOrPlaceholder({
   placeholderOverride,
   resizeMode = "cover",
   showLabel,
+  placeholderContent,
 }: {
   thumbnailUrl: string | null;
   imageStyle: StyleProp<ImageStyle>;
@@ -58,6 +60,8 @@ function ThumbnailOrPlaceholder({
   placeholderOverride?: StyleProp<ViewStyle>;
   resizeMode?: "cover" | "contain";
   showLabel: boolean;
+  /** Custom artwork for listings with no image (e.g. the Kontor mark for KOR). */
+  placeholderContent?: ReactNode;
 }) {
   const [errored, setErrored] = useState(false);
   if (thumbnailUrl && !errored) {
@@ -72,9 +76,13 @@ function ThumbnailOrPlaceholder({
   }
   return (
     <View style={[placeholderStyle, placeholderOverride]}>
-      {/* Mountain + sun "no image" pictogram, matching the web tile placeholder. */}
-      <NoImageIcon size={iconSize} color={iconColor} />
-      {showLabel && <Text style={labelStyle}>No image available</Text>}
+      {placeholderContent ?? (
+        <>
+          {/* Mountain + sun "no image" pictogram, matching the web tile placeholder. */}
+          <NoImageIcon size={iconSize} color={iconColor} />
+          {showLabel && <Text style={labelStyle}>No image available</Text>}
+        </>
+      )}
     </View>
   );
 }
@@ -129,6 +137,11 @@ export function SwapListItem({
   const { actionLabel, thumbnail, title, priceLabel, pricePerUnit, showPerUnit } =
     swapListItemView(swap, isMySwap);
 
+  // KOR token listings carry no artwork of their own — show the Kontor brand
+  // mark instead of the generic "no image" placeholder.
+  const isKontorToken =
+    swap.listingType === "kontor" && swap.kontorAssetKind !== "nft";
+
   return (
     <View style={[common.swapItemCard, style, stylesProp?.root]}>
       <View style={sheet.imageGridPanel}>
@@ -143,6 +156,9 @@ export function SwapListItem({
           placeholderOverride={stylesProp?.placeholder}
           resizeMode="contain"
           showLabel
+          placeholderContent={
+            isKontorToken ? <KontorIcon size={56} /> : undefined
+          }
         />
       </View>
       <Text

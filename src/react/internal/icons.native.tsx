@@ -38,20 +38,29 @@ export function AssetAvatar({
   size?: number;
   radius?: number;
 }) {
-  // Track the failed URL (not a bare boolean) so switching assets re-attempts
-  // the new image instead of staying on the fallback.
+  // Track the failed / loaded URL (not a bare boolean) so switching assets
+  // re-attempts the new image instead of staying on the previous state.
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const borderRadius = radius ?? Math.round(size / 4);
   const xcp = isXcpAsset(asset);
-  const badge = xcp ? null : assetMonogram(asset);
-  const showImage = Boolean(imageUrl) && failedUrl !== imageUrl;
+  // XCP and the native KOR token render their brand mark instead of a monogram.
+  // KOR additionally has no server artwork of its own, so skip fetching one (a
+  // returned image would be wrong).
+  const kor = asset.type === "kor";
+  const badge = xcp || kor ? null : assetMonogram(asset);
+  const showImage = !kor && Boolean(imageUrl) && failedUrl !== imageUrl;
+  // Keep the colored monogram badge only until the artwork has painted — once
+  // it loads, drop the badge so a transparent logo (e.g. ZELD) doesn't show the
+  // badge bleeding through beneath it.
+  const showBadge = !showImage || loadedUrl !== imageUrl;
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius,
-        backgroundColor: badge?.bg ?? "transparent",
+        backgroundColor: showBadge ? badge?.bg ?? "transparent" : "transparent",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
@@ -59,7 +68,9 @@ export function AssetAvatar({
     >
       {xcp ? (
         <XcpIcon size={size} />
-      ) : (
+      ) : kor ? (
+        <KontorIcon size={size} />
+      ) : showBadge ? (
         <Text
           style={{
             color: "#fff",
@@ -69,10 +80,11 @@ export function AssetAvatar({
         >
           {badge?.label}
         </Text>
-      )}
+      ) : null}
       {showImage ? (
         <Image
           source={{ uri: imageUrl as string }}
+          onLoad={() => setLoadedUrl(imageUrl ?? null)}
           onError={() => setFailedUrl(imageUrl ?? null)}
           style={[StyleSheet.absoluteFill, { borderRadius }]}
         />
@@ -95,6 +107,31 @@ export function BtcGoldIcon({ size = 22 }: { size?: number }) {
       <Path
         d="M24.4971 14.5787C24.8355 12.3161 23.1129 11.0999 20.7574 10.2885L21.5215 7.22364L19.6559 6.75876L18.912 9.74293C18.4215 9.6206 17.9178 9.50534 17.4172 9.39107L18.1665 6.3872L16.3019 5.92232L15.5374 8.98619C15.1315 8.89378 14.7329 8.80245 14.3461 8.70621L14.3483 8.69657L11.7754 8.0541L11.2792 10.0468C11.2792 10.0468 12.6633 10.3641 12.6342 10.3836C13.3897 10.5721 13.5263 11.0723 13.5036 11.4687L12.6332 14.9603C12.6852 14.9735 12.7527 14.9926 12.8271 15.0225C12.7649 15.0071 12.6986 14.9902 12.6299 14.9737L11.4099 19.865C11.3175 20.0945 11.0832 20.439 10.555 20.3082C10.5737 20.3353 9.19898 19.9698 9.19898 19.9698L8.27271 22.1054L10.7006 22.7106C11.1523 22.8239 11.5949 22.9424 12.0307 23.0538L11.2587 26.1539L13.1222 26.6187L13.8868 23.5516C14.3959 23.6898 14.8899 23.8173 15.3736 23.9375L14.6116 26.9901L16.4774 27.455L17.2493 24.3608C20.4307 24.9629 22.8229 24.7202 23.8297 21.8426C24.6411 19.5258 23.7894 18.1895 22.1156 17.3181C23.3347 17.037 24.2529 16.2352 24.4977 14.5789L24.4972 14.5785L24.4971 14.5787ZM20.2344 20.556C19.6578 22.8728 15.7571 21.6204 14.4924 21.3063L15.517 17.1993C16.7815 17.5151 20.837 18.1398 20.2345 20.556H20.2344ZM20.8114 14.5451C20.2854 16.6524 17.0388 15.5818 15.9857 15.3193L16.9145 11.5945C17.9677 11.857 21.3593 12.347 20.8116 14.5451H20.8114Z"
         fill="white"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Kontor brand mark (mirrors Horizon Market's `/kontor-mark.svg`). Shown as the
+ * artwork for KOR token listings, which carry no image of their own.
+ */
+export function KontorIcon({
+  size = 44,
+  color = "#e8e8e8",
+}: {
+  size?: number;
+  color?: string;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 34 34" fill="none">
+      <Path
+        d="M28.0059 29.6918L22.1093 33.0802L12.7583 16.9667L22.085 0.894165L27.9841 4.28255L24.7991 9.76845L20.6212 16.9667L28.0059 29.6918ZM9.26741 10.9531H13.1904L15.1616 7.55743L11.309 0.920731L8.3692 2.60889L5.40998 4.3067L9.26741 10.9531ZM25.6633 13.5807L23.6872 16.9836L25.6439 20.355H33.417V13.5807H25.6633ZM11.2192 19.6184L5.3857 29.6677L11.2847 33.0536L15.1519 26.3928L11.2192 19.6184ZM11.6659 13.5807H0.020752V20.355H7.73317L11.6659 13.5807Z"
+        fill={color}
+      />
+      <Path
+        d="M28.0062 29.6918L22.1096 33.0802L12.7586 16.9667L22.0853 0.894165L27.9843 4.28255L20.6215 16.9667L28.0062 29.6918Z"
+        fill={color}
       />
     </Svg>
   );

@@ -1,7 +1,7 @@
-import { useState, type CSSProperties } from "react";
+import { useState, type ReactNode, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
 import { cx } from "./format.js";
-import { NoImageIcon } from "./icons.web.js";
+import { KontorIcon, NoImageIcon } from "./icons.web.js";
 import { swapListItemView } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
@@ -50,6 +50,7 @@ function ThumbnailOrPlaceholder({
   placeholderClassName,
   iconSize,
   showLabel,
+  placeholderContent,
 }: {
   thumbnailUrl: string | null;
   assetName: string | null;
@@ -59,6 +60,8 @@ function ThumbnailOrPlaceholder({
   placeholderClassName?: string;
   iconSize: number;
   showLabel: boolean;
+  /** Custom artwork for listings with no image (e.g. the Kontor mark for KOR). */
+  placeholderContent?: ReactNode;
 }) {
   const [errored, setErrored] = useState(false);
   if (thumbnailUrl && !errored) {
@@ -74,8 +77,12 @@ function ThumbnailOrPlaceholder({
   }
   return (
     <div className={placeholderClassName} style={placeholderStyle}>
-      <NoImageIcon size={iconSize} />
-      {showLabel && <span style={ws.noImageText}>No image available</span>}
+      {placeholderContent ?? (
+        <>
+          <NoImageIcon size={iconSize} />
+          {showLabel && <span style={ws.noImageText}>No image available</span>}
+        </>
+      )}
     </div>
   );
 }
@@ -95,6 +102,11 @@ export function SwapListItem({
   const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
   const itemStyle = { ...ws.swapItemGrid, ...style };
 
+  // KOR token listings carry no artwork of their own — show the Kontor brand
+  // mark instead of the generic "no image" placeholder.
+  const isKontorToken =
+    swap.listingType === "kontor" && swap.kontorAssetKind !== "nft";
+
   return (
     <div className={cx(classNames?.root, className)} style={itemStyle}>
       <ThumbnailOrPlaceholder
@@ -106,6 +118,7 @@ export function SwapListItem({
         placeholderClassName={classNames?.placeholder}
         iconSize={44}
         showLabel
+        placeholderContent={isKontorToken ? <KontorIcon size={56} /> : undefined}
       />
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span className={classNames?.name} style={nameStyle}>

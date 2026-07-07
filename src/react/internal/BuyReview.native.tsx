@@ -15,7 +15,7 @@ import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
 import { buyingDisplay, formatSats, formatUsd, truncate } from "./format.js";
 import { swapMonogram } from "./swapListHelpers.js";
-import { BtcGoldIcon } from "./icons.native.js";
+import { Dropdown } from "./Dropdown.native.js";
 import {
   FEE_HINTS,
   FEE_LABELS,
@@ -79,28 +79,17 @@ function createSheet(theme: ResolvedTheme) {
       flexWrap: "wrap",
       gap: theme.spacing.sm,
     },
-    feeChips: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-    chip: {
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 4,
-      borderRadius: theme.radii.sm,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-    },
-    chipActive: {
-      borderColor: theme.colors.primary,
-      backgroundColor: theme.colors.primary,
-    },
-    chipText: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted },
-    chipTextActive: { color: theme.colors.primaryForeground, fontWeight: "600" },
+    // Fee-rate control: the shared Dropdown (same as the market filter/sort),
+    // compact and right-aligned beside the amount it drives.
+    feeSelect: { flexShrink: 0, maxWidth: 200 },
     amountRow: {
       flexDirection: "row",
       alignItems: "flex-end",
       justifyContent: "space-between",
+      gap: theme.spacing.sm,
     },
+    amountBlock: { flexShrink: 1 },
     bigNumber: { fontSize: 28, fontWeight: "700", color: theme.colors.text },
-    satsTag: { flexDirection: "row", alignItems: "center", gap: 6 },
-    satsLabel: { color: theme.colors.text, fontWeight: "600" },
     divider: { height: 1, backgroundColor: theme.colors.border, marginVertical: theme.spacing.xs },
     metaRow: {
       flexDirection: "row",
@@ -156,16 +145,6 @@ function createSheet(theme: ResolvedTheme) {
 }
 
 type Sheet = ReturnType<typeof createSheet>;
-
-/** Orange Bitcoin mark + "Sats" label. */
-function SatsTag({ sheet }: { sheet: Sheet }) {
-  return (
-    <View style={sheet.satsTag}>
-      <BtcGoldIcon size={22} />
-      <Text style={sheet.satsLabel}>Sats</Text>
-    </View>
-  );
-}
 
 /** Small circled "i" that reveals its explanation in an alert on tap. */
 function InfoHint({ title, text, sheet }: { title: string; text: string; sheet: Sheet }) {
@@ -247,6 +226,19 @@ export function BuyReview({
 
   const buying = buyingDisplay(swap);
 
+  const feeDropdown = (
+    <Dropdown
+      style={sheet.feeSelect}
+      title="Fee rate"
+      value={feeOption}
+      onChange={setFeeOption}
+      options={FEE_OPTIONS.map((opt) => ({
+        value: opt,
+        label: `${FEE_LABELS[opt]} · ${rateFor(opt) ?? "…"} sat/vB`,
+      }))}
+    />
+  );
+
   return (
     <View style={{ gap: theme.spacing.md }}>
       {/* You'll receive */}
@@ -276,33 +268,14 @@ export function BuyReview({
 
       {/* You'll pay */}
       <View style={sheet.section}>
-        <View style={sheet.headerRow}>
-          <Text style={sheet.sectionLabel}>You&apos;ll pay</Text>
-          <View style={sheet.feeChips}>
-            {FEE_OPTIONS.map((opt) => {
-              const active = opt === feeOption;
-              const rate = rateFor(opt);
-              return (
-                <Pressable
-                  key={opt}
-                  onPress={() => setFeeOption(opt)}
-                  style={[sheet.chip, active && sheet.chipActive]}
-                >
-                  <Text style={[sheet.chipText, active && sheet.chipTextActive]}>
-                    {FEE_LABELS[opt]} · {rate ?? "…"} sat/vB
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
+        <Text style={sheet.sectionLabel}>You&apos;ll pay</Text>
 
         <View style={sheet.amountRow}>
-          <View>
-            <Text style={sheet.bigNumber}>{totalDisplay}</Text>
+          <View style={sheet.amountBlock}>
+            <Text style={sheet.bigNumber} numberOfLines={1}>{totalDisplay}</Text>
             {totalUsd ? <Text style={sheet.muted}>{totalUsd}</Text> : null}
           </View>
-          <SatsTag sheet={sheet} />
+          {feeDropdown}
         </View>
 
         <View style={sheet.divider} />

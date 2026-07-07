@@ -19,6 +19,7 @@ import {
   mempoolTxUrl,
 } from "../internal/format.js";
 import { AssetAvatar, BtcGoldIcon } from "../internal/icons.native.js";
+import { Dropdown } from "../internal/Dropdown.native.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { MONO_FONT, useCommonSheet } from "../internal/styles.native.js";
 import {
@@ -64,17 +65,6 @@ function createSheet(theme: ResolvedTheme) {
     },
     maxButton: { alignSelf: "flex-start", paddingVertical: 4 },
     maxButtonText: { color: theme.colors.primary, fontSize: theme.typography.fontSizeSm, fontWeight: "600" },
-    feeChips: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-    chip: {
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 6,
-      borderRadius: theme.radii.sm,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-    },
-    chipActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
-    chipText: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted },
-    chipTextActive: { color: theme.colors.primaryForeground, fontWeight: "600" },
     section: {
       gap: theme.spacing.sm,
       padding: theme.spacing.md,
@@ -187,23 +177,15 @@ export function WithdrawForm({
 
         <View>
           <Text style={[sheet.fieldLabel, stylesProp?.label]}>Network fee</Text>
-          <View style={sheet.feeChips}>
-            {WITHDRAW_FEE_OPTIONS.map((opt) => {
-              const active = opt === w.feeOption;
-              const rate = w.rateFor(opt);
-              return (
-                <Pressable
-                  key={opt}
-                  onPress={() => w.setFeeOption(opt)}
-                  style={[sheet.chip, active && sheet.chipActive]}
-                >
-                  <Text style={[sheet.chipText, active && sheet.chipTextActive]}>
-                    {FEE_LABELS[opt]} · {rate ?? "…"} sat/vB
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <Dropdown
+            title="Network fee"
+            value={w.feeOption}
+            onChange={w.setFeeOption}
+            options={WITHDRAW_FEE_OPTIONS.map((opt) => ({
+              value: opt,
+              label: `${FEE_LABELS[opt]} · ${w.rateFor(opt) ?? "…"} sat/vB`,
+            }))}
+          />
         </View>
 
         {w.error ? <Text style={common.error}>{w.error.message}</Text> : null}
