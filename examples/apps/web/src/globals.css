@@ -90,6 +90,34 @@ body {
   min-height: 100vh;
 }
 
+/* ── Focus ────────────────────────────────────────────────────
+   Kill the browser's default focus outline (renders as an ugly
+   green/purple ring over the dark theme) on every interactive
+   element. Keep a discreet, on-brand keyboard-only ring via
+   :focus-visible so keyboard navigation stays usable without the
+   loud outline appearing on mouse clicks / taps.                */
+button,
+a,
+input,
+textarea,
+select,
+[tabindex],
+[role="button"] {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keyboard-only focus ring — buttons/links only. Inputs, textareas and
+   selects already carry their own border (+ text caret), so adding an
+   outline there produces an ugly double border on focus. */
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-border-subtle);
+  outline-offset: 2px;
+}
+
 /* ── Full-bleed sticky filter bar ─────────────────────────────
    The sticky toolbar lives inside the centered <main> (max-width:
    --content-max-width), so its background would stop at the centering
