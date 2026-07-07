@@ -6,8 +6,10 @@ import {
   SORT_OPTION_LABELS,
   type UseSwapListOptions,
   type SortOption,
+  type SwapListingType,
 } from "../hooks/useSwapList.js";
 import { cx } from "../internal/format.js";
+import { useIsPhone } from "../internal/useMediaQuery.web.js";
 import { FILTER_TABS } from "../internal/swapListConstants.js";
 import {
   SwapListItem,
@@ -81,6 +83,19 @@ const pageInfoStyle: CSSProperties = {
   textAlign: "center",
 };
 
+// On phones force exactly two tiles per row (mirrors the native grid, which
+// chunks swaps into rows of 2). The desktop grid's 240px min-width would
+// otherwise collapse to a single column on narrow screens.
+const phoneSwapGrid: CSSProperties = {
+  ...ws.swapGrid,
+  // minmax(0, 1fr) — not 1fr — so both columns stay exactly equal width. A bare
+  // 1fr track resolves to minmax(auto, 1fr), letting a tile whose content is
+  // wider than its share refuse to shrink and steal width from its neighbour.
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  columnGap: 16,
+  rowGap: 24,
+};
+
 export function SwapList({
   getPrivateKey,
   onSwapSelect,
@@ -117,60 +132,98 @@ export function SwapList({
     handleLoginSuccess,
   } = useSwapList(hookOptions);
 
+  const isPhone = useIsPhone();
   const root: CSSProperties = { ...rootStyle, ...style };
+
+  // Sort + My-swaps controls are identical in both layouts; only the sort
+  // select stretches to share the row on phones (flex:1), so build them once.
+  const sortSelect = (
+    <select
+      className={classNames?.sortSelect}
+      value={sortOption}
+      onChange={(e) => setSortOption(e.target.value as SortOption)}
+      style={isPhone ? { ...ws.input, flex: 1, minWidth: 0 } : ws.input}
+    >
+      {SORT_OPTIONS.map((key) => (
+        <option key={key} value={key}>
+          {SORT_OPTION_LABELS[key]}
+        </option>
+      ))}
+    </select>
+  );
+
+  const mySwapsToggle = canShowMySwaps ? (
+    <button
+      type="button"
+      className={classNames?.mySwapsToggle}
+      onClick={() => setShowMySwaps(!showMySwaps)}
+      style={ws.filterTab(showMySwaps)}
+    >
+      {showMySwaps ? "All swaps" : "My swaps"}
+    </button>
+  ) : null;
 
   return (
     <div className={cx(classNames?.root, className)} style={root}>
-      {/* Toolbar */}
-      <div
-        className={classNames?.toolbar}
-        style={{ ...ws.swapListToolbar, justifyContent: "space-between" }}
-      >
-        {/* Filter tabs */}
+      {/* Toolbar. On phones the metaprotocol filter collapses into a <select>
+          that shares one row with Sort + My swaps (mirrors the native toolbar);
+          on wider screens the filter is a row of underline tabs on the left with
+          Sort + My swaps pinned to the right. */}
+      {isPhone ? (
         <div
-          className={classNames?.filterTabs}
-          style={{ ...ws.actionsRow, alignItems: "flex-end", flexWrap: "wrap" as const }}
+          className={classNames?.toolbar}
+          style={{ ...ws.swapListToolbar, flexWrap: "nowrap" as const }}
         >
-          {FILTER_TABS.map(({ key, label }) => (
-            <button
-              key={key ?? "all"}
-              type="button"
-              onClick={() => setListingType(key)}
-              style={ws.metaTab(listingType === key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div style={toolbarRightStyle}>
-          {/* Sort */}
           <select
-            className={classNames?.sortSelect}
-            value={sortOption}
-            onChange={(e) => setSortOption(e.target.value as SortOption)}
-            style={ws.input}
+            className={classNames?.filterTabs}
+            aria-label="Filter by type"
+            value={listingType ?? "all"}
+            onChange={(e) =>
+              setListingType(
+                e.target.value === "all"
+                  ? null
+                  : (e.target.value as SwapListingType),
+              )
+            }
+            style={{ ...ws.input, flex: 1, minWidth: 0 }}
           >
-            {SORT_OPTIONS.map((key) => (
-              <option key={key} value={key}>
-                {SORT_OPTION_LABELS[key]}
+            {FILTER_TABS.map(({ key, label }) => (
+              <option key={key ?? "all"} value={key ?? "all"}>
+                {label}
               </option>
             ))}
           </select>
-
-          {/* My swaps toggle */}
-          {canShowMySwaps && (
-            <button
-              type="button"
-              className={classNames?.mySwapsToggle}
-              onClick={() => setShowMySwaps(!showMySwaps)}
-              style={ws.filterTab(showMySwaps)}
-            >
-              {showMySwaps ? "All swaps" : "My swaps"}
-            </button>
-          )}
+          {sortSelect}
+          {mySwapsToggle}
         </div>
-      </div>
+      ) : (
+        <div
+          className={classNames?.toolbar}
+          style={{ ...ws.swapListToolbar, justifyContent: "space-between" }}
+        >
+          {/* Filter tabs */}
+          <div
+            className={classNames?.filterTabs}
+            style={{ ...ws.actionsRow, alignItems: "flex-end", flexWrap: "wrap" as const }}
+          >
+            {FILTER_TABS.map(({ key, label }) => (
+              <button
+                key={key ?? "all"}
+                type="button"
+                onClick={() => setListingType(key)}
+                style={ws.metaTab(listingType === key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={toolbarRightStyle}>
+            {sortSelect}
+            {mySwapsToggle}
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       {kontorUnavailable ? (
@@ -188,7 +241,10 @@ export function SwapList({
           No swaps found.
         </div>
       ) : (
-        <div className={classNames?.grid} style={ws.swapGrid}>
+        <div
+          className={classNames?.grid}
+          style={isPhone ? phoneSwapGrid : ws.swapGrid}
+        >
           {swaps.map((swap) => (
             <SwapListItem
               key={swap.id}

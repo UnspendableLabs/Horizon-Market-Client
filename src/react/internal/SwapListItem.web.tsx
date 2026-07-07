@@ -120,7 +120,7 @@ export function SwapListItem({
         showLabel
         placeholderContent={isKontorToken ? <KontorIcon size={56} /> : undefined}
       />
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
         <span className={classNames?.name} style={nameStyle}>
           {title}
         </span>

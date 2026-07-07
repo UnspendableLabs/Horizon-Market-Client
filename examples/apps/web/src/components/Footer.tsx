@@ -175,11 +175,15 @@ export function Footer({ network, onChange }: FooterProps) {
           </div>
         </div>
 
-        {/* Bottom row: network switch (left) + copyright (right) */}
-        <div className="mt-10 flex items-center justify-between gap-4 flex-wrap">
+        {/* Bottom row: network switch (left) + copyright (right). On phones the
+            row stacks into a centered column so the switch sits alone on its own
+            centered line above the social/copyright block. */}
+        <div className="mt-10 flex items-center justify-between gap-4 flex-wrap max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-6">
           <div className="flex items-center gap-3">
+            {/* "Network" label is dropped on phones — the two-button toggle is
+                self-explanatory and reads cleaner centered without it. */}
             <span
-              className="text-xs font-semibold uppercase tracking-wider"
+              className="text-xs font-semibold uppercase tracking-wider max-sm:hidden"
               style={{ color: "var(--color-muted)" }}
             >
               Network

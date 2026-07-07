@@ -149,11 +149,13 @@ const emptyOthers: CSSProperties = {
 };
 
 // BTC headline — the largest, top-of-page balance, on a subtly lighter rounded
-// card, with its action buttons pinned to the right.
+// card, with its action buttons pinned to the right. `flexWrap` lets the buttons
+// drop below the (large) balance on narrow phones instead of colliding with it;
+// the action row's `marginLeft:auto` keeps them bottom-right once wrapped.
 const btcCard: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
+  flexWrap: "wrap",
   gap: webTokens.spacingMd,
   padding: "24px 28px",
   background: webTokens.surface,
@@ -186,11 +188,13 @@ const btcUsdText: CSSProperties = {
   color: webTokens.textMuted,
 };
 
-// XCP / KOR / ZELD headline tokens sit together on one row (3 cells), balance on
-// the left and the labeled action buttons pinned to the right of each cell.
+// XCP / KOR / ZELD headline tokens: three cells across on desktop, collapsing
+// responsively to fewer columns — down to one per line on phones — so the
+// balance + action buttons never overlap in a cramped cell. `min(100%, 220px)`
+// keeps a single cell from overflowing a container narrower than 220px.
 const tokenGrid: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
   gap: 20,
 };
 
@@ -700,7 +704,7 @@ export function WalletBalances({
             {usd && <div style={btcUsdText}>{usd}</div>}
           </div>
         </div>
-        <div style={actionRow}>
+        <div style={{ ...actionRow, marginLeft: "auto" }}>
           <LabeledAction
             kind="deposit"
             onClick={() => openDeposit("BTC", "btc")}

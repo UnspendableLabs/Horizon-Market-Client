@@ -181,6 +181,11 @@ export const swapItemGrid: CSSProperties = {
   flexDirection: "column",
   gap: webTokens.spacingSm,
   height: "100%",
+  // Allow the tile to shrink below its content's intrinsic width so the nowrap
+  // title ellipsis engages and every grid track stays exactly equal — without
+  // this a long title blows the tile past its 1fr share and squashes its
+  // neighbour (most visible in the 2-up phone grid).
+  minWidth: 0,
   background: "transparent",
   border: "none",
   borderRadius: 0,
