@@ -16,6 +16,7 @@ import {
   type UseSwapListOptions,
 } from "../hooks/useSwapList.js";
 import { FILTER_TABS } from "../internal/swapListConstants.js";
+import { Dropdown } from "../internal/Dropdown.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
 import { Modal } from "./Modal.native.js";
 import {
@@ -179,64 +180,27 @@ export function SwapList({
         stylesProp?.root,
       ]}
     >
-      {/* Toolbar */}
+      {/* Toolbar: asset-type filter + sort as two dropdowns on a single row
+          (native has no <select>; keeps the controls compact). */}
       <View style={[common.swapToolbar, stylesProp?.toolbar]}>
-        {/* Filter tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[common.swapToolbar, stylesProp?.filterTabs]}
-        >
-          {FILTER_TABS.map(({ key, label }) => {
-            const active = listingType === key;
-            return (
-              <TouchableOpacity
-                key={key ?? "all"}
-                onPress={() => setListingType(key)}
-                style={active ? common.metaTabActive : common.metaTabInactive}
-              >
-                <Text
-                  style={
-                    active
-                      ? common.metaTabTextActive
-                      : common.metaTabTextInactive
-                  }
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <Dropdown
+          style={[common.flex1, stylesProp?.filterTabs]}
+          title="Filter by type"
+          value={listingType}
+          onChange={setListingType}
+          options={FILTER_TABS.map(({ key, label }) => ({ value: key, label }))}
+        />
+        <Dropdown
+          style={[common.flex1, stylesProp?.sortSelect]}
+          title="Sort by"
+          value={sortOption}
+          onChange={setSortOption}
+          options={SORT_OPTIONS.map((key) => ({
+            value: key,
+            label: SORT_OPTION_LABELS[key],
+          }))}
+        />
       </View>
-
-      {/* Sort row */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[common.swapToolbar, stylesProp?.sortSelect]}
-      >
-        {SORT_OPTIONS.map((key) => {
-          const active = sortOption === key;
-          return (
-            <TouchableOpacity
-              key={key}
-              onPress={() => setSortOption(key)}
-              style={active ? common.filterTabActive : common.filterTabInactive}
-            >
-              <Text
-                style={
-                  active
-                    ? common.filterTabTextActive
-                    : common.filterTabTextInactive
-                }
-              >
-                {SORT_OPTION_LABELS[key]}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
 
       {/* My swaps toggle */}
       {canShowMySwaps && (

@@ -146,3 +146,38 @@ if (typeof g.btoa === "undefined") {
 if (typeof g.atob === "undefined") {
   g.atob = (data: string) => Buffer.from(data, "base64").toString("binary");
 }
+
+// @web3auth's session layer (@toruslabs/session-manager → @toruslabs/eccrypto)
+// wraps every login/session payload in ECIES. eccrypto reads Node-style crypto
+// off the GLOBAL `crypto`:
+//   const browserCrypto = globalThis.crypto || {};
+//   const subtle = browserCrypto.subtle || browserCrypto.webkitSubtle;   // undefined on Hermes
+//   if (!browserCrypto.createHash) { …await subtle.digest("SHA-512", msg)… }
+// react-native-get-random-values installs `crypto.getRandomValues` and nothing
+// else, and Hermes has no `crypto.subtle`, so `subtle` is undefined. The instant
+// Web3Auth builds a login session — on the first "Connect" tap, BEFORE the browser
+// even opens — eccrypto hits `subtle.digest` on that undefined `subtle`:
+// "Cannot read property 'digest' of undefined". Attach the exact pure-JS Node
+// primitives eccrypto needs — SHA-512 hash, HMAC-SHA256, AES-256-CBC cipher — so
+// it takes the createHash/createHmac/createCipheriv branch and never touches
+// SubtleCrypto. Guarded so it no-ops if a real implementation ever appears.
+//
+// NB: require(), not a top-level import. These packages pull in readable-stream,
+// which reads `process.version` at module-eval time (see the process shim above)
+// — so they must load AFTER that shim runs, not during the hoisted-import phase.
+const cryptoObj = globalThis.crypto as unknown as
+  | Record<string, unknown>
+  | undefined;
+if (cryptoObj && typeof cryptoObj.createHash !== "function") {
+  // require (not import) is deliberate here — deferring these to run AFTER the
+  // process shim above, not at the hoisted-import phase — so the rule is off.
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const createHash = require("create-hash");
+  const createHmac = require("create-hmac");
+  const { createCipheriv, createDecipheriv } = require("browserify-aes");
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  cryptoObj.createHash = createHash;
+  cryptoObj.createHmac = createHmac;
+  cryptoObj.createCipheriv = createCipheriv;
+  cryptoObj.createDecipheriv = createDecipheriv;
+}
