@@ -1,15 +1,11 @@
-import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
+import { useState } from "react";
+import { View, Text, Pressable, StyleSheet, Linking, Modal } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import { NETWORKS, type UiNetwork } from "../lib/networks.js";
+import { useNetwork } from "../lib/network-context.js";
 import { colors, radii, spacing, fonts } from "../lib/theme.js";
 
 const ORDER: UiNetwork[] = ["mainnet", "signet"];
-
-interface FooterProps {
-  network: UiNetwork;
-  onChange: (network: UiNetwork) => void;
-}
 
 const legalLinks = [
   { href: "https://horizon.market/terms", label: "Terms of Service" },
@@ -70,42 +66,35 @@ function TelegramIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+/** Gear / settings glyph (lucide `Settings`) — opens the network picker. */
+function GearIcon({ size = 16, color = colors.muted }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} />
+    </Svg>
+  );
+}
+
 /**
  * Compact site footer (mobile-adapted version of the web app's footer): the
- * mainnet ⇄ signet network switch, a Legal links row, brand mark + social icons,
- * and the copyright line. Rendered OUTSIDE <HorizonMarketProvider> (so it
- * survives the provider's key={network} remount), inside the SafeAreaView.
+ * brand mark + Legal links + social icons, then a bottom line with the copyright
+ * (left) and a discreet gear (right) that opens the mainnet ⇄ signet network
+ * picker. Rendered at the end of each screen's scroll so it's only seen once the
+ * user scrolls to the bottom; reads the network from {@link useNetwork}.
  */
-export function Footer({ network, onChange }: FooterProps) {
-  const insets = useSafeAreaInsets();
+export function Footer() {
+  const { network, setNetwork } = useNetwork();
+  const [networkOpen, setNetworkOpen] = useState(false);
 
   return (
-    <View
-      style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}
-    >
-      {/* Network switch */}
-      <View style={styles.networkRow}>
-        <Text style={styles.label}>Network</Text>
-        <View style={styles.segmentGroup}>
-          {ORDER.map((n) => {
-            const active = n === network;
-            return (
-              <Pressable
-                key={n}
-                onPress={() => {
-                  if (!active) onChange(n);
-                }}
-                style={[styles.segment, active && styles.segmentActive]}
-              >
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                  {NETWORKS[n].label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
+    <View style={styles.footer}>
       {/* Legal links + brand + socials */}
       <View style={styles.linksRow}>
         <HorizonLogo size={24} />
@@ -134,9 +123,52 @@ export function Footer({ network, onChange }: FooterProps) {
         </View>
       </View>
 
-      <Text style={styles.copyright}>
-        © {new Date().getFullYear()} Unspendable Labs. All rights reserved.
-      </Text>
+      {/* Copyright (left) + discreet network gear (right) */}
+      <View style={styles.bottomRow}>
+        <Text style={styles.copyright}>
+          © {new Date().getFullYear()} Unspendable Labs. All rights reserved.
+        </Text>
+        <Pressable
+          onPress={() => setNetworkOpen(true)}
+          style={styles.gearButton}
+          hitSlop={8}
+          accessibilityLabel={`Network: ${NETWORKS[network].label}`}
+        >
+          <GearIcon size={16} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      {/* Network picker */}
+      <Modal
+        visible={networkOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNetworkOpen(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setNetworkOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Network</Text>
+            {ORDER.map((n) => {
+              const active = n === network;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => {
+                    if (!active) setNetwork(n);
+                    setNetworkOpen(false);
+                  }}
+                  style={[styles.netOption, active && styles.netOptionActive]}
+                >
+                  <Text style={[styles.netOptionText, active && styles.netOptionTextActive]}>
+                    {NETWORKS[n].label}
+                  </Text>
+                  {active && <Text style={styles.netCheck}>✓</Text>}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -144,57 +176,12 @@ export function Footer({ network, onChange }: FooterProps) {
 const styles = StyleSheet.create({
   footer: {
     gap: spacing.sm,
-    paddingTop: spacing.sm,
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-
-  networkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-
-  label: {
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: colors.muted,
-    fontFamily: fonts.sansSemiBold,
-  },
-
-  segmentGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 2,
-    gap: 2,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.full,
-  },
-
-  segment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-    borderRadius: radii.full,
-  },
-
-  segmentActive: {
-    backgroundColor: colors.primary,
-  },
-
-  segmentText: {
-    fontSize: 12,
-    color: colors.mutedStrong,
-    fontFamily: fonts.sansSemiBold,
-  },
-
-  segmentTextActive: {
-    color: colors.primaryForeground,
   },
 
   linksRow: {
@@ -234,10 +221,79 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
 
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+
   copyright: {
+    flex: 1,
     fontSize: 11,
-    textAlign: "center",
     color: colors.muted,
     fontFamily: fonts.sans,
+  },
+
+  gearButton: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.sm,
+  },
+
+  /* Network picker modal */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.md,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxWidth: 320,
+    gap: spacing.xs,
+    padding: spacing.md,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: radii.lg,
+  },
+
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: fonts.sansBold,
+    color: colors.foreground,
+    marginBottom: spacing.xs,
+  },
+
+  netOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.sm,
+  },
+
+  netOptionActive: {
+    backgroundColor: colors.primary,
+  },
+
+  netOptionText: {
+    fontSize: 14,
+    color: colors.foreground,
+    fontFamily: fonts.sansSemiBold,
+  },
+
+  netOptionTextActive: {
+    color: colors.primaryForeground,
+  },
+
+  netCheck: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.primaryForeground,
   },
 });
