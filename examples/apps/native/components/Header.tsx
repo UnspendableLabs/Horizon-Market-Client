@@ -109,28 +109,36 @@ function CreditsRow({
 export function Header({ onOpenWallet }: HeaderProps) {
   const { addresses, logout, credits, freeCredits, signInError } =
     useHorizonMarket();
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [sellOpen, setSellOpen] = useState(false);
-  const [walletOpen, setWalletOpen] = useState(false);
+
+  // One modal instance with a "mode" discriminator, NOT three sibling <Modal>s.
+  // On iOS each RN <Modal> is presented as its own UIViewController/window; mounting
+  // several and — on login success — dismissing one while presenting another in the
+  // same tick (the old setLoginOpen(false) + setSellOpen(true)) wedges iOS's
+  // presentation: a transparent modal window is left on top that swallows every tap,
+  // so the header's Sell/Wallet buttons stop responding with no press feedback.
+  // Android uses a different presentation model, so it never reproduced there.
+  // Keeping ONE modal mounted and only swapping its content (login → sell) never
+  // dismisses/re-presents natively, so there's no race.
+  const [modalMode, setModalMode] = useState<null | "login" | "sell" | "wallet">(
+    null,
+  );
+  const closeModal = () => setModalMode(null);
 
   // "Open wallet" jumps to the wallet screen — close the menu first so it isn't
   // left floating over the new view.
   const handleOpenWallet = () => {
-    setWalletOpen(false);
+    closeModal();
     onOpenWallet();
   };
 
   const handleSell = () => {
-    if (addresses) {
-      setSellOpen(true);
-    } else {
-      setLoginOpen(true);
-    }
+    setModalMode(addresses ? "sell" : "login");
   };
 
+  // Swap the open modal's content from login → sell in place (the modal stays
+  // presented; no native dismiss/re-present, which is the part iOS chokes on).
   const handleLoginSuccess = () => {
-    setLoginOpen(false);
-    setSellOpen(true);
+    setModalMode("sell");
   };
 
   // Disconnect must clear *both* sessions: Horizon Market's local state (hides
@@ -164,7 +172,7 @@ export function Header({ onOpenWallet }: HeaderProps) {
           {addresses && (
             <TouchableOpacity
               style={styles.walletButton}
-              onPress={() => setWalletOpen(true)}
+              onPress={() => setModalMode("wallet")}
               activeOpacity={0.85}
             >
               <WalletIcon size={20} color={colors.foreground} />
@@ -173,67 +181,72 @@ export function Header({ onOpenWallet }: HeaderProps) {
         </View>
       </View>
 
-      {/* Login modal */}
+      {/* One shared modal (see the modalMode note above). Its title + content
+          switch on the active mode; login → sell swaps content in place without a
+          native re-present. The sell view is kept mounted on success so its result
+          screen (success message + "New order" / "Close") is shown. */}
       <Modal
-        open={loginOpen}
-        onClose={() => setLoginOpen(false)}
-        title="Login or sign up"
+        open={modalMode !== null}
+        onClose={closeModal}
+        title={
+          modalMode === "login"
+            ? "Login or sign up"
+            : modalMode === "sell"
+              ? "Sell"
+              : "Wallet"
+        }
       >
-        {/* No onError handler: keep the modal open on failure so LoginPanel's own
-            inline "✗ {message}" error surface is shown (mirrors the web Header). */}
-        <LoginPanel
-          getPrivateKey={getPrivateKey}
-          onSuccess={handleLoginSuccess}
-        />
-      </Modal>
-
-      {/* Sell modal — kept open on success so the result screen (success message
-          + "New order" / "Close") is shown; "Close" dismisses the modal. */}
-      <Modal open={sellOpen} onClose={() => setSellOpen(false)} title="Sell">
-        <SellOrderForm onClose={() => setSellOpen(false)} />
-      </Modal>
-
-      {/* Wallet modal */}
-      <Modal open={walletOpen} onClose={() => setWalletOpen(false)} title="Wallet">
-        {addresses && (
-          <>
-            <AddressRow label="Segwit (P2WPKH)" value={addresses.p2wpkh} />
-            {addresses.p2tr && (
-              <AddressRow label="Taproot (P2TR)" value={addresses.p2tr} />
-            )}
-          </>
+        {modalMode === "login" && (
+          /* No onError handler: keep the modal open on failure so LoginPanel's own
+             inline "✗ {message}" error surface is shown (mirrors the web Header). */
+          <LoginPanel getPrivateKey={getPrivateKey} onSuccess={handleLoginSuccess} />
         )}
 
-        <View style={styles.walletDivider} />
+        {modalMode === "sell" && <SellOrderForm onClose={closeModal} />}
 
-        <CreditsRow
-          credits={credits}
-          freeCredits={freeCredits}
-          signInError={signInError}
-        />
+        {modalMode === "wallet" && (
+          <>
+            {addresses && (
+              <>
+                <AddressRow label="Segwit (P2WPKH)" value={addresses.p2wpkh} />
+                {addresses.p2tr && (
+                  <AddressRow label="Taproot (P2TR)" value={addresses.p2tr} />
+                )}
+              </>
+            )}
 
-        <View style={styles.walletDivider} />
+            <View style={styles.walletDivider} />
 
-        {/* Compact balance summary (BTC / XCP / KOR / ZELD) from the SDK. */}
-        <WalletBalanceSummary />
+            <CreditsRow
+              credits={credits}
+              freeCredits={freeCredits}
+              signInError={signInError}
+            />
 
-        <View style={styles.walletDivider} />
+            <View style={styles.walletDivider} />
 
-        {/* Footer: Disconnect (left) + Open wallet (right). */}
-        <View style={styles.walletFooter}>
-          <TouchableOpacity
-            onPress={() => {
-              setWalletOpen(false);
-              void handleLogout();
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.disconnectText}>Disconnect</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleOpenWallet} activeOpacity={0.7}>
-            <Text style={styles.openWalletText}>Open wallet →</Text>
-          </TouchableOpacity>
-        </View>
+            {/* Compact balance summary (BTC / XCP / KOR / ZELD) from the SDK. */}
+            <WalletBalanceSummary />
+
+            <View style={styles.walletDivider} />
+
+            {/* Footer: Disconnect (left) + Open wallet (right). */}
+            <View style={styles.walletFooter}>
+              <TouchableOpacity
+                onPress={() => {
+                  closeModal();
+                  void handleLogout();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.disconnectText}>Disconnect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleOpenWallet} activeOpacity={0.7}>
+                <Text style={styles.openWalletText}>Open wallet →</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </Modal>
     </>
   );

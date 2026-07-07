@@ -199,6 +199,19 @@ export function SellOrderForm({
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // The numeric fields are UNCONTROLLED (defaultValue, no `value`). Passing a
+  // controlled `value` makes React write the field's text down to the native input
+  // on every re-render; on iOS/Fabric that write races the keystroke and wipes the
+  // character just typed — the field looks like it clears on every key. (Android
+  // keeps its own native EditText text, so it never reproduced there.) With no
+  // `value` prop nothing is written back to native mid-typing, so the input can't be
+  // clobbered; onChangeText still pushes the sanitized value up to the controller,
+  // which owns validation and the confirm/review step. The only programmatic set
+  // while the form is mounted is the Max button, which bumps `qtyNonce` to remount
+  // the quantity field so its defaultValue re-applies; New-order reset and the
+  // confirm round-trip re-mount the whole form, so those need no nonce.
+  const [qtyNonce, setQtyNonce] = useState(0);
+
   if (step === "form") {
     return (
       <View style={[common.panelBody, style, stylesProp?.root]}>
@@ -262,7 +275,8 @@ export function SellOrderForm({
           <View>
             <Text style={[common.label, stylesProp?.label]}>Quantity</Text>
             <TextInput
-              value={formValues.quantity}
+              key={`qty-${qtyNonce}`}
+              defaultValue={formValues.quantity}
               onChangeText={(t) =>
                 setFormValues({ quantity: t.replace(/[^0-9.]/g, "") })
               }
@@ -273,7 +287,10 @@ export function SellOrderForm({
             />
             {maxQuantity && (
               <Pressable
-                onPress={() => setFormValues({ quantity: maxQuantity })}
+                onPress={() => {
+                  setFormValues({ quantity: maxQuantity });
+                  setQtyNonce((n) => n + 1);
+                }}
                 style={[sheet.maxButton, stylesProp?.buttonSecondary]}
               >
                 <Text
@@ -288,7 +305,7 @@ export function SellOrderForm({
         <View>
           <Text style={[common.label, stylesProp?.label]}>Price (sats)</Text>
           <TextInput
-            value={formValues.priceSats}
+            defaultValue={formValues.priceSats}
             onChangeText={(t) =>
               setFormValues({ priceSats: t.replace(/[^0-9]/g, "") })
             }
