@@ -39,14 +39,15 @@ export interface OtherGroup {
 }
 
 /**
- * The address to receive an asset on: Kontor NFTs and ordinals land on Taproot,
- * everything else (BTC, Counterparty tokens) on Segwit.
+ * The address to receive an asset on: Kontor assets (KOR token + Kontor NFTs)
+ * and ordinals land on Taproot, everything else (BTC, Counterparty tokens) on
+ * Segwit.
  */
 export function depositTargetFor(
   type: DepositType,
   addresses: { p2wpkh: string; p2tr?: string },
 ): { label: string; address: string } {
-  if (type === "ordinal" || type === "kontor-nft") {
+  if (type === "ordinal" || type === "kontor-nft" || type === "kor") {
     return {
       label: "Taproot (P2TR)",
       address: addresses.p2tr ?? addresses.p2wpkh,

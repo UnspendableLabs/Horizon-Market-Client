@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Linking,
-  Modal,
   Pressable,
-  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -29,6 +27,7 @@ import { useCommonSheet } from "../internal/styles.native.js";
 import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
 import { useSellReview } from "../internal/useSellReview.js";
 import type { ResolvedTheme } from "../theme.js";
+import { Modal } from "./Modal.native.js";
 import {
   WorkflowProgress,
   type WorkflowProgressStyles,
@@ -66,27 +65,40 @@ export interface SellOrderFormProps {
 
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
+    // Mirrors the toolbar filter/sort control (Dropdown.native trigger): a
+    // bordered row with the value on the left and a chevron on the right, so the
+    // asset picker reads as the same control as the market's filter & sort.
     dropdown: {
-      padding: theme.spacing.sm,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
       backgroundColor: theme.colors.background,
       borderWidth: theme.borderWidth,
       borderColor: theme.colors.border,
       borderRadius: theme.radii.sm,
     },
+    // Avatar + label grouped on the left of the trigger; flexShrink lets the
+    // label truncate instead of pushing the chevron off the row.
+    triggerValue: {
+      flexShrink: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
     dropdownText: {
+      flexShrink: 1,
       color: theme.colors.text,
       fontSize: theme.typography.fontSizeBase,
+      fontWeight: "500",
+    },
+    chevron: {
+      color: theme.colors.textMuted,
+      fontSize: theme.typography.fontSizeSm,
     },
     placeholder: { color: theme.colors.textMuted },
-    modalContainer: { flex: 1, justifyContent: "flex-end" },
-    modalBackdrop: { backgroundColor: "rgba(0,0,0,0.5)" },
-    modalSheet: {
-      backgroundColor: theme.colors.surface,
-      borderTopLeftRadius: theme.radii.lg,
-      borderTopRightRadius: theme.radii.lg,
-      padding: theme.spacing.md,
-      maxHeight: "80%",
-    },
     sectionHeader: {
       paddingVertical: theme.spacing.sm,
       color: theme.colors.textMuted,
@@ -187,13 +199,6 @@ export function SellOrderForm({
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // The shared controller owns the grouping/order/filtering; map its groups to
-  // the SectionList `{title,data}` shape.
-  const sections = useMemo(
-    () => assetGroups.map((g) => ({ title: g.label, data: g.options })),
-    [assetGroups],
-  );
-
   if (step === "form") {
     return (
       <View style={[common.panelBody, style, stylesProp?.root]}>
@@ -220,18 +225,32 @@ export function SellOrderForm({
           <Pressable
             onPress={() => setPickerOpen(true)}
             style={[sheet.dropdown, stylesProp?.dropdown]}
+            accessibilityRole="button"
+            accessibilityLabel="Select asset"
           >
-            <Text
-              style={[
-                sheet.dropdownText,
-                !formValues.asset && sheet.placeholder,
-                stylesProp?.dropdownText,
-              ]}
-            >
-              {formValues.asset
-                ? describeAsset(formValues.asset)
-                : assetPlaceholder}
-            </Text>
+            <View style={sheet.triggerValue}>
+              {formValues.asset && (
+                <AssetAvatar
+                  asset={formValues.asset}
+                  imageUrl={assetImageUrl(baseUrl, formValues.asset)}
+                  size={24}
+                  radius={12}
+                />
+              )}
+              <Text
+                numberOfLines={1}
+                style={[
+                  sheet.dropdownText,
+                  !formValues.asset && sheet.placeholder,
+                  stylesProp?.dropdownText,
+                ]}
+              >
+                {formValues.asset
+                  ? describeAsset(formValues.asset)
+                  : assetPlaceholder}
+              </Text>
+            </View>
+            <Text style={sheet.chevron}>▾</Text>
           </Pressable>
         </View>
         {nonFatalErrors.length > 0 && (
@@ -296,27 +315,27 @@ export function SellOrderForm({
           </Text>
         </Pressable>
 
+        {/* Asset picker: reuses the shared centered Modal (same overlay as the
+            market's filter/sort dropdowns) instead of a bottom sheet. Rendered as
+            plain grouped Views rather than a SectionList since the Modal already
+            wraps its body in a ScrollView (nesting a VirtualizedList would warn)
+            and the list only holds the signed-in user's own assets. */}
         <Modal
-          visible={pickerOpen}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setPickerOpen(false)}
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          title="Select asset"
         >
-          <View style={sheet.modalContainer}>
-            <Pressable
-              style={[StyleSheet.absoluteFill, sheet.modalBackdrop]}
-              onPress={() => setPickerOpen(false)}
-            />
-            <View style={sheet.modalSheet} onStartShouldSetResponder={() => true}>
-              <SectionList
-                sections={sections}
-                keyExtractor={(item) => assetKey(item)}
-                keyboardShouldPersistTaps="handled"
-                renderSectionHeader={({ section }) => (
-                  <Text style={sheet.sectionHeader}>{section.title}</Text>
-                )}
-                renderItem={({ item }: { item: AssetOption }) => (
+          {assetGroups.length === 0 ? (
+            <Text style={sheet.placeholder}>
+              {isFetching ? "Loading your assets…" : "No assets to sell"}
+            </Text>
+          ) : (
+            assetGroups.map((group) => (
+              <View key={group.label}>
+                <Text style={sheet.sectionHeader}>{group.label}</Text>
+                {group.options.map((item: AssetOption) => (
                   <Pressable
+                    key={assetKey(item)}
                     onPress={() => {
                       setFormValues({ asset: item });
                       setPickerOpen(false);
@@ -340,15 +359,10 @@ export function SellOrderForm({
                       {describeAsset(item)}
                     </Text>
                   </Pressable>
-                )}
-                ListEmptyComponent={
-                  <Text style={sheet.placeholder}>
-                    {isFetching ? "Loading your assets…" : "No assets to sell"}
-                  </Text>
-                }
-              />
-            </View>
-          </View>
+                ))}
+              </View>
+            ))
+          )}
         </Modal>
       </View>
     );

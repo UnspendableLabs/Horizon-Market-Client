@@ -112,8 +112,36 @@ export function commonSheet(theme: ResolvedTheme) {
     },
     swapToolbar: {
       flexDirection: "row" as const,
-      alignItems: "center" as const,
+      // `stretch` so every control on the row (the filter/sort Dropdown triggers
+      // and the "My swaps" toggle) renders at exactly the same height.
+      alignItems: "stretch" as const,
       gap: theme.spacing.sm,
+    },
+    // "My swaps" toggle sized to sit inline with the filter/sort dropdowns —
+    // same border, radius and vertical padding as the Dropdown.native trigger.
+    toolbarToggle: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      backgroundColor: theme.colors.background,
+      borderWidth: theme.borderWidth,
+      borderColor: theme.colors.border,
+      borderRadius: theme.radii.sm,
+    },
+    toolbarToggleActive: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    toolbarToggleText: {
+      color: theme.colors.text,
+      fontSize: theme.typography.fontSizeBase,
+      fontWeight: "500" as const,
+    },
+    toolbarToggleTextActive: {
+      color: theme.colors.primaryForeground,
+      fontWeight: "600" as const,
     },
     filterTabActive: {
       paddingHorizontal: theme.spacing.md,
