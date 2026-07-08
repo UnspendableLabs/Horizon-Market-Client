@@ -3,7 +3,7 @@ import pc from "picocolors";
 import type { OpenSellOrderParams } from "@unspendablelabs/horizon-market-client";
 import { globalArgs } from "../context.js";
 import { CliError, runCommand } from "../lib/output.js";
-import { getNetworkConfig, mempoolApiBase } from "../lib/networks.js";
+import { getNetworkConfig, mempoolApiBase, mempoolTxUrl } from "../lib/networks.js";
 import { requireKeystore } from "../lib/keystore.js";
 import { unlockWallet } from "../lib/wallet.js";
 import { createClient } from "../lib/client.js";
@@ -215,15 +215,27 @@ export const sellCommand = defineCommand({
       }
       await confirmAction(cli, "List this sell order?");
 
-      const { swap, created } = await client.openSellOrder(params, {
+      const { swap, created, transactions } = await client.openSellOrder(params, {
         onProgress: makeProgress(cli),
       });
 
+      // `transactions` are the on-chain txs the listing broadcast — an `asset` tx
+      // (counterparty attach/reveal, zeld transfer, Kontor attach reveal) and/or a
+      // standalone `fee` payment. Empty when it reused an existing UTXO with the fee
+      // waived by a credit: nothing hit the chain, so there's no tx to link.
+      const links = transactions.flatMap((t) => {
+        const url = mempoolTxUrl(cfg, t.txid);
+        return url ? [{ kind: t.kind, url }] : [];
+      });
+
       return {
-        json: { swap, created, cost },
+        json: { swap, created, cost, transactions: links },
         human: () => {
           console.log(pc.green(`\n✔ Listed ${created ? "(new)" : "(existing)"} — swap ${swap.id}`));
-          console.log(pc.dim(`  funded: ${swap.funded}`));
+          for (const link of links) {
+            const label = links.length > 1 ? `${link.kind.padEnd(5)} ` : "";
+            console.log(pc.dim(`  ${label}${link.url}`));
+          }
         },
       };
     });

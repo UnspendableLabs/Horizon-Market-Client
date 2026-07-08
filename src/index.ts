@@ -30,7 +30,11 @@ export type {
 } from "./workflows/sell-kontor.js";
 export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
 export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
-export type { PsbtSellOrderParams } from "./workflows/sell.js";
+export type {
+  PsbtSellOrderParams,
+  SellBroadcastTx,
+  SellBroadcastTxKind,
+} from "./workflows/sell.js";
 
 // Error class
 export { HorizonMarketApiError } from "./api/http.js";

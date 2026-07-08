@@ -221,7 +221,8 @@ export const listCommand = defineCommand({
           });
           for (const s of swaps) {
             table.push([
-              truncate(s.id, 6, 4),
+              // Full id, untruncated — it's the value you paste into `buy --order`.
+              s.id,
               s.listingType,
               assetLabel(s),
               displayQuantity(s),

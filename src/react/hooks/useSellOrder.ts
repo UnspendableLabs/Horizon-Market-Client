@@ -4,6 +4,7 @@ import type {
   AtomicSwap,
   WorkflowProgressEvent,
 } from "../../types/index.js";
+import type { SellBroadcastTx } from "../../workflows/sell.js";
 import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
 import { buildSellOrderParams } from "../internal/sellFormValidation.js";
 import type { OpenSellOrderParams } from "../../workflows/sell.js";
@@ -27,6 +28,13 @@ const initialForm: SellOrderFormValues = {
 export interface SellOrderResult {
   swap: AtomicSwap;
   created: boolean;
+  /**
+   * On-chain transactions the listing broadcast — an `"asset"` tx (attach/reveal,
+   * zeld transfer, or Kontor attach reveal) and/or a standalone `"fee"` payment.
+   * Empty when the listing reused an existing UTXO and broadcast nothing (live
+   * immediately).
+   */
+  transactions: SellBroadcastTx[];
 }
 
 export interface UseSellOrderOptions {

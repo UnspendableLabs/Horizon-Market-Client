@@ -32,6 +32,7 @@ import {
   openSellOrder as workflowOpenSellOrder,
   type OpenSellOrderParams,
   type PsbtSellOrderParams,
+  type SellBroadcastTx,
 } from "./workflows/sell.js";
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
@@ -711,9 +712,16 @@ export class HorizonMarketClient {
   /**
    * Open a sell order: sell-quote → sign → create listing.
    *
-   * Returns `{ swap, created }` where `created: true` on HTTP 201 (new listing),
-   * `created: false` when ZELD idempotency returns HTTP 200 with an existing open
-   * listing (same `psbt_hex`, `price`, and `asset_quantity`).
+   * Returns `{ swap, created, transactions }` where `created: true` on HTTP 201 (new
+   * listing), `created: false` when ZELD idempotency returns HTTP 200 with an
+   * existing open listing (same `psbt_hex`, `price`, and `asset_quantity`).
+   *
+   * `transactions` lists the on-chain transactions this listing broadcast so callers
+   * can surface a mempool link per tx: an `"asset"` tx (counterparty attach/reveal,
+   * zeld transfer, or Kontor attach reveal) and/or a standalone `"fee"` payment tx.
+   * It is empty when the listing reused an existing UTXO and broadcast nothing (e.g.
+   * an already-attached balance whose fee was waived by a credit): such a listing is
+   * live immediately.
    *
    * Throws `HorizonMarketApiError` with status **409** (`Conflicting zeld listing`)
    * when a conflicting open ZELD listing exists for the same seller UTXO.
@@ -724,7 +732,11 @@ export class HorizonMarketClient {
   async openSellOrder(
     params: OpenSellOrderParams,
     options?: WorkflowOptions,
-  ): Promise<{ swap: AtomicSwap; created: boolean }> {
+  ): Promise<{
+    swap: AtomicSwap;
+    created: boolean;
+    transactions: SellBroadcastTx[];
+  }> {
     if (params.listingType === "kontor") {
       // Resolve the ctx first: it runs `assertKontorRuntime()` and throws a clean
       // `KontorUnavailableError` on WASM-less engines *before* importing the
