@@ -4,7 +4,6 @@ import {
   generateMnemonic,
   validateMnemonic,
   encryptKeystore,
-  DEFAULT_DERIVATION_PATH,
 } from "@unspendablelabs/horizon-market-client";
 import { globalArgs } from "../context.js";
 import { CliError, note, runCommand } from "../lib/output.js";
@@ -31,9 +30,11 @@ export const initCommand = defineCommand({
       description: "Word count for a generated mnemonic: 12 or 24 (default 24)",
       default: "24",
     },
-    path: {
+    account: {
       type: "string",
-      description: "BIP32 derivation path (default m/86'/0'/0'/0/0)",
+      description:
+        "BIP32 account index (Horizon Wallet convention m/{84,86}'/{coin}'/<account>'/0/0; default 0)",
+      default: "0",
     },
     passphrase: {
       type: "string",
@@ -61,6 +62,11 @@ export const initCommand = defineCommand({
         throw new CliError('--words must be "12" or "24"', "BAD_WORDS");
       }
 
+      const account = Number(ctx.args.account);
+      if (!Number.isInteger(account) || account < 0) {
+        throw new CliError("--account must be a non-negative integer", "BAD_ACCOUNT");
+      }
+
       const provided =
         typeof ctx.args.mnemonic === "string" ? ctx.args.mnemonic.trim() : "";
       let mnemonic: string;
@@ -73,25 +79,19 @@ export const initCommand = defineCommand({
         mnemonic = generateMnemonic(words === "12" ? 128 : 256);
       }
 
-      const derivationPath =
-        typeof ctx.args.path === "string" && ctx.args.path
-          ? ctx.args.path
-          : DEFAULT_DERIVATION_PATH;
       const passphrase =
         typeof ctx.args.passphrase === "string" && ctx.args.passphrase
           ? ctx.args.passphrase
           : undefined;
 
-      const wallet = deriveWallet(mnemonic, { path: derivationPath, passphrase });
+      const wallet = deriveWallet(mnemonic, { account, passphrase });
       const password = await resolvePassword(cli, { confirm: true });
       const blob = await encryptKeystore(mnemonic, password);
 
       const stored: StoredKeystore = {
-        version: 1,
+        version: 2,
         network: cfg.uiNetwork,
-        path: derivationPath,
-        publicKey: wallet.publicKey,
-        xOnlyPubkey: wallet.xOnlyPubkey,
+        account,
         addresses: wallet.addresses,
         createdAt: new Date().toISOString(),
         keystore: blob,

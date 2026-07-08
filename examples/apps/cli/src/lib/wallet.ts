@@ -1,5 +1,5 @@
 import {
-  LocalSigner,
+  HDSigner,
   decryptKeystore,
 } from "@unspendablelabs/horizon-market-client";
 import { CliError } from "./output.js";
@@ -11,38 +11,38 @@ export interface AddressPair {
   p2tr: string;
 }
 
-/** Everything derived from a mnemonic at init time (address maps + pubkeys). */
+/** Everything derived from a mnemonic at init time (address maps for both networks). */
 export interface DerivedWallet {
-  publicKey: string;
-  xOnlyPubkey: string;
   addresses: StoredKeystore["addresses"];
 }
 
-function pair(signer: LocalSigner): AddressPair {
-  const a = signer.getAddresses();
+/** Derive the p2wpkh + p2tr address pair for one network via the SDK's `HDSigner`. */
+function pairFor(
+  mnemonic: string,
+  network: "mainnet" | "testnet",
+  opts: { account?: number; passphrase?: string },
+): AddressPair {
+  const a = HDSigner.fromMnemonic(mnemonic, { network, ...opts }).getAddresses();
   if (!a.p2tr) throw new CliError("Failed to derive a P2TR address", "DERIVE_FAILED");
   return { p2wpkh: a.p2wpkh, p2tr: a.p2tr };
 }
 
 /**
- * Derive the wallet material from a mnemonic: the compressed / x-only pubkeys
- * (network-independent) and the p2wpkh + p2tr addresses for BOTH SDK networks.
- * Uses the SDK's `LocalSigner.fromMnemonic` — no crypto is re-implemented here.
+ * Derive the wallet's addresses from a mnemonic for BOTH SDK networks, following
+ * the Horizon Wallet convention (BIP84 segwit + BIP86 taproot, `coin_type` per
+ * network) via the SDK's `HDSigner` — no crypto is re-implemented here. Because
+ * the coin-type differs by network, mainnet and testnet use different keys and
+ * are derived independently.
  */
 export function deriveWallet(
   mnemonic: string,
-  opts: { path?: string; passphrase?: string } = {},
+  opts: { account?: number; passphrase?: string } = {},
 ): DerivedWallet {
-  const mainnet = LocalSigner.fromMnemonic(mnemonic, { network: "mainnet", ...opts });
-  const testnet = LocalSigner.fromMnemonic(mnemonic, { network: "testnet", ...opts });
-  const { publicKey, xOnlyPubkey } = mainnet.getAddresses();
-  if (!xOnlyPubkey) {
-    throw new CliError("Failed to derive an x-only pubkey", "DERIVE_FAILED");
-  }
   return {
-    publicKey,
-    xOnlyPubkey,
-    addresses: { mainnet: pair(mainnet), testnet: pair(testnet) },
+    addresses: {
+      mainnet: pairFor(mnemonic, "mainnet", opts),
+      testnet: pairFor(mnemonic, "testnet", opts),
+    },
   };
 }
 
@@ -57,16 +57,16 @@ export function walletAddresses(
 /** Result of decrypting + re-deriving a wallet for a write operation. */
 export interface UnlockedWallet {
   mnemonic: string;
-  signer: LocalSigner;
+  signer: HDSigner;
   addresses: AddressPair;
   /** Derivation options to forward to `createClient` so the client's signer matches. */
-  mnemonicOptions: { path: string; passphrase?: string };
+  mnemonicOptions: { account: number; passphrase?: string };
 }
 
 /**
  * Decrypt the keystore's mnemonic with `password` (delegated to the SDK's
- * `decryptKeystore`) and rebuild the signer for `sdkNetwork`. Verifies the
- * re-derived public key matches the stored one — catching a wrong BIP39
+ * `decryptKeystore`) and rebuild the `HDSigner` for `sdkNetwork`. Verifies the
+ * re-derived addresses match the ones stored at init — catching a wrong BIP39
  * passphrase (a wrong password already fails inside `decryptKeystore`).
  */
 export async function unlockWallet(
@@ -76,25 +76,28 @@ export async function unlockWallet(
   passphrase: string | undefined,
 ): Promise<UnlockedWallet> {
   const mnemonic = await decryptKeystore(stored.keystore, password);
-  const derivation = { path: stored.path, passphrase };
-  const signer = LocalSigner.fromMnemonic(mnemonic, {
+  const account = stored.account;
+  const signer = HDSigner.fromMnemonic(mnemonic, {
     network: sdkNetwork,
-    ...derivation,
+    account,
+    passphrase,
   });
   const addrs = signer.getAddresses();
-  if (addrs.publicKey !== stored.publicKey) {
-    // The re-derived key doesn't match the one stored at init. Either a BIP39
-    // passphrase is missing, or a wrong/extra one is being applied — check the
-    // --passphrase flag / $HORIZON_PASSPHRASE against how the wallet was created.
+  const expected = stored.addresses[sdkNetwork];
+  if (addrs.p2wpkh !== expected.p2wpkh || addrs.p2tr !== expected.p2tr) {
+    // The re-derived addresses don't match the ones stored at init. Either a
+    // BIP39 passphrase is missing, or a wrong/extra one is being applied — check
+    // the --passphrase flag / $HORIZON_PASSPHRASE against how the wallet was created.
     throw new CliError(
-      "Re-derived key does not match the stored wallet — check your BIP39 passphrase (--passphrase / $HORIZON_PASSPHRASE).",
+      "Re-derived addresses do not match the stored wallet — check your BIP39 passphrase (--passphrase / $HORIZON_PASSPHRASE).",
       "DERIVATION_MISMATCH",
     );
   }
+  if (!addrs.p2tr) throw new CliError("Failed to derive a P2TR address", "DERIVE_FAILED");
   return {
     mnemonic,
     signer,
-    addresses: pair(signer),
-    mnemonicOptions: passphrase ? { path: stored.path, passphrase } : { path: stored.path },
+    addresses: { p2wpkh: addrs.p2wpkh, p2tr: addrs.p2tr },
+    mnemonicOptions: passphrase ? { account, passphrase } : { account },
   };
 }

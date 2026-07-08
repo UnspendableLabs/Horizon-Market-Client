@@ -39,6 +39,21 @@ export function formatSats(sats: number): string {
   return Math.round(sats).toLocaleString("en-US");
 }
 
+/**
+ * Format an asset quantity for display. Divisible assets (Counterparty divisible,
+ * ZELD) carry their quantity in base units (×1e8) — scale down and strip trailing
+ * zeros ("100000000" → "1", "150000000" → "1.5"). Indivisible assets are a literal
+ * unit count. Mirrors the app's `formatQuantity`.
+ */
+export function formatAssetQuantity(quantity: bigint, divisible: boolean): string {
+  if (!divisible) return quantity.toLocaleString("en-US");
+  const whole = quantity / SATS_PER_BTC;
+  const remainder = quantity % SATS_PER_BTC;
+  if (remainder === 0n) return whole.toLocaleString("en-US");
+  const dec = remainder.toString().padStart(8, "0").replace(/0+$/, "");
+  return `${whole.toLocaleString("en-US")}.${dec}`;
+}
+
 /** USD currency string for a sats amount, or null without a price. */
 export function formatUsd(
   sats: number,

@@ -55,17 +55,17 @@ describe("resolveInscriptionUtxo", () => {
 });
 
 describe("fetchInscriptionUtxos", () => {
-  it("enumerates inscriptions across addresses and resolves their utxos", async () => {
+  it("enumerates inscriptions across addresses and resolves their utxos + numbers", async () => {
     const fetchImpl = stubFetch({
       [`${ORD}/address/addrA`]: { inscriptions: ["i1", "i2"] },
       [`${ORD}/address/addrB`]: { inscriptions: [] },
-      [`${ORD}/inscription/i1`]: { satpoint: "t1:0:0" },
+      [`${ORD}/inscription/i1`]: { satpoint: "t1:0:0", number: 42 },
       [`${ORD}/inscription/i2`]: { satpoint: "t2:1:0" },
     });
     const utxos = await fetchInscriptionUtxos(fetchImpl, ORD, ["addrA", "addrB"]);
     expect(utxos).toEqual([
-      { inscriptionId: "i1", utxoId: "t1:0", address: "addrA" },
-      { inscriptionId: "i2", utxoId: "t2:1", address: "addrA" },
+      { inscriptionId: "i1", utxoId: "t1:0", inscriptionNumber: 42, address: "addrA" },
+      { inscriptionId: "i2", utxoId: "t2:1", inscriptionNumber: null, address: "addrA" },
     ]);
   });
 

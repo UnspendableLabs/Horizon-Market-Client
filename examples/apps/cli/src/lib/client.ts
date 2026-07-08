@@ -4,7 +4,7 @@ import type { NetworkConfig } from "./networks.js";
 /** Options for building a client — pass `mnemonic` for write ops, omit for read-only. */
 export interface CreateClientOptions {
   mnemonic?: string;
-  mnemonicOptions?: { path?: string; passphrase?: string };
+  mnemonicOptions?: { account?: number; passphrase?: string };
 }
 
 /**

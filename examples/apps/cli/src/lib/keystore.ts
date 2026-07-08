@@ -4,27 +4,26 @@ import { CliError } from "./output.js";
 import type { UiNetwork } from "./networks.js";
 
 /**
- * On-disk keystore record. `publicKey` / `addresses` are stored in the CLEAR so
- * read-only commands (`list`, `balances`) work without a password; the mnemonic
- * itself lives ONLY inside `keystore` — an encrypted blob produced by the SDK's
+ * On-disk keystore record. `addresses` are stored in the CLEAR so read-only
+ * commands (`list`, `balances`) work without a password; the mnemonic itself
+ * lives ONLY inside `keystore` — an encrypted blob produced by the SDK's
  * `encryptKeystore` (scrypt + AES-256-GCM). This module does file I/O only; all
  * encryption is delegated to the SDK.
  *
- * Addresses are pre-derived for BOTH networks at `init` time (the wallet is a
- * single key; only the address prefix differs by network), so a read-only
- * command with a `--network` override resolves addresses keylessly.
+ * Derivation follows the Horizon Wallet convention (SDK `HDSigner`): a BIP84 key
+ * backs the p2wpkh address and a BIP86 key backs the p2tr address, both at the
+ * hardened `account` level, with `coin_type` per network (0' mainnet, 1' testnet
+ * /signet). Because the key now depends on the network's coin-type, addresses
+ * are pre-derived for BOTH networks at `init` time so a read-only command with a
+ * `--network` override resolves addresses keylessly.
  */
 export interface StoredKeystore {
-  version: 1;
+  version: 2;
   /** The network chosen at init (the default when no `--network` override). */
   network: UiNetwork;
-  /** BIP32 derivation path used at init. */
-  path: string;
-  /** Compressed secp256k1 public key hex (network-independent). */
-  publicKey: string;
-  /** x-only public key hex (network-independent). */
-  xOnlyPubkey: string;
-  /** p2wpkh + p2tr addresses per SDK network. */
+  /** BIP32 `account` index used at init (the hardened `<account>'` path level). */
+  account: number;
+  /** p2wpkh (BIP84) + p2tr (BIP86) addresses per SDK network. */
   addresses: {
     mainnet: { p2wpkh: string; p2tr: string };
     testnet: { p2wpkh: string; p2tr: string };
@@ -55,8 +54,15 @@ export function readKeystore(homeDir: string): StoredKeystore | null {
     throw new CliError(`Corrupt keystore at ${file} (invalid JSON)`, "KEYSTORE_CORRUPT");
   }
   const ks = parsed as StoredKeystore;
-  if (ks?.version !== 1 || !ks.keystore || !ks.addresses) {
-    throw new CliError(`Unrecognized keystore format at ${file}`, "KEYSTORE_CORRUPT");
+  if (ks?.version !== 2 || !ks.keystore || !ks.addresses) {
+    const hint =
+      (ks as { version?: unknown } | null)?.version === 1
+        ? " (this is an old v1 single-key keystore — re-run `horizon init --force` to re-create it with the Horizon Wallet derivation)"
+        : "";
+    throw new CliError(
+      `Unrecognized keystore format at ${file}${hint}`,
+      "KEYSTORE_CORRUPT",
+    );
   }
   return ks;
 }

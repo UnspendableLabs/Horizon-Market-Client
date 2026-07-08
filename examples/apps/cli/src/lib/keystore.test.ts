@@ -15,11 +15,9 @@ const isPosix = process.platform !== "win32";
 
 function fixture(overrides: Partial<StoredKeystore> = {}): StoredKeystore {
   return {
-    version: 1,
+    version: 2,
     network: "signet",
-    path: "m/86'/0'/0'/0/0",
-    publicKey: "02" + "ab".repeat(32),
-    xOnlyPubkey: "ab".repeat(32),
+    account: 0,
     addresses: {
       mainnet: { p2wpkh: "bc1qmain", p2tr: "bc1pmain" },
       testnet: { p2wpkh: "tb1qtest", p2tr: "tb1ptest" },
@@ -84,9 +82,18 @@ describe("keystore file I/O", () => {
   it("rejects an unrecognized format (wrong version)", () => {
     fs.writeFileSync(
       keystorePath(home),
-      JSON.stringify({ ...fixture(), version: 2 }),
+      JSON.stringify({ ...fixture(), version: 3 }),
       { mode: 0o600 },
     );
     expect(() => readKeystore(home)).toThrow(/Unrecognized keystore format/);
+  });
+
+  it("rejects an old v1 single-key keystore with a re-init hint", () => {
+    fs.writeFileSync(
+      keystorePath(home),
+      JSON.stringify({ ...fixture(), version: 1 }),
+      { mode: 0o600 },
+    );
+    expect(() => readKeystore(home)).toThrow(/old v1 single-key keystore/);
   });
 });

@@ -12,7 +12,13 @@ import { getNetworkConfig } from "../lib/networks.js";
 import { readKeystore } from "../lib/keystore.js";
 import { walletAddresses } from "../lib/wallet.js";
 import { createClient } from "../lib/client.js";
-import { formatAge, formatSats, satsToBtc, truncate } from "../lib/format.js";
+import {
+  formatAge,
+  formatAssetQuantity,
+  formatSats,
+  satsToBtc,
+  truncate,
+} from "../lib/format.js";
 
 type SortOption = "latest" | "oldest" | "cheapest" | "expensive" | "cheapest_unit";
 
@@ -47,6 +53,41 @@ export function assetLabel(s: AtomicSwap): string {
     return s.kontorAssetKind === "nft" ? "NFT" : "KOR";
   }
   return s.assetName ?? "—";
+}
+
+/**
+ * A swap's asset is divisible (8-decimal base units) when it's a ZELD listing or
+ * Counterparty flags `assetDivisibility`. Mirrors the app's swap-list helpers.
+ */
+function swapDivisible(s: AtomicSwap): boolean {
+  return s.listingType === "zeld" || s.assetDivisibility === true;
+}
+
+/**
+ * Quantity cell for a swap row. Divisible assets store `assetQuantity` in base
+ * units (×1e8) and must be scaled down; Kontor tokens carry their amount in
+ * `kontorAmount`; 1-of-1 items (ordinals, Kontor NFTs) show "1". Exported for tests.
+ */
+export function displayQuantity(s: AtomicSwap): string {
+  if (s.listingType === "kontor") {
+    return s.kontorAssetKind === "nft" ? "1" : (s.kontorAmount ?? "1");
+  }
+  if (s.listingType === "ordinal") return "1";
+  if (s.assetQuantity == null) return "1";
+  return formatAssetQuantity(s.assetQuantity, swapDivisible(s));
+}
+
+/**
+ * Per-unit price cell (sats per whole unit). The server computes `pricePerUnit`
+ * as `price * 1e8 / rawQuantity`, so for a divisible asset it already reads as
+ * sats per whole unit, but for an indivisible asset it's over-scaled by 1e8 and
+ * must be divided back down. Mirrors the app's `swapDisplayPricePerUnit`.
+ * Exported for tests.
+ */
+export function displayPricePerUnit(s: AtomicSwap): string {
+  if (s.pricePerUnit == null) return "—";
+  const perUnit = swapDivisible(s) ? s.pricePerUnit : s.pricePerUnit / 1e8;
+  return perUnit.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
 /** Numeric sort key for a swap under a given `orderBy`. Exported for tests. */
@@ -183,10 +224,10 @@ export const listCommand = defineCommand({
               truncate(s.id, 6, 4),
               s.listingType,
               assetLabel(s),
-              s.assetQuantity != null ? s.assetQuantity.toString() : "1",
+              displayQuantity(s),
               formatSats(s.price),
               satsToBtc(BigInt(s.price)),
-              s.pricePerUnit != null ? formatSats(s.pricePerUnit) : "—",
+              displayPricePerUnit(s),
               truncate(s.sellerAddress, 6, 4),
               formatAge(s.createdAt),
             ]);

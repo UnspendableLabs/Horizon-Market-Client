@@ -6,10 +6,11 @@ reference (alongside the web and native apps) and proves the whole flow works
 **without React** — useful for bots, CI and cron.
 
 Everything cryptographic comes from the SDK: mnemonic generation / validation /
-derivation (`generateMnemonic`, `validateMnemonic`, `LocalSigner.fromMnemonic`)
-and encrypted keystore blobs (`encryptKeystore` / `decryptKeystore`, scrypt +
-AES-256-GCM). The CLI only does **file I/O** (`~/.horizon/keystore.json`, dir
-`0700` / file `0600`) and terminal UX.
+Horizon-Wallet-compatible derivation (`generateMnemonic`, `validateMnemonic`,
+`HDSigner.fromMnemonic` — BIP84 segwit + BIP86 taproot) and encrypted keystore
+blobs (`encryptKeystore` / `decryptKeystore`, scrypt + AES-256-GCM). The CLI only
+does **file I/O** (`~/.horizon/keystore.json`, dir `0700` / file `0600`) and
+terminal UX.
 
 ## Install
 
@@ -87,15 +88,19 @@ Enabled by `--json` **or** whenever stdout is not a TTY (pipes, CI). In this mod
 
 ## Notes & limitations
 
-- **Single-key model** — one derived key backs both the Segwit (p2wpkh) and
-  Taproot (p2tr) address (the same model as the web/native web3auth apps). The
-  Segwit address will therefore **not** match the first receive address of a
-  standard BIP84 wallet.
+- **Horizon Wallet derivation** — the CLI derives addresses exactly like the
+  Horizon Wallet browser extension: a **BIP84** key (`m/84'/<coin>'/<account>'/0/0`)
+  backs the Segwit (p2wpkh) address and a **BIP86** key
+  (`m/86'/<coin>'/<account>'/0/0`) backs the Taproot (p2tr) address, with
+  `coin_type` per network (`0'` mainnet, `1'` signet/testnet). Import the same
+  mnemonic here and in Horizon Wallet and you get the **same** Segwit *and*
+  Taproot addresses. Pick the account with `--account N` (default 0).
 - Address routing per asset mirrors the SDK's `depositTargetFor`:
   ordinal / Kontor-NFT / KOR → Taproot; BTC / Counterparty / ZELD → Segwit.
+  Kontor/KOR sign with the BIP86 (Taproot) key.
 - **BIP39 passphrase** — not stored. If you created the wallet with
   `--passphrase`, supply it again on write commands via `--passphrase` or
-  `HORIZON_PASSPHRASE` (the CLI verifies the re-derived key matches).
+  `HORIZON_PASSPHRASE` (the CLI verifies the re-derived addresses match).
 - **ZELD** is mainnet-only. **Kontor** writes (sell/buy/send) are wired but
   experimental on signet.
 - The mnemonic is printed **only once**, at `init`.

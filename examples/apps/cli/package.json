@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx watch src/index.ts",
-    "horizon": "tsx src/index.ts --",
+    "horizon": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

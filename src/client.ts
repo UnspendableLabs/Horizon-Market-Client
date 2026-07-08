@@ -27,7 +27,7 @@ import {
   type CreditBalance,
   type WalletTokenSignIn,
 } from "./api/auth.js";
-import { LocalSigner, type Signer } from "./crypto/signer.js";
+import { LocalSigner, HDSigner, type Signer } from "./crypto/signer.js";
 import {
   openSellOrder as workflowOpenSellOrder,
   type OpenSellOrderParams,
@@ -200,7 +200,7 @@ export class HorizonMarketClient {
     } else if (options.privateKey) {
       this.signer = new LocalSigner(options.privateKey, this.network);
     } else if (options.mnemonic) {
-      this.signer = LocalSigner.fromMnemonic(options.mnemonic, {
+      this.signer = HDSigner.fromMnemonic(options.mnemonic, {
         network: this.network,
         ...options.mnemonicOptions,
       });

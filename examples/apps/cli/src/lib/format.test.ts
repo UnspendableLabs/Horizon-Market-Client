@@ -3,6 +3,7 @@ import {
   toBaseUnits,
   satsToBtc,
   formatSats,
+  formatAssetQuantity,
   formatUsd,
   truncate,
   formatAge,
@@ -58,6 +59,25 @@ describe("formatSats", () => {
   it("group-separates thousands", () => {
     expect(formatSats(3450)).toBe("3,450");
     expect(formatSats(1_000_000)).toBe("1,000,000");
+  });
+});
+
+describe("formatAssetQuantity", () => {
+  it("scales divisible base units down to whole units, stripping trailing zeros", () => {
+    expect(formatAssetQuantity(100_000_000n, true)).toBe("1");
+    expect(formatAssetQuantity(150_000_000n, true)).toBe("1.5");
+    expect(formatAssetQuantity(10_000n, true)).toBe("0.0001");
+    expect(formatAssetQuantity(1n, true)).toBe("0.00000001");
+    expect(formatAssetQuantity(300_000_000_000n, true)).toBe("3,000");
+  });
+
+  it("shows indivisible quantities as a literal, group-separated count", () => {
+    expect(formatAssetQuantity(1n, false)).toBe("1");
+    expect(formatAssetQuantity(2_000n, false)).toBe("2,000");
+  });
+
+  it("round-trips with toBaseUnits for divisible amounts", () => {
+    expect(formatAssetQuantity(toBaseUnits("2.3456789", true), true)).toBe("2.3456789");
   });
 });
 

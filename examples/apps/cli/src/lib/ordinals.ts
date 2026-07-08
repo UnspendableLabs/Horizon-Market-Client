@@ -10,6 +10,9 @@ import { CliError } from "./output.js";
 export interface OrdinalUtxo {
   inscriptionId: string;
   utxoId: string;
+  /** Ordinal inscription number (e.g. 269326 → "#269326"), or null if the ord
+   * server didn't report one. */
+  inscriptionNumber: number | null;
   address: string;
 }
 
@@ -28,17 +31,26 @@ function satpointToUtxoId(satpoint: unknown): string | null {
   return satpoint.slice(0, lastColon);
 }
 
-async function inscriptionUtxo(
+/** Holding UTXO (`txid:vout`) + inscription number, from `/inscription/{id}`. */
+interface InscriptionInfo {
+  utxoId: string | null;
+  number: number | null;
+}
+
+async function inscriptionInfo(
   fetchImpl: typeof globalThis.fetch,
   ordRoot: string,
   id: string,
-): Promise<string | null> {
+): Promise<InscriptionInfo> {
   const res = await fetchImpl(`${ordRoot}/inscription/${encodeURIComponent(id)}`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Ord API returned ${res.status} for inscription ${id}`);
-  const body = (await res.json()) as { satpoint?: unknown };
-  return satpointToUtxoId(body.satpoint);
+  const body = (await res.json()) as { satpoint?: unknown; number?: unknown };
+  return {
+    utxoId: satpointToUtxoId(body.satpoint),
+    number: typeof body.number === "number" && Number.isFinite(body.number) ? body.number : null,
+  };
 }
 
 /** Enumerate every inscription the wallet holds across `addresses`. */
@@ -58,8 +70,10 @@ export async function fetchInscriptionUtxos(
       const ids = extractInscriptionIds(await res.json());
       const resolved = await Promise.all(
         ids.map(async (id): Promise<OrdinalUtxo | null> => {
-          const utxoId = await inscriptionUtxo(fetchImpl, ordRoot, id);
-          return utxoId ? { inscriptionId: id, utxoId, address: addr } : null;
+          const { utxoId, number } = await inscriptionInfo(fetchImpl, ordRoot, id);
+          return utxoId
+            ? { inscriptionId: id, utxoId, inscriptionNumber: number, address: addr }
+            : null;
         }),
       );
       return resolved.filter((x): x is OrdinalUtxo => x !== null);
@@ -78,7 +92,7 @@ export async function resolveInscriptionUtxo(
   if (!ordRoot) {
     throw new CliError("No ord API base URL configured for this network", "NO_ORD_API");
   }
-  const utxoId = await inscriptionUtxo(fetchImpl, ordRoot, inscriptionId);
+  const { utxoId } = await inscriptionInfo(fetchImpl, ordRoot, inscriptionId);
   if (!utxoId) {
     throw new CliError(`Could not resolve inscription ${inscriptionId}`, "INSCRIPTION_UNRESOLVED");
   }

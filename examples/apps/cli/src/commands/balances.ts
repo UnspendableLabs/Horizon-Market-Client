@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
+import Table from "cli-table3";
 import type {
   CounterpartyBalance,
   KontorHoldings,
@@ -15,7 +16,7 @@ import { fetchBtcBalanceSats } from "../lib/btc-balance.js";
 import { fetchBtcUsd } from "../lib/prices.js";
 import { fetchInscriptionUtxos, type OrdinalUtxo } from "../lib/ordinals.js";
 import { resolvePassword } from "../lib/prompt.js";
-import { formatUsd, kv, satsToBtc } from "../lib/format.js";
+import { formatAssetQuantity, formatUsd, satsToBtc, truncate } from "../lib/format.js";
 
 function settled<T>(r: PromiseSettledResult<T>, fallback: T): T {
   return r.status === "fulfilled" ? r.value : fallback;
@@ -84,32 +85,85 @@ export const balancesCommand = defineCommand({
           kontor,
         },
         human: () => {
-          console.log(pc.bold(`\nBalances on ${cfg.label}`));
-          const btcLine = btcSats == null ? pc.dim("unavailable") : `${satsToBtc(btcSats)} BTC`;
-          const usd = btcSats != null ? formatUsd(Number(btcSats), btcUsd) : null;
-          console.log(kv("BTC", `${btcLine}${usd ? pc.dim(`  (${usd})`) : ""}`));
+          console.log(pc.bold(`\nWallet on ${cfg.label}`));
 
-          if (counterparty.length) {
-            console.log(pc.bold("\nCounterparty"));
-            for (const b of counterparty) console.log(kv(b.asset, b.quantityNormalized));
-          }
-          if (zeld.length) {
-            console.log(pc.bold("\nZELD"));
-            for (const b of zeld) console.log(kv("ZELD", b.quantityNormalized));
-          }
-          if (kontor && (kontor.kor || kontor.nfts.length)) {
-            console.log(pc.bold("\nKontor"));
-            if (kontor.kor) console.log(kv("KOR", kontor.kor.amount));
-            for (const n of kontor.nfts) console.log(kv("NFT", n.nftId));
-          }
-          if (ordinals.length) {
-            console.log(pc.bold(`\nOrdinals (${ordinals.length})`));
-            for (const o of ordinals) console.log(kv(o.utxoId, o.inscriptionId));
-          }
+          const makeTable = (head: string[]) =>
+            new Table({
+              head: head.map((h) => pc.dim(h)),
+              style: { head: [], border: [] },
+            });
 
           console.log(pc.bold("\nAddresses"));
-          console.log(kv("Segwit (p2wpkh)", addrs.p2wpkh));
-          console.log(kv("Taproot (p2tr)", addrs.p2tr));
+          const addrTable = makeTable(["Type", "Address"]);
+          addrTable.push(["Segwit (p2wpkh)", addrs.p2wpkh]);
+          addrTable.push(["Taproot (p2tr)", addrs.p2tr]);
+          console.log(addrTable.toString());
+
+          // Headline balances — BTC / XCP / KOR / ZELD, always shown ("0" when
+          // none), mirroring the wallet page's four featured tokens.
+          const usd = btcSats != null ? formatUsd(Number(btcSats), btcUsd) : null;
+          const btcCell =
+            btcSats == null
+              ? pc.dim("unavailable")
+              : `${satsToBtc(btcSats)}${usd ? pc.dim(`  (${usd})`) : ""}`;
+
+          // XCP / ZELD are divisible: sum the (possibly multi-address) base-unit
+          // holdings and normalize, matching `useWalletTokenSummary`.
+          const xcp = counterparty.filter((b) => b.asset === "XCP");
+          const xcpAmount = xcp.length
+            ? formatAssetQuantity(xcp.reduce((t, b) => t + b.quantity, 0n), true)
+            : "0";
+          const zeldAmount = zeld.length
+            ? formatAssetQuantity(zeld.reduce((t, b) => t + b.balance, 0n), true)
+            : "0";
+          // KOR needs an unlock (--include-kontor); "—" + a footnote when unread.
+          const korAmount = kontor ? (kontor.kor?.amount ?? "0") : null;
+
+          console.log(pc.bold("Balances"));
+          const balances = makeTable(["Asset", "Balance"]);
+          balances.push(["BTC", btcCell]);
+          balances.push(["XCP", xcpAmount]);
+          balances.push(["KOR", korAmount ?? pc.dim("—")]);
+          balances.push(["ZELD", zeldAmount]);
+          console.log(balances.toString());
+          if (!kontor) {
+            console.log(
+              pc.dim("  KOR + Kontor NFTs not read — pass --include-kontor (signet)."),
+            );
+          }
+
+          // Counterparty holdings (everything but the XCP headline above).
+          const cpOthers = counterparty.filter((b) => b.asset !== "XCP");
+          if (cpOthers.length) {
+            console.log(pc.bold("\nCounterparty"));
+            const t = makeTable(["Asset", "Balance", "Address"]);
+            for (const b of cpOthers) {
+              t.push([b.asset, b.quantityNormalized, truncate(b.address, 6, 4)]);
+            }
+            console.log(t.toString());
+          }
+
+          if (ordinals.length) {
+            console.log(pc.bold(`\nOrdinals (${ordinals.length})`));
+            const t = makeTable(["Inscription", "UTXO"]);
+            for (const o of ordinals) {
+              const label =
+                o.inscriptionNumber != null
+                  ? `#${o.inscriptionNumber.toLocaleString("en-US")}`
+                  : truncate(o.inscriptionId, 10, 6);
+              t.push([label, truncate(o.utxoId, 8, 6)]);
+            }
+            console.log(t.toString());
+          }
+
+          if (kontor && kontor.nfts.length) {
+            console.log(pc.bold(`\nKontor NFTs (${kontor.nfts.length})`));
+            const t = makeTable(["NFT", "Contract"]);
+            for (const n of kontor.nfts) {
+              t.push([truncate(n.nftId, 10, 6), n.contractAddress]);
+            }
+            console.log(t.toString());
+          }
         },
       };
     });

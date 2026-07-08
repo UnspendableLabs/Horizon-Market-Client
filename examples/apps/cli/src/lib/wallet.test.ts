@@ -2,36 +2,34 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  encryptKeystore,
-  DEFAULT_DERIVATION_PATH,
-} from "@unspendablelabs/horizon-market-client";
+import { encryptKeystore } from "@unspendablelabs/horizon-market-client";
 import { deriveWallet, unlockWallet } from "./wallet.js";
 import { writeKeystore, requireKeystore, type StoredKeystore } from "./keystore.js";
 
-// BIP86 golden vector (same as the SDK's crypto/mnemonic.test.ts).
+// Horizon-Wallet golden vector (BIP84 segwit + BIP86 taproot, coin-type per
+// network, account 0). p2tr matches the SDK's crypto/mnemonic.test.ts BIP86
+// vector; p2wpkh comes from the BIP84 path m/84'/<coin>'/0'/0/0.
 const VECTOR_MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const GOLDEN = {
-  publicKey: "03cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
-  xOnlyPubkey: "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
+  // Compressed pubkey of the SegWit (BIP84) key; x-only of the Taproot (BIP86) key.
+  segwitPublicKey:
+    "0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c",
   mainnet: {
-    p2wpkh: "bc1qalwlmdxd2ggue4290ekzxl9tetg56neexr6amw",
+    p2wpkh: "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
     p2tr: "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
   },
   testnet: {
-    p2wpkh: "tb1qalwlmdxd2ggue4290ekzxl9tetg56neev9pwqa",
-    p2tr: "tb1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqp3mvzv",
+    p2wpkh: "tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl",
+    p2tr: "tb1p8wpt9v4frpf3tkn0srd97pksgsxc5hs52lafxwru9kgeephvs7rqlqt9zj",
   },
 };
 
 const PASSWORD = "correct horse battery staple";
 
 describe("deriveWallet", () => {
-  it("derives the golden pubkeys and both addresses for both networks", () => {
+  it("derives the golden Horizon-Wallet addresses for both networks", () => {
     const w = deriveWallet(VECTOR_MNEMONIC);
-    expect(w.publicKey).toBe(GOLDEN.publicKey);
-    expect(w.xOnlyPubkey).toBe(GOLDEN.xOnlyPubkey);
     expect(w.addresses.mainnet).toEqual(GOLDEN.mainnet);
     expect(w.addresses.testnet).toEqual(GOLDEN.testnet);
   });
@@ -40,6 +38,13 @@ describe("deriveWallet", () => {
     expect(deriveWallet(VECTOR_MNEMONIC).addresses).toEqual(
       deriveWallet(VECTOR_MNEMONIC).addresses,
     );
+  });
+
+  it("a different account index yields different addresses", () => {
+    const a0 = deriveWallet(VECTOR_MNEMONIC, { account: 0 }).addresses;
+    const a1 = deriveWallet(VECTOR_MNEMONIC, { account: 1 }).addresses;
+    expect(a1.mainnet.p2wpkh).not.toBe(a0.mainnet.p2wpkh);
+    expect(a1.mainnet.p2tr).not.toBe(a0.mainnet.p2tr);
   });
 });
 
@@ -56,11 +61,9 @@ describe("init → unlock round-trip", () => {
     const wallet = deriveWallet(VECTOR_MNEMONIC, { passphrase });
     const blob = await encryptKeystore(VECTOR_MNEMONIC, PASSWORD);
     const stored: StoredKeystore = {
-      version: 1,
+      version: 2,
       network: "mainnet",
-      path: DEFAULT_DERIVATION_PATH,
-      publicKey: wallet.publicKey,
-      xOnlyPubkey: wallet.xOnlyPubkey,
+      account: 0,
       addresses: wallet.addresses,
       createdAt: new Date().toISOString(),
       keystore: blob,
@@ -76,8 +79,8 @@ describe("init → unlock round-trip", () => {
 
     expect(unlocked.mnemonic).toBe(VECTOR_MNEMONIC);
     expect(unlocked.addresses).toEqual(GOLDEN.mainnet);
-    expect(unlocked.signer.getAddresses().publicKey).toBe(GOLDEN.publicKey);
-    expect(unlocked.mnemonicOptions).toEqual({ path: DEFAULT_DERIVATION_PATH });
+    expect(unlocked.signer.getAddresses().publicKey).toBe(GOLDEN.segwitPublicKey);
+    expect(unlocked.mnemonicOptions).toEqual({ account: 0 });
   });
 
   it("rebuilds testnet addresses when unlocking on signet", async () => {
@@ -93,9 +96,9 @@ describe("init → unlock round-trip", () => {
     ).rejects.toThrow(/wrong password or corrupt data/);
   });
 
-  it("detects a missing BIP39 passphrase via the pubkey mismatch guard", async () => {
-    // Keystore was created WITHOUT a passphrase; unlocking WITH one re-derives a
-    // different key, which the guard catches.
+  it("detects a missing BIP39 passphrase via the address mismatch guard", async () => {
+    // Keystore was created WITHOUT a passphrase; unlocking WITH one re-derives
+    // different keys, which the guard catches.
     await initKeystore();
     await expect(
       unlockWallet(requireKeystore(home), PASSWORD, "mainnet", "surprise"),

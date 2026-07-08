@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import { resolveFetch } from "../api/resolveFetch.js";
 import { HorizonMarketClient } from "../client.js";
 import { DEFAULT_BASE_URL } from "../config.js";
-import { LocalSigner, type Signer } from "../crypto/signer.js";
+import { HDSigner, type Signer } from "../crypto/signer.js";
 import type { Network } from "../types/index.js";
 import {
   resolveTheme,
@@ -176,7 +176,11 @@ export function HorizonMarketProvider({
 
   const initialize = useCallback(
     (privateKey: string | Uint8Array) => {
-      const signer = new LocalSigner(privateKey, network);
+      // Derive addresses via the Horizon Wallet convention (BIP84 segwit + BIP86
+      // taproot) from the web3auth key, bridged through a BIP39 mnemonic. This
+      // matches the CLI: exporting this key as a mnemonic and importing it in the
+      // CLI yields the SAME p2wpkh + p2tr addresses.
+      const signer = HDSigner.fromPrivateKey(privateKey, { network });
       const addresses = signer.getAddresses();
       setAuthState({ signer, addresses });
     },

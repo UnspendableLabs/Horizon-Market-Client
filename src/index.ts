@@ -37,16 +37,29 @@ export { HorizonMarketApiError } from "./api/http.js";
 
 // Signer
 export type { Signer } from "./crypto/signer.js";
-export { LocalSigner } from "./crypto/signer.js";
+// LocalSigner: single-key (web3auth). HDSigner: Horizon-Wallet-compatible HD (BIP84 + BIP86).
+export { LocalSigner, HDSigner } from "./crypto/signer.js";
 
-// Mnemonic / BIP39 (generate, validate, derive → private key)
+// Mnemonic / BIP39 (generate, validate, derive keys, web3auth-key bridge)
 export {
   generateMnemonic,
   validateMnemonic,
   mnemonicToPrivateKey,
+  privateKeyToMnemonic,
+  mnemonicToPrivateKeyEntropy,
+  deriveHorizonWalletKeys,
+  horizonWalletPath,
+  coinTypeForNetwork,
   DEFAULT_DERIVATION_PATH,
+  SEGWIT_PURPOSE,
+  TAPROOT_PURPOSE,
 } from "./crypto/mnemonic.js";
-export type { MnemonicDeriveOptions } from "./crypto/mnemonic.js";
+export type {
+  MnemonicDeriveOptions,
+  HorizonWalletDeriveOptions,
+  HorizonWalletKeys,
+  DerivedKey,
+} from "./crypto/mnemonic.js";
 
 // Cross-platform encrypted keystore helpers (string → string, no file I/O)
 export { encryptKeystore, decryptKeystore } from "./crypto/keystore.js";
