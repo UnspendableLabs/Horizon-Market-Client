@@ -86,6 +86,48 @@ works there).
 > simulator, but it typechecks cleanly (`npx tsc --noEmit`) and the SDK bundle no
 > longer evaluates WASM at load (verified against `dist/react/index.native.js`).
 
+## App lock (biometrics / device passcode)
+
+Once a wallet session exists, the app is gated behind the OS authentication
+sheet — Face ID / Touch ID / fingerprint, with the device passcode/PIN as the
+fallback (the "enter your phone code" escape hatch when biometrics fail). This
+mirrors banking-app behaviour (e.g. Kraken). Implemented with
+[`expo-local-authentication`](https://docs.expo.dev/versions/latest/sdk/local-authentication/):
+
+- **Scope** — only locks when a wallet is connected; browsing the public market
+  with no wallet is never gated (`components/AppLock.tsx` reads the SDK's
+  `addresses` via `<AppLockBridge/>`).
+- **Cold start** — the moment a restored session produces addresses, the lock
+  overlay covers the whole app (Header included) until the OS auth succeeds.
+- **Background** — re-locks after a ~30s grace period in the background, so a
+  quick app-switch doesn't force a re-scan.
+- **Fallback** — `authenticate()` passes `disableDeviceFallback: false`, so iOS
+  offers "Enter Passcode" and Android allows the device credential. A device with
+  no biometrics **and** no passcode can't be gated, so the lock is skipped there
+  (nothing to authenticate against).
+- **Fresh login = unlocked** — an interactive Web3Auth login (`getPrivateKey`
+  with an email) counts as satisfying the lock for that session, so you're not
+  prompted for Face ID on top of the login you just completed. A cold-start
+  *restore* (`getPrivateKey("")`) still requires biometrics. Wired through the
+  tiny `lib/app-lock-events.ts` bridge.
+
+The lock state lives in `AppLockProvider`, mounted **outside**
+`HorizonMarketProvider` so it survives the provider's `key={network}` remount on
+a network switch (otherwise every switch would force a spurious re-auth).
+
+### Privacy screen (app-switcher)
+
+`components/PrivacyScreen.tsx` covers the app with an opaque brand screen whenever
+it leaves the foreground (any non-`active` AppState), so the OS multitasking
+snapshot doesn't leak balances/addresses. It's a JS-only cover — reliable on iOS;
+on Android a native `FLAG_SECURE` would be more airtight but would also block all
+screenshots, which isn't the goal here.
+
+> Requires a native rebuild: `expo-local-authentication` is a native module and
+> the Face ID usage string is added via an `app.json` config plugin, so run
+> `npx expo run:ios` / `npx expo run:android` (or `npx expo prebuild --clean`)
+> after pulling — `expo start` against an old binary won't pick it up.
+
 ## Web3Auth
 
 Login opens the system browser via `expo-web-browser` and returns through the

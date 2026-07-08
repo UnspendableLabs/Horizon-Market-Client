@@ -7,6 +7,8 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700Bold } from "@expo-google-fonts/montserrat";
 import { HorizonMarketProvider, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "../components/Header.js";
+import { AppLockProvider, AppLockBridge } from "../components/AppLock.js";
+import { PrivacyScreen } from "../components/PrivacyScreen.js";
 import { getPrivateKey } from "../lib/web3auth.js";
 import { colors, HORIZON_THEME } from "../lib/theme.js";
 import { NetworkProvider } from "../lib/network-context.js";
@@ -94,29 +96,38 @@ export default function RootLayout() {
       <SafeAreaView style={styles.root}>
         <StatusBar style="light" backgroundColor={colors.background} />
 
-        {/* NetworkProvider sits OUTSIDE the HorizonMarketProvider so it survives
-            the provider's key={network} remount. Each screen now renders the
-            Footer at the bottom of its own scroll (so it's only seen when
-            scrolled to the end) and reads the network from this context. */}
+        {/* NetworkProvider + AppLockProvider both sit OUTSIDE the
+            HorizonMarketProvider so they survive the provider's key={network}
+            remount. AppLockProvider holds the biometric-lock state (raising it on
+            a network switch would force a spurious re-auth); <AppLockBridge/>
+            inside the provider reports wallet presence back up to it, and the lock
+            overlay it renders covers the whole app — Header included. */}
         <NetworkProvider value={{ network, setNetwork: handleNetworkChange }}>
-          <View style={styles.content}>
-            <HorizonMarketProvider
-              key={network}
-              network={sdkNetwork}
-              {...providerConfig}
-              theme={HORIZON_THEME}
-            >
-              <SessionRestorer />
-              <Header onOpenWallet={() => router.push("/wallet")} />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: colors.background },
-                }}
-              />
-            </HorizonMarketProvider>
-          </View>
+          <AppLockProvider>
+            <View style={styles.content}>
+              <HorizonMarketProvider
+                key={network}
+                network={sdkNetwork}
+                {...providerConfig}
+                theme={HORIZON_THEME}
+              >
+                <SessionRestorer />
+                <AppLockBridge />
+                <Header onOpenWallet={() => router.push("/wallet")} />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.background },
+                  }}
+                />
+              </HorizonMarketProvider>
+            </View>
+          </AppLockProvider>
         </NetworkProvider>
+
+        {/* Above everything: an opaque brand cover shown whenever the app leaves
+            the foreground, so the OS app-switcher snapshot can't leak balances. */}
+        <PrivacyScreen />
       </SafeAreaView>
     </SafeAreaProvider>
   );

@@ -31,6 +31,7 @@
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import type { WEB3AUTH_NETWORK_TYPE } from "@web3auth/base";
+import { markFreshLogin } from "./app-lock-events.js";
 
 const REDIRECT_URL = "horizonmarket://auth";
 
@@ -131,6 +132,11 @@ export async function getPrivateKey(email: string): Promise<string> {
   if (!web3auth.connected || !web3auth.provider) {
     throw new Error("Web3Auth connection failed");
   }
+
+  // Interactive login just succeeded → the user is authenticated, so the native
+  // app-lock counts as unlocked for this session (no Face ID prompt on top of the
+  // login they just did). Restores — getPrivateKey("") above — never reach here.
+  markFreshLogin();
 
   return readPrivateKey(web3auth);
 }
