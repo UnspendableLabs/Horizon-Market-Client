@@ -81,6 +81,13 @@ const mempoolLink: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const trackList: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: webTokens.spacingXs,
+  fontSize: webTokens.fontSizeSm,
+};
+
 export function SellOrderForm({
   defaultSatsPerVbyte,
   initialAsset,
@@ -263,9 +270,9 @@ export function SellOrderForm({
   }
 
   // result step. `resultView` (from the shared controller) carries the
-  // "submitted vs live" messaging and the pending-tx mempool link so web and
+  // "submitted vs live" messaging and the broadcast-tx mempool links so web and
   // native render identical result states.
-  const { pendingConfirmation, trackUrl, successMessage } = resultView;
+  const { pendingConfirmation, trackTxs, successMessage } = resultView;
 
   return (
     <div className={cx(classNames?.root, className)} style={root}>
@@ -281,19 +288,21 @@ export function SellOrderForm({
         <div className={classNames?.success} style={pendingNote}>
           Your order will appear in the marketplace once its transaction is
           confirmed on-chain.
-          {trackUrl && (
-            <>
-              {" "}
-              <a
-                href={trackUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={mempoolLink}
-              >
-                Track it on mempool.space →
-              </a>
-            </>
-          )}
+        </div>
+      )}
+      {trackTxs.length > 0 && (
+        <div className={classNames?.success} style={trackList}>
+          {trackTxs.map((tx) => (
+            <a
+              key={tx.url}
+              href={tx.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={mempoolLink}
+            >
+              {tx.label}
+            </a>
+          ))}
         </div>
       )}
       <ResultActions

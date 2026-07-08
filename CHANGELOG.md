@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mnemonic / BIP39 support (pure-JS, web/native-safe): `generateMnemonic`, `validateMnemonic`, `mnemonicToPrivateKey`, `DEFAULT_DERIVATION_PATH` (BIP86 `m/86'/0'/0'/0/0`), and `LocalSigner.fromMnemonic(...)`. New `HorizonMarketClient` options `mnemonic` / `mnemonicOptions` (precedence `signer` > `privateKey` > `mnemonic`). A single derived key backs both the p2wpkh and p2tr address, so the Segwit address will not match a standard BIP84 wallet
+- Cross-platform encrypted keystore helpers (string → string, no file I/O): `encryptKeystore` / `decryptKeystore` (scrypt + AES-256-GCM) and the `Keystore` type, reusable in Node, the browser and React Native
+- `examples/apps/cli` — a scriptable `horizon` CLI (`init` / `list` / `balances` / `sell` / `buy` / `send`) built on the SDK, demonstrating a full non-React integration
 - Optional progress callbacks on workflow methods (`openSellOrder`, `fillSwaps`, `delistSwap`) via a second `WorkflowOptions` argument with `onProgress`
 - Exported progress types: `WorkflowProgressEvent`, `WorkflowOptions`, `OpenSellOrderStep`, `FillSwapsStep`, `DelistSwapStep`
 - React / React Native UI layer (`@unspendablelabs/horizon-market-client/react`): `HorizonMarketProvider`, headless hooks, and platform components (`LoginPanel`, `SwapList`, `SellOrderForm`, `SwapConfirmation`, `WorkflowProgress`)

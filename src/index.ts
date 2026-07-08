@@ -30,14 +30,44 @@ export type {
 } from "./workflows/sell-kontor.js";
 export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
 export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
-export type { PsbtSellOrderParams } from "./workflows/sell.js";
+export type {
+  PsbtSellOrderParams,
+  SellBroadcastTx,
+  SellBroadcastTxKind,
+} from "./workflows/sell.js";
 
 // Error class
 export { HorizonMarketApiError } from "./api/http.js";
 
 // Signer
 export type { Signer } from "./crypto/signer.js";
-export { LocalSigner } from "./crypto/signer.js";
+// LocalSigner: single-key (web3auth). HDSigner: Horizon-Wallet-compatible HD (BIP84 + BIP86).
+export { LocalSigner, HDSigner } from "./crypto/signer.js";
+
+// Mnemonic / BIP39 (generate, validate, derive keys, web3auth-key bridge)
+export {
+  generateMnemonic,
+  validateMnemonic,
+  mnemonicToPrivateKey,
+  privateKeyToMnemonic,
+  mnemonicToPrivateKeyEntropy,
+  deriveHorizonWalletKeys,
+  horizonWalletPath,
+  coinTypeForNetwork,
+  DEFAULT_DERIVATION_PATH,
+  SEGWIT_PURPOSE,
+  TAPROOT_PURPOSE,
+} from "./crypto/mnemonic.js";
+export type {
+  MnemonicDeriveOptions,
+  HorizonWalletDeriveOptions,
+  HorizonWalletKeys,
+  DerivedKey,
+} from "./crypto/mnemonic.js";
+
+// Cross-platform encrypted keystore helpers (string → string, no file I/O)
+export { encryptKeystore, decryptKeystore } from "./crypto/keystore.js";
+export type { Keystore } from "./crypto/keystore.js";
 
 // Domain types
 export type {

@@ -54,6 +54,25 @@ export interface PsbtSellOrderParams {
  */
 export type OpenSellOrderParams = PsbtSellOrderParams | KontorSellParams;
 
+/** Kind of on-chain transaction a sell listing broadcast. */
+export type SellBroadcastTxKind = "asset" | "fee";
+
+/**
+ * An on-chain transaction broadcast while opening a sell listing. Callers surface
+ * a mempool link per entry; an empty list means the listing opened with no new
+ * transaction (an existing UTXO reused, fee waived by a credit).
+ */
+export interface SellBroadcastTx {
+  /** Bitcoin txid. */
+  txid: string;
+  /**
+   * `"asset"` — the attach/reveal (counterparty), transfer (zeld) or attach
+   * reveal (Kontor) that funds the listing's asset UTXO.
+   * `"fee"` — a standalone platform-fee payment tx.
+   */
+  kind: SellBroadcastTxKind;
+}
+
 /**
  * openSellOrder — quote → sign → submit
  *
@@ -74,7 +93,11 @@ export async function openSellOrder(
   network: "mainnet" | "testnet",
   btcNetwork: btc.Network,
   options?: WorkflowOptions,
-): Promise<{ swap: AtomicSwap; created: boolean }> {
+): Promise<{
+  swap: AtomicSwap;
+  created: boolean;
+  transactions: SellBroadcastTx[];
+}> {
   const progress = new WorkflowProgressReporter(
     "openSellOrder",
     options?.onProgress,
@@ -189,9 +212,29 @@ export async function openSellOrder(
     createSwap(http, createReq),
   );
 
+  // On-chain transactions this listing broadcast, so callers can surface a
+  // mempool link per tx. A prep PSBT means a NEW asset UTXO tx was broadcast
+  // (counterparty attach/reveal or zeld transfer); its txid is the asset UTXO's.
+  // A separate fee PSBT (feePayment.psbtHex — not the folded-fee id-only branch)
+  // is broadcast by the server, which returns its txid on the swap. A listing
+  // that reused an existing UTXO with the fee waived (credit) broadcasts neither,
+  // so the array is empty and the listing is live immediately.
+  const transactions: SellBroadcastTx[] = [];
+  if (quote.prepPsbt) {
+    const assetTxId = quote.assetUtxoId.split(":")[0];
+    if (assetTxId) transactions.push({ txid: assetTxId, kind: "asset" });
+  }
+  if (feePayment?.psbtHex) {
+    const feeTxId = result.swap.onChainPayment?.txid;
+    if (feeTxId && !transactions.some((t) => t.txid === feeTxId)) {
+      transactions.push({ txid: feeTxId, kind: "fee" });
+    }
+  }
+
   return {
     swap: result.swap,
     created: result.created,
+    transactions,
   };
 }
 

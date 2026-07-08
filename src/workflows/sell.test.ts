@@ -81,6 +81,9 @@ describe("openSellOrder", () => {
 
     expect(result.created).toBe(true);
     expect(result.swap.id).toBe("swap_abc");
+    // No prep (existing UTXO) and the swap carries no on-chain fee-payment txid
+    // (on_chain_payment: null) → nothing to track.
+    expect(result.transactions).toEqual([]);
 
     // signPsbtHex called twice: swap + fee
     expect(signer.signPsbtHex).toHaveBeenCalledTimes(2);
@@ -344,6 +347,10 @@ describe("openSellOrder", () => {
     );
 
     expect(result.created).toBe(true);
+    // Zeld transfer prep broadcasts the send tx → one asset tx (its UTXO's txid).
+    expect(result.transactions).toEqual([
+      { txid: "zeldpreptxid", kind: "asset" },
+    ]);
 
     // signPsbtHex: prep + swap only (no fee_psbt)
     expect(signPsbtHexFn).toHaveBeenCalledTimes(2);
@@ -433,13 +440,20 @@ describe("openSellOrder", () => {
       signMessage: () => "base64sig",
     };
 
-    await openSellOrder(
+    const result = await openSellOrder(
       { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
       http,
       hybridSigner,
       "mainnet",
       btc.networks.bitcoin,
     );
+
+    // Attach prep broadcasts a new asset UTXO → one asset tx (the reveal txid).
+    // The quote also carries a fee PSBT, but the swap has no on_chain_payment txid
+    // so the fee tx can't be linked here (covered by a dedicated test below).
+    expect(result.transactions).toEqual([
+      { txid: "revealthash", kind: "asset" },
+    ]);
 
     const [, quoteInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
       string,
@@ -449,6 +463,80 @@ describe("openSellOrder", () => {
     expect(quoteBody.asset_utxo_id).toBeUndefined();
     expect(quoteBody.asset_name).toBe("RAREPEPE");
     expect(quoteBody.asset_quantity).toBe(1);
+  });
+
+  it("surfaces the standalone fee payment tx (existing UTXO, no prep)", async () => {
+    // Existing-UTXO counterparty: no prep, but a separate fee PSBT is signed and
+    // the server broadcasts it and echoes its txid on the swap's on_chain_payment.
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_SELL_QUOTE } },
+      {
+        status: 201,
+        body: {
+          data: {
+            ...WIRE_SWAP,
+            on_chain_payment: { id: "ocp_1", confirmed: false, txid: "feetxid" },
+          },
+        },
+      },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signer = makeSigner();
+
+    const result = await openSellOrder(
+      { assetUtxoId: "utxo:0", assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+      http,
+      signer,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    expect(result.transactions).toEqual([{ txid: "feetxid", kind: "fee" }]);
+  });
+
+  it("surfaces both the attach tx and the fee payment tx when the server broadcasts both", async () => {
+    const quoteWithPrep = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: FIXTURE_PSBT_HEX,
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      asset_utxo_id: "revealthash:0",
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithPrep } },
+      {
+        status: 201,
+        body: {
+          data: {
+            ...WIRE_SWAP,
+            asset_utxo_id: "revealthash:0",
+            on_chain_payment: { id: "ocp_1", confirmed: false, txid: "feetxid" },
+          },
+        },
+      },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const hybridSigner: Signer = {
+      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+      signPsbtHex: (hex, indices) =>
+        hex === FIXTURE_PSBT_HEX
+          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+          : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    const result = await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250_000, listingType: "counterparty" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    expect(result.transactions).toEqual([
+      { txid: "revealthash", kind: "asset" },
+      { txid: "feetxid", kind: "fee" },
+    ]);
   });
 
   it("auto-fills sellerAddress from signer P2WPKH when omitted", async () => {
