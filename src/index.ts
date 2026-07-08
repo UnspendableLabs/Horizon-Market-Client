@@ -39,6 +39,19 @@ export { HorizonMarketApiError } from "./api/http.js";
 export type { Signer } from "./crypto/signer.js";
 export { LocalSigner } from "./crypto/signer.js";
 
+// Mnemonic / BIP39 (generate, validate, derive → private key)
+export {
+  generateMnemonic,
+  validateMnemonic,
+  mnemonicToPrivateKey,
+  DEFAULT_DERIVATION_PATH,
+} from "./crypto/mnemonic.js";
+export type { MnemonicDeriveOptions } from "./crypto/mnemonic.js";
+
+// Cross-platform encrypted keystore helpers (string → string, no file I/O)
+export { encryptKeystore, decryptKeystore } from "./crypto/keystore.js";
+export type { Keystore } from "./crypto/keystore.js";
+
 // Domain types
 export type {
   AtomicSwap,

@@ -199,6 +199,11 @@ export class HorizonMarketClient {
       this.signer = options.signer;
     } else if (options.privateKey) {
       this.signer = new LocalSigner(options.privateKey, this.network);
+    } else if (options.mnemonic) {
+      this.signer = LocalSigner.fromMnemonic(options.mnemonic, {
+        network: this.network,
+        ...options.mnemonicOptions,
+      });
     } else {
       this.signer = null;
     }
@@ -207,7 +212,7 @@ export class HorizonMarketClient {
   private assertSigner(): Signer {
     if (!this.signer) {
       throw new Error(
-        "This operation requires authentication. Provide a `privateKey` or `signer`.",
+        "This operation requires authentication. Provide a `mnemonic`, `privateKey`, or `signer`.",
       );
     }
     return this.signer;

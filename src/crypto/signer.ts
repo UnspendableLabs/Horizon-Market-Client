@@ -2,6 +2,7 @@ import * as btc from "bitcoinjs-lib";
 import { ECPair } from "./ecc.js";
 import { signPsbtHex as signPsbtHexImpl } from "./psbt-signer.js";
 import { signBip322 } from "./bip322.js";
+import { mnemonicToPrivateKey } from "./mnemonic.js";
 import { assertKontorRuntime } from "../kontor/runtime.js";
 
 export interface Signer {
@@ -48,6 +49,29 @@ export class LocalSigner implements Signer {
 
     this.network =
       network === "mainnet" ? btc.networks.bitcoin : btc.networks.testnet;
+  }
+
+  /**
+   * Build a {@link LocalSigner} from a BIP39 mnemonic.
+   *
+   * Derives a single secp256k1 key at `path` (default BIP86
+   * `m/86'/0'/0'/0/0`) and — as with a raw private key — exposes BOTH the
+   * p2wpkh and p2tr address from it (`getAddresses()`), matching the example
+   * apps' single-key wallet model.
+   */
+  static fromMnemonic(
+    mnemonic: string,
+    opts: {
+      network?: "mainnet" | "testnet";
+      path?: string;
+      passphrase?: string;
+    } = {},
+  ): LocalSigner {
+    const privateKey = mnemonicToPrivateKey(mnemonic, {
+      path: opts.path,
+      passphrase: opts.passphrase,
+    });
+    return new LocalSigner(privateKey, opts.network ?? "mainnet");
   }
 
   getAddresses(): {

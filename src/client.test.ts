@@ -2,6 +2,56 @@ import { describe, it, expect, vi } from "vitest";
 import { HorizonMarketClient } from "./client.js";
 import { makeFetch, makeSigner } from "./test-utils.js";
 
+// BIP86 golden vector (see crypto/mnemonic.test.ts) — used to prove the client
+// builds a working signer from `mnemonic` alone.
+const VECTOR_MNEMONIC =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const VECTOR_MAINNET_P2TR =
+  "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
+const VECTOR_XONLY =
+  "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115";
+
+describe("HorizonMarketClient mnemonic option", () => {
+  it("builds a signer from a mnemonic and uses its derived addresses", async () => {
+    const fetchFn = makeFetch(200, {
+      data: {
+        swap_psbt: "70736274ff",
+        swap_inputs_to_sign: [0],
+        fee_psbt: null,
+        fee_inputs_to_sign: [],
+        fee_payment_id: "fp_1",
+        fee_waived: false,
+        asset_utxo_id: "utxo:0",
+        asset_utxo_value: 600,
+        prep_psbt: null,
+        prep_inputs_to_sign: [],
+        prep_kind: null,
+      },
+    });
+    const client = new HorizonMarketClient({
+      mnemonic: VECTOR_MNEMONIC,
+      network: "mainnet",
+      fetch: fetchFn,
+    });
+
+    // If no signer were built, this would throw "requires authentication".
+    await client.requestSellQuote({
+      price: 1000,
+      sellerAddress: VECTOR_MAINNET_P2TR,
+      listingType: "ordinal",
+      assetUtxoId: "utxo:0",
+    });
+
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(init.body as string);
+    // seller_pubkey is auto-filled from the mnemonic-derived signer's x-only key.
+    expect(body.seller_pubkey).toBe(VECTOR_XONLY);
+  });
+});
+
 describe("HorizonMarketClient.requestSellQuote", () => {
   it("throws for ZELD on testnet", () => {
     const client = new HorizonMarketClient({

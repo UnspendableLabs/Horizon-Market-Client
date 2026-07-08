@@ -16,6 +16,13 @@ export const DEFAULT_ZELD_API_BASE_URL = "https://api.zeldhash.com";
 export interface HorizonMarketClientOptions {
   /** Private key as hex string (with or without "0x") or raw bytes. Omit when providing `signer`. */
   privateKey?: string | Uint8Array;
+  /**
+   * BIP39 mnemonic. Derived to a single key (both p2wpkh + p2tr) via
+   * `LocalSigner.fromMnemonic`. Precedence: `signer` > `privateKey` > `mnemonic`.
+   */
+  mnemonic?: string;
+  /** Derivation overrides for `mnemonic` (BIP32 `path`, BIP39 `passphrase`). */
+  mnemonicOptions?: { path?: string; passphrase?: string };
   /** Custom signer (hardware wallet, etc.). Takes precedence over `privateKey`. */
   signer?: Signer;
   /** Bitcoin network. Defaults to "mainnet". */

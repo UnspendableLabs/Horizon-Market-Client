@@ -1,0 +1,34 @@
+{
+  "name": "horizon-market-cli",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Example CLI (`horizon`) for the Horizon Market Atomic Swap SDK — init / list / balances / sell / buy / send.",
+  "bin": {
+    "horizon": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/index.ts",
+    "horizon": "tsx src/index.ts --",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@unspendablelabs/horizon-market-client": "file:../../..",
+    "citty": "^0.2.2",
+    "cli-table3": "^0.6.5",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2",
+    "vitest": "^1.6.0"
+  }
+}

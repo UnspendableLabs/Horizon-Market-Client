@@ -251,6 +251,8 @@ if (locked["my-txid:0"]) {
 ```ts
 new HorizonMarketClient({
   privateKey?: string | Uint8Array,  // hex, with or without 0x
+  mnemonic?: string,                 // BIP39 phrase (derived via LocalSigner.fromMnemonic)
+  mnemonicOptions?: { path?, passphrase? }, // derivation overrides for `mnemonic`
   signer?: Signer,                   // custom signer (hardware wallet, etc.)
   network?: "mainnet" | "testnet",   // default: "mainnet"
   baseUrl?: string,                  // default: "https://horizon.market"
@@ -262,6 +264,25 @@ new HorizonMarketClient({
   zeldApiBaseUrl?: string,           // ZELD balance reads (own protocol); default: "https://api.zeldhash.com" (mainnet only)
 })
 ```
+
+Signer precedence when several are given: `signer` > `privateKey` > `mnemonic`.
+
+### Mnemonic & Keystore
+
+Pure-JS helpers (no `node:crypto`, no WASM — usable in Node, the browser and
+React Native with the `react-native-get-random-values` polyfill):
+
+- `generateMnemonic(strength?)` — 128-bit (12 words) or 256-bit (24 words, default) BIP39 phrase
+- `validateMnemonic(mnemonic)` — wordlist + checksum check
+- `mnemonicToPrivateKey(mnemonic, { path?, passphrase? })` — derive a raw secp256k1 key (hex)
+- `LocalSigner.fromMnemonic(mnemonic, { network?, path?, passphrase? })` — a ready signer
+- `DEFAULT_DERIVATION_PATH` — BIP86 `m/86'/0'/0'/0/0` (`coin_type` fixed to 0; network chosen at address time)
+- `encryptKeystore(secret, password, opts?)` / `decryptKeystore(json, password)` — scrypt + AES-256-GCM keystore blobs (string → string; you own storage)
+
+A single derived key backs **both** the p2wpkh and p2tr address (matching the
+web/native web3auth model), so the Segwit address will **not** equal the first
+receive address of a standard BIP84 wallet. See `examples/apps/cli` for an
+end-to-end integration (encrypted `0600` keystore file, `init` / `sell` / `buy` / `send`).
 
 ### Owned-Balance Reads
 
