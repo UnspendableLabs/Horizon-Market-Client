@@ -1,4 +1,4 @@
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef, useState } from "react";
@@ -6,7 +6,6 @@ import { StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700Bold } from "@expo-google-fonts/montserrat";
 import { HorizonMarketProvider, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
-import { Header } from "../components/Header.js";
 import { AppLockProvider, AppLockBridge, useAppLockBoot } from "../components/AppLock.js";
 import { PrivacyScreen } from "../components/PrivacyScreen.js";
 import { getPrivateKey } from "../lib/web3auth.js";
@@ -57,8 +56,6 @@ function SessionRestorer() {
 }
 
 export default function RootLayout() {
-  const router = useRouter();
-
   const [fontsLoaded, fontError] = useFonts({
     Montserrat_400Regular,
     Montserrat_600SemiBold,
@@ -102,7 +99,10 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.root}>
+      {/* The bottom edge is left to the tab bar (it pads for the home indicator
+          itself), so its background reaches the screen edge instead of floating
+          above a safe-area gap. */}
+      <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
         <StatusBar style="light" backgroundColor={colors.background} />
 
         {/* NetworkProvider + AppLockProvider both sit OUTSIDE the
@@ -110,7 +110,9 @@ export default function RootLayout() {
             remount. AppLockProvider holds the biometric-lock state (raising it on
             a network switch would force a spurious re-auth); <AppLockBridge/>
             inside the provider reports wallet presence back up to it, and the lock
-            overlay it renders covers the whole app — Header included. */}
+            overlay it renders covers the whole app — tab bar included. The
+            network switch now lives on the Settings tab, which reads/writes this
+            provider via useNetwork(). */}
         <NetworkProvider value={{ network, setNetwork: handleNetworkChange }}>
           <AppLockProvider>
             <View style={styles.content}>
@@ -122,7 +124,8 @@ export default function RootLayout() {
               >
                 <SessionRestorer />
                 <AppLockBridge />
-                <Header onOpenWallet={() => router.push("/wallet")} />
+                {/* Root stack: the (tabs) group (Buy/Sell/Wallet/Settings, each
+                    with the fixed bottom tab bar) plus the /auth deep-link sink. */}
                 <Stack
                   screenOptions={{
                     headerShown: false,
