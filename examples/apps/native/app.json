@@ -32,6 +32,12 @@
         }
       ],
       [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Use Face ID to unlock your Horizon Market wallet."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0b0b15",

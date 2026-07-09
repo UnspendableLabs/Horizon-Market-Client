@@ -7,7 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts, Montserrat_400Regular, Montserrat_600SemiBold, Montserrat_700Bold } from "@expo-google-fonts/montserrat";
 import { HorizonMarketProvider, useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "../components/Header.js";
-import { AppLockProvider, AppLockBridge } from "../components/AppLock.js";
+import { AppLockProvider, AppLockBridge, useAppLockBoot } from "../components/AppLock.js";
 import { PrivacyScreen } from "../components/PrivacyScreen.js";
 import { getPrivateKey } from "../lib/web3auth.js";
 import { colors, HORIZON_THEME } from "../lib/theme.js";
@@ -32,6 +32,7 @@ void SplashScreen.preventAutoHideAsync();
  */
 function SessionRestorer() {
   const { initialize, addresses } = useHorizonMarket();
+  const reportNoSession = useAppLockBoot();
   const ranRef = useRef(false);
 
   useEffect(() => {
@@ -39,10 +40,18 @@ function SessionRestorer() {
     ranRef.current = true;
     getPrivateKey("")
       .then((key) => {
+        // A found key lands as `addresses` → the app-lock cover hands off to the
+        // lock. No key means there's no session to restore (none cached, expired,
+        // or the auth prompt was declined) — lift the cover so the market shows
+        // instead of hanging on it forever.
         if (key) initialize(key);
+        else reportNoSession();
       })
-      .catch((err) => console.error("Web3Auth session restore failed:", err));
-  }, [initialize, addresses]);
+      .catch((err) => {
+        console.error("Web3Auth session restore failed:", err);
+        reportNoSession();
+      });
+  }, [initialize, addresses, reportNoSession]);
 
   return null;
 }

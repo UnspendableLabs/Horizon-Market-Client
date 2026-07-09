@@ -32,10 +32,55 @@ import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
 import type { WEB3AUTH_NETWORK_TYPE } from "@web3auth/base";
 import { markFreshLogin } from "./app-lock-events.js";
+import {
+  getStoredKey,
+  setStoredKey,
+  clearStoredKey,
+  hasStoredKey,
+} from "./secure-key-store.js";
 
 const REDIRECT_URL = "horizonmarket://auth";
 
 const clientId = process.env.EXPO_PUBLIC_WEB3AUTH_CLIENT_ID ?? "";
+
+// The Web3Auth RN SDK persists its session id under this bare expo-secure-store
+// key (KeyStore.set("sessionId", …) — NOT auth-gated), so we can detect a legacy
+// session at cold start without a biometric prompt or loading the heavy SDK graph.
+const WEB3AUTH_SESSION_KEY = "sessionId";
+
+/**
+ * In-memory copy of the unsealed key for THIS app process. Set the first time we
+ * obtain the key (auth-gated keystore read, Web3Auth restore, or login) and reused
+ * on later probes — crucially across the HorizonMarketProvider's network-switch
+ * remount, so switching networks never re-triggers the biometric prompt. Cleared on
+ * logout; lost on process death, so a genuine cold start re-reads (and re-prompts).
+ */
+let sessionKey: string | null = null;
+
+/**
+ * Fast (no Web3Auth init, no biometric prompt) probe of whether a session is worth
+ * restoring. So the app-lock boot cover can hold until the lock is up instead of
+ * flashing the market, this must be true for EVERY restorable session:
+ *   - our cached raw key (the fast, no-Web3Auth restore path), and
+ *   - a legacy Web3Auth session that predates the key cache — detected via the
+ *     SDK's own un-gated "sessionId" marker, so a pre-existing session still keeps
+ *     the cover up (then hands straight off to the lock once addresses land).
+ * A genuinely logged-out user has neither marker → the cover lifts immediately and
+ * the public market shows without paying Web3Auth's lazy init.
+ */
+export async function hasPersistedSession(): Promise<boolean> {
+  if (sessionKey != null || (await hasStoredKey())) return true;
+  return hasWeb3AuthSession();
+}
+
+/** Cheap presence check for a legacy Web3Auth session — no prompt, no SDK load. */
+async function hasWeb3AuthSession(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(WEB3AUTH_SESSION_KEY)) != null;
+  } catch {
+    return false;
+  }
+}
 
 type Web3AuthModule = typeof import("@web3auth/react-native-sdk");
 type Web3AuthInstance = InstanceType<Web3AuthModule["default"]>;
@@ -100,7 +145,15 @@ async function readPrivateKey(web3auth: Web3AuthInstance): Promise<string> {
   const key = (await web3auth.provider.request({
     method: "private_key",
   })) as string;
-  return key ?? "";
+  const hex = key ?? "";
+  // Single persistence choke point: cache the raw key so future cold starts skip
+  // Web3Auth entirely (see secure-key-store.ts) and reuse it in-memory for the rest
+  // of this session. Both the login and restore paths funnel through here.
+  if (hex) {
+    sessionKey = hex;
+    await setStoredKey(hex);
+  }
+  return hex;
 }
 
 /**
@@ -111,13 +164,35 @@ async function readPrivateKey(web3auth: Web3AuthInstance): Promise<string> {
  * Returns the hex private key, or "" if no session exists.
  */
 export async function getPrivateKey(email: string): Promise<string> {
+  // Fast path: on a restore probe, an already-unsealed key lets us skip loading the
+  // heavy Web3Auth graph (and its network round-trip) entirely.
+  if (!email) {
+    // Already unsealed this session (e.g. a network-switch remount re-probing) →
+    // reuse it with no keystore read, so switching networks never re-prompts.
+    if (sessionKey) return sessionKey;
+    // Cold start: the marker (no prompt) tells us a key exists; only then do we
+    // read it, which triggers the OS auth prompt. A successful read means the user
+    // just passed OS auth to unseal the key — that IS the app-lock unlock for this
+    // cold start (markFreshLogin), so the lock never prompts a second time on top.
+    if (await hasStoredKey()) {
+      const stored = await getStoredKey();
+      if (stored) {
+        sessionKey = stored;
+        markFreshLogin();
+        return stored;
+      }
+      // null → cancelled, or the key was invalidated by a biometric-enrollment
+      // change. Fall through to a Web3Auth restore, which re-seeds the cache.
+    }
+  }
+
   const { web3auth, LOGIN_PROVIDER } = await ensureWeb3Auth();
 
   if (!email) {
-    // Auto-detect an existing session without prompting the user.
-    if (web3auth.connected) {
-      return readPrivateKey(web3auth);
-    }
+    // Auto-detect an existing session without prompting the user. Legacy sessions
+    // (created before the key cache existed) land here; readPrivateKey() then
+    // seeds the cache so the next cold start takes the fast path above.
+    if (web3auth.connected) return readPrivateKey(web3auth);
     return "";
   }
 
@@ -138,16 +213,21 @@ export async function getPrivateKey(email: string): Promise<string> {
   // login they just did). Restores — getPrivateKey("") above — never reach here.
   markFreshLogin();
 
+  // readPrivateKey() caches the raw key here, so the next cold start restores
+  // instantly via the fast path in getPrivateKey() above.
   return readPrivateKey(web3auth);
 }
 
 /**
- * Logs out of Web3Auth, clearing its persisted session (expo-secure-store).
- * Without this, the session survives an app relaunch and the startup probe in
- * App.tsx (getPrivateKey("")) would silently reconnect — so the Disconnect
+ * Logs out: wipes our cached raw key first (the user's revocation model —
+ * disconnect erases the local key), then revokes the Web3Auth session
+ * server-side. Without the latter the session would survive a relaunch and the
+ * startup probe (getPrivateKey("")) could silently reconnect — so the Disconnect
  * button must call this in addition to Horizon Market's own logout.
  */
 export async function logout(): Promise<void> {
+  sessionKey = null;
+  await clearStoredKey();
   const { web3auth } = await ensureWeb3Auth();
   if (web3auth.connected) {
     await web3auth.logout();

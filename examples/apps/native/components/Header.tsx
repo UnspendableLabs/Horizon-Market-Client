@@ -145,13 +145,17 @@ export function Header({ onOpenWallet }: HeaderProps) {
   // the wallet icon) and the Web3Auth session (persisted in expo-secure-store).
   // Skipping the latter lets App.tsx's SessionRestorer silently reconnect on the
   // next mount / network switch.
-  const handleLogout = async () => {
-    try {
-      await web3authLogout();
-    } catch (err) {
-      console.error("Web3Auth logout failed:", err);
-    }
+  //
+  // Update the local UI *first*, then revoke Web3Auth in the background: after a
+  // fast-path cold-start restore, Web3Auth was never initialized this session, so
+  // web3authLogout() pays its multi-second lazy init just to revoke the server
+  // session. Awaiting that before the local logout() would freeze the button for
+  // seconds. web3authLogout() wipes the cached key up front, so nothing reconnects.
+  const handleLogout = () => {
     logout();
+    web3authLogout().catch((err) => {
+      console.error("Web3Auth logout failed:", err);
+    });
   };
 
   return (
