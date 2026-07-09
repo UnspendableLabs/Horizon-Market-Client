@@ -47,25 +47,31 @@ SDK's public default; on any other network the Counterparty/ZELD APIs are called
 only when their URL is set (so balances are never read against the wrong
 network).
 
-## Kontor (KOR / NFTs) is unavailable on native — everything else works
+## Kontor (KOR / NFTs) runs natively
 
-`@kontor/sdk` (a transitive dependency of the client SDK) is **WebAssembly-
-backed**: it instantiates its WASM component at **module-load time** (a top-level
-`new WebAssembly.Global(...)` and `await $init`) and relies on the JSPI
-(`WebAssembly.promising`) stack-switching proposal. **Hermes** — React Native's
-default JS engine — ships **no `WebAssembly`** at all, and no polyfill can host a
-component that must actually compile and stack-switch. So **Kontor cannot run on
-React Native today**, full stop.
+Web/Node back `@kontor/sdk` with a **WebAssembly** component, which **Hermes** —
+React Native's default JS engine — cannot host (it ships no `WebAssembly`). So on
+native the SDK instead uses **`@kontor/sdk-native`**: a **JSI TurboModule**
+(uniffi bindings over the same Rust core that the indexer compiles), selected
+automatically via `@kontor/sdk`'s `react-native` conditional export. On-device
+bytes are identical to the chain's verification path, and the calls stay
+synchronous — same API as web.
 
-Previously this crashed the app at *startup*, because the SDK imported
-`@kontor/sdk` eagerly (via `crypto/signer.ts`), so `<HorizonMarketProvider>`
-pulled the WASM in on mount. **That is now fixed in the SDK**: every Kontor code
-path is reached through a dynamic `import()` guarded by a WebAssembly-availability
-check (`src/kontor/runtime.ts`), and the native build code-splits those paths into
-lazy chunks (`tsup` `splitting: true`). The WASM module therefore **never
-evaluates at startup**, and the app boots on Hermes.
+Wiring in this app:
 
-What this means in practice:
+- **Dependency** — `@kontor/sdk-native` (see `package.json`).
+- **Expo config plugin** — `"@kontor/sdk-native"` in `app.json` `plugins`; on
+  `expo prebuild` it links the prebuilt native binaries and raises the required
+  floors (iOS deployment target ≥ 15.1, Android `minSdkVersion` ≥ 24).
+- **Metro** — `@kontor/sdk-native` is pinned to a single copy so its JSI module
+  registers once (see `metro.config.js`).
+
+The Horizon SDK still reaches `@kontor/sdk` only through **guarded dynamic
+`import()`s** (`src/kontor/runtime.ts`), code-split into lazy chunks (`tsup`
+`splitting: true`), so the native backend never installs at app startup — Kontor
+loads the first time a KOR/NFT read or a Kontor swap runs. If the native module
+is not linked (e.g. a build without the plugin), Kontor degrades gracefully:
+reads return empty holdings, writes throw a clear `KontorUnavailableError`.
 
 | Feature | Depends on Kontor? | On native |
 | --- | --- | --- |
@@ -73,18 +79,16 @@ What this means in practice:
 | Counterparty / XCP (+ all CP tokens) | no | ✅ works |
 | ZELD | no | ✅ works |
 | Wallet, BTC balances, withdraw | no | ✅ works |
-| **KOR token + Kontor NFTs** | yes | ⚠️ gracefully disabled |
+| **KOR token + Kontor NFTs** | yes | ✅ works (via `@kontor/sdk-native`) |
 
-Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet,
-so on **mainnet the native app is fully functional**. On **signet**, everything
-works except Kontor: KOR/NFT balance reads degrade to empty holdings, and Kontor
-sell/buy/delist throw a clear `KontorUnavailableError` instead of crashing the
-host app. The **web** example is unaffected (browsers ship WebAssembly, so Kontor
-works there).
+Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet.
 
-> Note: this example is not yet verified end-to-end on a physical device /
-> simulator, but it typechecks cleanly (`npx tsc --noEmit`) and the SDK bundle no
-> longer evaluates WASM at load (verified against `dist/react/index.native.js`).
+> Note: `@kontor/sdk` (native export) and `@kontor/sdk-native` are consumed via a
+> local `file:` link to `../../../../Kontor` and are not yet published to npm. The
+> iOS xcframework is built locally; the Android `.so`s must be built
+> (`sdk-native/build-mobile.sh android`) or fetched from CI before an Android
+> device build. This wiring typechecks cleanly (`npx tsc --noEmit`); on-device
+> verification is pending those binaries.
 
 ## App lock (biometrics / device passcode)
 

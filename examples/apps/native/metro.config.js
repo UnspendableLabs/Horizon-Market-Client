@@ -13,26 +13,15 @@
 //    transitive imports resolve. (crypto.getRandomValues is provided globally
 //    by react-native-get-random-values in lib/polyfills.ts.)
 //
-// ⚠️ KNOWN BLOCKER (UNVERIFIED ON DEVICE) — @kontor/sdk is WASM-backed and
-//    evaluates `WebAssembly.*` at MODULE LOAD time: a top-level
-//    `new WebAssembly.Global(...)` plus a top-level `await $init` that compiles
-//    and instantiates the embedded module. Hermes (RN's default engine) has no
-//    `WebAssembly`, so simply *importing* @kontor/sdk throws
-//    `ReferenceError: WebAssembly is not defined` before any of its exports run.
-//
-//    The SDK imports it eagerly and UNCONDITIONALLY — dist/react/index.native.js
-//    has a top-level `import { LocalKey } from "@kontor/sdk"` (from
-//    crypto/signer.ts), which the provider pulls in. So the blast radius is the
-//    ENTIRE app, not just Kontor: importing @unspendablelabs/.../react is
-//    expected to crash at startup on BOTH mainnet and signet — not "Kontor reads
-//    only", and not "signet only". A Metro `WebAssembly` shim does NOT fix this:
-//    `await $init` needs to actually compile/run the module, which Hermes can't
-//    do regardless of a shim. Making native work would require an SDK change to
-//    lazy-load @kontor/sdk (out of scope here — we may not modify SDK src/).
-//
-//    This native example therefore ships UNVERIFIED on a real device. See
-//    README.md for the full caveat. The web app is unaffected (browsers have
-//    WebAssembly).
+// 3. Kontor (KOR token + Kontor NFTs) runs natively via `@kontor/sdk-native` —
+//    a JSI TurboModule (uniffi over the same Rust core) that `@kontor/sdk`
+//    selects through its `react-native` conditional export, since Hermes has no
+//    `WebAssembly`. The Horizon SDK reaches `@kontor/sdk` only through guarded
+//    dynamic `import()`s (see src/kontor/runtime.ts), so nothing Kontor-related
+//    evaluates at startup. `@kontor/sdk-native` is a dependency of this app, and
+//    its Expo config plugin (see app.json `plugins`) links the prebuilt native
+//    binaries during `expo prebuild`. It is pinned to a single copy below so the
+//    JSI module registers exactly once.
 
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
@@ -78,6 +67,9 @@ config.resolver.extraNodeModules = {
   // letting Metro append subpaths like `react/jsx-runtime`) keeps one React instance.
   react: nm("react"),
   "react-native": nm("react-native"),
+  // The linked `@kontor/sdk` (repo-root node_modules) imports `@kontor/sdk-native`;
+  // route it to this app's copy so the JSI native module resolves and stays single.
+  "@kontor/sdk-native": nm("@kontor/sdk-native"),
 };
 
 // Expo SDK 55's Metro enables package `exports` resolution with correct default
@@ -102,6 +94,9 @@ const SINGLETON_PACKAGES = [
   "react-native-svg",
   "react-native-safe-area-context",
   "@react-native-async-storage/async-storage",
+  // Kontor's JSI backend registers a native TurboModule at import — a second
+  // copy (resolved from the file-linked @kontor/sdk) would register it twice.
+  "@kontor/sdk-native",
 ];
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -123,17 +118,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       platform,
     );
   }
-  // Node-only builtins reached through @kontor/sdk (node:fs, node:path, …).
-  // Kontor is inert on Hermes, so stub them to an empty module to let the bundle
-  // build. Covers both `node:`-prefixed and bare specifiers.
+  // Node-only builtins that transitive deps deep-import (node:fs, node:path, …).
+  // RN ships none of them and nothing in the graph needs them at runtime, so stub
+  // them to an empty module to let the bundle build. Covers both `node:`-prefixed
+  // and bare specifiers. (The native @kontor/sdk backend imports no Node builtins.)
   if (/^node:/.test(moduleName) || /^(fs|path|os)(\/.*)?$/.test(moduleName)) {
-    return { type: "sourceFile", filePath: EMPTY_MODULE };
-  }
-  // @kontor/sdk is WASM-backed with a top-level `await $init` that Hermes cannot
-  // parse. The SDK only ever reaches it through guarded dynamic imports (the
-  // runtime guard throws KontorUnavailableError first on Hermes), so keep it out
-  // of the bundle entirely by stubbing it.
-  if (moduleName === "@kontor/sdk" || moduleName.startsWith("@kontor/sdk/")) {
     return { type: "sourceFile", filePath: EMPTY_MODULE };
   }
   if (/^\.\.?\//.test(moduleName) && /\.jsx?$/.test(moduleName)) {

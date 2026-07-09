@@ -30,15 +30,26 @@ export interface AssetGroup {
   options: AssetOption[];
 }
 
+/** A broadcast tx surfaced on the result step, with its mempool link + label. */
+export interface SellTrackTx {
+  /** mempool.space transaction URL. */
+  url: string;
+  /** Ready-to-render link text (kind-specific when more than one tx). */
+  label: string;
+}
+
 /**
  * Derived view of the result step, shared by both renderers so the "submitted
- * vs live" messaging and the pending-tx mempool link stay identical.
+ * vs live" messaging and the tx mempool links stay identical.
  */
 export interface SellResultView {
-  /** A freshly created listing whose funding tx hasn't confirmed yet. */
+  /** A freshly created listing whose asset-funding tx hasn't confirmed yet. */
   pendingConfirmation: boolean;
-  /** mempool.space link to the pending funding tx, or null. */
-  trackUrl: string | null;
+  /**
+   * mempool.space links to every tx the listing broadcast (attach and/or fee).
+   * Empty when the listing opened with no new transaction.
+   */
+  trackTxs: SellTrackTx[];
   /** Success banner copy, or undefined when not on a successful result. */
   successMessage: string | undefined;
 }
@@ -147,36 +158,44 @@ export function useSellOrderFormController(
     ],
   );
 
-  // Result-step view. A freshly created listing whose asset UTXO isn't confirmed
-  // yet (counterparty attach / zeld transfer prep) won't appear in the market
-  // until its funding tx confirms — so it's "submitted", not "live", and we
-  // surface a mempool.space link to that tx. `funded` can arrive falsy-but-not-
-  // strictly-false over the wire, so mirror the falsy check for both.
+  // Result-step view. The workflow's `transactions` list is the source of truth for
+  // what actually hit the chain: an `"asset"` tx (counterparty attach / zeld
+  // transfer / Kontor attach reveal) and/or a standalone `"fee"` payment. We link
+  // every one; an empty list means the listing reused an existing UTXO and
+  // broadcast nothing (e.g. an already-attached balance with the fee waived by a
+  // credit) — it's live immediately with nothing to track. The listing is only
+  // "pending confirmation" while a freshly broadcast asset tx is unconfirmed; a
+  // fee-only tx doesn't gate the listing (its asset UTXO already exists). This
+  // avoids keying off `swap.funded`, which can arrive falsy-but-not-strictly-false.
   const successResult =
     sellOrder.status === "success" ? sellOrder.result : null;
-  const pendingConfirmation =
-    Boolean(successResult?.created) && !successResult?.swap.funded;
-  // The tx to track differs by listing type. Counterparty attach / zeld transfer
-  // prep create a NEW asset UTXO, so the funding tx is that UTXO's txid. Ordinals
-  // reuse the existing inscription UTXO — nothing is funded on-chain — so the
-  // pending tx is the standalone platform-fee payment.
-  const swap = successResult?.swap;
-  const fundingTxid = !swap
-    ? null
-    : swap.listingType === "ordinal"
-      ? swap.onChainPayment?.txid ?? swap.txId ?? null
-      : swap.assetUtxoId?.split(":")[0] ?? swap.txId ?? null;
+  const transactions = successResult?.transactions ?? [];
+  const hasAssetTx = transactions.some((t) => t.kind === "asset");
+  const pendingConfirmation = Boolean(successResult?.created) && hasAssetTx;
+  // Drop any tx we can't build a URL for, then label: one tx keeps the familiar
+  // generic copy; two (attach + fee) name each so they're distinguishable.
+  const linked = transactions.flatMap((t) => {
+    const url = mempoolTxUrl(network, kontorNetwork, t.txid);
+    return url ? [{ url, kind: t.kind }] : [];
+  });
+  const trackTxs: SellTrackTx[] = linked.map(({ url, kind }) => ({
+    url,
+    label:
+      linked.length > 1
+        ? kind === "fee"
+          ? "Track the fee payment →"
+          : "Track the attach transaction →"
+        : "Track it on mempool.space →",
+  }));
   const resultView: SellResultView = {
     pendingConfirmation,
-    trackUrl: pendingConfirmation
-      ? mempoolTxUrl(network, kontorNetwork, fundingTxid)
-      : null,
+    trackTxs,
     successMessage: successResult
       ? !successResult.created
         ? "Listing already exists (no changes)."
-        : successResult.swap.funded
-          ? "Your listing is live!"
-          : "Sell order submitted!"
+        : hasAssetTx
+          ? "Sell order submitted!"
+          : "Your listing is live!"
       : undefined,
   };
 

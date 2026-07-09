@@ -147,6 +147,9 @@ function createSheet(theme: ResolvedTheme) {
       color: theme.colors.primary,
       fontWeight: "600",
     },
+    trackList: {
+      gap: theme.spacing.xs,
+    },
   });
 }
 
@@ -434,16 +437,20 @@ export function SellOrderForm({
         <Text style={sheet.pendingNote}>
           Your order will appear in the marketplace once its transaction is
           confirmed on-chain.
-          {resultView.trackUrl && (
-            <Text
-              style={sheet.mempoolLink}
-              onPress={() => Linking.openURL(resultView.trackUrl!)}
-            >
-              {" "}
-              Track it on mempool.space →
-            </Text>
-          )}
         </Text>
+      )}
+      {resultView.trackTxs.length > 0 && (
+        <View style={sheet.trackList}>
+          {resultView.trackTxs.map((tx) => (
+            <Text
+              key={tx.url}
+              style={sheet.mempoolLink}
+              onPress={() => Linking.openURL(tx.url)}
+            >
+              {tx.label}
+            </Text>
+          ))}
+        </View>
       )}
       <ResultActions
         isError={status === "error"}

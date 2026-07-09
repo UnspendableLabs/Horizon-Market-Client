@@ -14,8 +14,22 @@ export const DEFAULT_COUNTERPARTY_API_BASE_URL =
 export const DEFAULT_ZELD_API_BASE_URL = "https://api.zeldhash.com";
 
 export interface HorizonMarketClientOptions {
-  /** Private key as hex string (with or without "0x") or raw bytes. Omit when providing `signer`. */
+  /**
+   * Private key as hex string (with or without "0x") or raw bytes. Uses the
+   * legacy single-key `LocalSigner` (one key backs both p2wpkh + p2tr). For the
+   * Horizon Wallet convention (web3auth apps + CLI), pass a `mnemonic`, or a
+   * `signer: HDSigner.fromPrivateKey(key, { network })`. Omit when providing `signer`.
+   */
   privateKey?: string | Uint8Array;
+  /**
+   * BIP39 mnemonic. Derived to Horizon-Wallet-compatible keys — a BIP84 key for
+   * the p2wpkh (SegWit) address and a BIP86 key for the p2tr (Taproot) address,
+   * with `coin_type` per network — via `HDSigner.fromMnemonic`.
+   * Precedence: `signer` > `privateKey` > `mnemonic`.
+   */
+  mnemonic?: string;
+  /** Derivation overrides for `mnemonic` (BIP32 `account` index, BIP39 `passphrase`). */
+  mnemonicOptions?: { account?: number; passphrase?: string };
   /** Custom signer (hardware wallet, etc.). Takes precedence over `privateKey`. */
   signer?: Signer;
   /** Bitcoin network. Defaults to "mainnet". */

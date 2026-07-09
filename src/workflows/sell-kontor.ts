@@ -22,6 +22,7 @@ import type {
   WorkflowOptions,
 } from "../types/index.js";
 import { WorkflowProgressReporter } from "./progress.js";
+import type { SellBroadcastTx } from "./sell.js";
 
 interface KontorSellBaseParams {
   listingType: "kontor";
@@ -110,7 +111,11 @@ export async function openKontorSellOrder(
   signer: Signer,
   ctx: KontorContext,
   options?: WorkflowOptions,
-): Promise<{ swap: AtomicSwap; created: boolean }> {
+): Promise<{
+  swap: AtomicSwap;
+  created: boolean;
+  transactions: SellBroadcastTx[];
+}> {
   const progress = new WorkflowProgressReporter(
     "openSellOrder",
     options?.onProgress,
@@ -226,5 +231,11 @@ export async function openKontorSellOrder(
     throw new KontorListingNotRecordedError(offerBlob, createRequest, cause);
   }
 
-  return { swap: result.swap, created: result.created };
+  // The Kontor attach reveal is always broadcast on-chain (assetUtxoId is its
+  // escrow txid); the platform fee, when charged, rides inside it as an extra
+  // output, so there is never a standalone fee tx.
+  const transactions: SellBroadcastTx[] = [];
+  const assetTxId = assetUtxoId.split(":")[0];
+  if (assetTxId) transactions.push({ txid: assetTxId, kind: "asset" });
+  return { swap: result.swap, created: result.created, transactions };
 }

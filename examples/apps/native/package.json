@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.3.0",
+    "@kontor/sdk-native": "file:../../../../Kontor/sdk-native",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@unspendablelabs/horizon-market-client": "file:../../..",
     "@web3auth/base": "^9.7.0",
