@@ -37,10 +37,10 @@ import {
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
 import type { KontorContext } from "./kontor/context.js";
-// Kontor is WASM-backed (`@kontor/sdk`) and can't load on engines without
-// WebAssembly (React Native / Hermes). All Kontor modules below are therefore
-// imported *dynamically* at their use sites so the WASM never evaluates at
-// startup; only these runtime guards are imported statically (they're WASM-free).
+// Loading `@kontor/sdk` is eager and heavy (a WASM component on web/Node, a
+// native JSI crate on React Native). All Kontor modules below are therefore
+// imported *dynamically* at their use sites so no backend evaluates at startup;
+// only these runtime guards are imported statically (they touch no backend).
 import {
   assertKontorRuntime,
   kontorRuntimeAvailable,
@@ -225,8 +225,8 @@ export class HorizonMarketClient {
    * signet uses testnet address params, so the client `network` must be "testnet".
    */
   private async resolveKontorCtx(): Promise<KontorContext> {
-    // Fail fast with a clear error on engines without a WASM runtime, before the
-    // dynamic import below would throw a raw `ReferenceError` evaluating the SDK.
+    // Fail fast with a clear error where no Kontor backend can load, before the
+    // dynamic import below would throw a raw backend load error.
     assertKontorRuntime();
     const { resolveKontorChain } = await import("./kontor/chain.js");
     const chain = resolveKontorChain(this.kontorNetwork);
@@ -302,22 +302,30 @@ export class HorizonMarketClient {
     const signer = this.signer;
     if (!signer || !this.kontorNetwork) return { kor: null, nfts: [] };
 
-    // Kontor's WASM runtime can't load on engines without WebAssembly (e.g. React
-    // Native / Hermes) — degrade to empty holdings there rather than crashing the
-    // wallet balances read that calls this.
+    // No Kontor backend can load here — degrade to empty holdings rather than
+    // crashing the wallet balances read that calls this.
     if (!kontorRuntimeAvailable()) return { kor: null, nfts: [] };
 
+    let kontorMods;
+    try {
+      kontorMods = await Promise.all([
+        import("./kontor/chain.js"),
+        import("./kontor/session.js"),
+        import("./kontor/contracts.js"),
+        import("./kontor/holders.js"),
+      ]);
+    } catch {
+      // The Kontor backend failed to load despite the guard passing — e.g. a
+      // React Native build that did not link `@kontor/sdk-native`. Degrade to
+      // empty holdings rather than crash the balances read.
+      return { kor: null, nfts: [] };
+    }
     const [
       { resolveKontorChain },
       { makeKontorReadSession },
       { bindKontorToken, bindKontorNft },
       { holderCandidates },
-    ] = await Promise.all([
-      import("./kontor/chain.js"),
-      import("./kontor/session.js"),
-      import("./kontor/contracts.js"),
-      import("./kontor/holders.js"),
-    ]);
+    ] = kontorMods;
 
     const chain = resolveKontorChain(this.kontorNetwork);
     if (!chain || this.network !== "testnet") return { kor: null, nfts: [] };
@@ -739,9 +747,9 @@ export class HorizonMarketClient {
   }> {
     if (params.listingType === "kontor") {
       // Resolve the ctx first: it runs `assertKontorRuntime()` and throws a clean
-      // `KontorUnavailableError` on WASM-less engines *before* importing the
+      // `KontorUnavailableError` where no backend can load *before* importing the
       // Kontor workflow chunk (whose static `@kontor/sdk` reach would otherwise
-      // throw a raw `ReferenceError` at the import).
+      // throw a raw backend load error at the import).
       const kontorCtx = await this.resolveKontorCtx();
       const { openKontorSellOrder } = await import(
         "./workflows/sell-kontor.js"

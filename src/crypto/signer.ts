@@ -141,10 +141,10 @@ export class LocalSigner implements Signer {
    * and only broadcasts the signed result. `chain` is a `@kontor/sdk` `Chain`.
    */
   async getKontorSigning(chain: unknown): Promise<unknown> {
-    // `@kontor/sdk` is WASM-backed and evaluates at import time — load it lazily
-    // (and only when a Kontor operation actually runs) so the module never
-    // executes on engines without WebAssembly (e.g. React Native / Hermes),
-    // where it would throw at startup. Fail fast with a clear error there.
+    // `@kontor/sdk` evaluates its backend at import time (a WASM component on
+    // web/Node, a native JSI crate on React Native) — load it lazily, and only
+    // when a Kontor operation actually runs, so nothing evaluates at startup.
+    // Fail fast with a clear error where no backend can load.
     assertKontorRuntime();
     const { LocalKey } = await import("@kontor/sdk");
     return LocalKey.fromPrivateKey({
