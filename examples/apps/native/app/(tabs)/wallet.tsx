@@ -1,9 +1,11 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import {
   useHorizonMarket,
   WalletBalances,
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
+import { useSellIntent } from "../../lib/sell-intent.js";
 import { logout as web3authLogout } from "../../lib/web3auth.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
 
@@ -35,6 +37,8 @@ function CreditsRow() {
  */
 export default function WalletTab() {
   const { addresses, logout } = useHorizonMarket();
+  const router = useRouter();
+  const { requestSell } = useSellIntent();
 
   // Disconnect clears BOTH sessions: the SDK's local state (logout) and the
   // Web3Auth session persisted in secure storage. Update the UI first, then
@@ -59,7 +63,16 @@ export default function WalletTab() {
           {/* Pass a styled node (not a bare string) so the heading matches the
               other tabs' titles (Sell / Settings) instead of WalletBalances'
               smaller default title size. */}
-          <WalletBalances title={<Text style={styles.title}>Wallet</Text>} />
+          {/* Tapping Sell on a balance hands the asset to the Sell tab and
+              switches to it — landing on the same detail step as the Sell tab's
+              step 2, rather than a modal. */}
+          <WalletBalances
+            title={<Text style={styles.title}>Wallet</Text>}
+            onSellAsset={(asset) => {
+              requestSell(asset);
+              router.navigate("/sell");
+            }}
+          />
           <CreditsRow />
           <Pressable
             onPress={handleDisconnect}

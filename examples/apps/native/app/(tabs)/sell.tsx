@@ -1,18 +1,38 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback } from "react";
+import { ScrollView, StyleSheet, Text } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   SellOrderForm,
   useHorizonMarket,
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
+import { useSellIntent } from "../../lib/sell-intent.js";
 import { colors, fonts, spacing } from "../../lib/theme.js";
 
 /**
- * Sell tab: the SDK's <SellOrderForm/> promoted from a modal to a full screen.
- * The form drives its own form → review → progress → result flow inline. When no
- * wallet is connected it falls back to the login gate.
+ * Sell tab: the SDK's <SellOrderForm/> as a full-screen, two-step mobile flow —
+ * step 1 lists the sellable assets directly on the screen background (no card),
+ * step 2 opens a per-asset detail with big quantity/price fields, and "Review
+ * Order" pops the confirmation modal (mirroring the buy flow). When no wallet is
+ * connected it falls back to the login gate.
+ *
+ * When reached from the Wallet tab's Sell action, `pendingAsset` is set and the
+ * form opens straight to that asset's detail step (same screen as step 2); its
+ * back button returns to the wallet.
  */
 export default function SellScreen() {
   const { addresses } = useHorizonMarket();
+  const router = useRouter();
+  const { pendingAsset, nonce, clear } = useSellIntent();
+
+  // Drop any pending "sell this asset" request when the tab loses focus, so
+  // re-opening Sell from the tab bar always starts on the asset list (browse)
+  // rather than a stale launched-from-wallet detail screen.
+  useFocusEffect(
+    useCallback(() => {
+      return () => clear();
+    }, [clear]),
+  );
 
   return (
     <ScrollView
@@ -20,13 +40,24 @@ export default function SellScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>Sell</Text>
       {addresses ? (
-        <View style={styles.card}>
-          <SellOrderForm />
-        </View>
+        pendingAsset ? (
+          <SellOrderForm
+            // Re-key per request so a new (or repeat) launch remounts the form
+            // onto the detail step for the freshly chosen asset.
+            key={`asset-${nonce}`}
+            title={<Text style={styles.title}>Sell</Text>}
+            initialAsset={pendingAsset}
+            onClose={() => router.navigate("/wallet")}
+          />
+        ) : (
+          <SellOrderForm title={<Text style={styles.title}>Sell</Text>} />
+        )
       ) : (
-        <ConnectPrompt message="Connect your wallet to list an asset for sale." />
+        <>
+          <Text style={styles.title}>Sell</Text>
+          <ConnectPrompt message="Connect your wallet to list an asset for sale." />
+        </>
       )}
     </ScrollView>
   );
@@ -43,12 +74,5 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontFamily: fonts.sansBold,
     color: colors.foreground,
-  },
-  // A subtle elevated surface so the form reads as a card, matching the modal it
-  // replaces.
-  card: {
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: 18,
-    padding: spacing.md,
   },
 });

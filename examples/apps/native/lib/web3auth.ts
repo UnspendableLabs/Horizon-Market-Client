@@ -37,6 +37,7 @@ import {
   setStoredKey,
   clearStoredKey,
   hasStoredKey,
+  isStoredKeyGated,
 } from "./secure-key-store.js";
 
 const REDIRECT_URL = "horizonmarket://auth";
@@ -171,14 +172,21 @@ export async function getPrivateKey(email: string): Promise<string> {
     // reuse it with no keystore read, so switching networks never re-prompts.
     if (sessionKey) return sessionKey;
     // Cold start: the marker (no prompt) tells us a key exists; only then do we
-    // read it, which triggers the OS auth prompt. A successful read means the user
-    // just passed OS auth to unseal the key — that IS the app-lock unlock for this
-    // cold start (markFreshLogin), so the lock never prompts a second time on top.
+    // read it. When the key is auth-gated the read triggers the OS prompt, and a
+    // successful read means the user just passed OS auth to unseal it — that IS the
+    // app-lock unlock for this cold start (markFreshLogin), so the lock never
+    // prompts a second time on top. But a key stored UN-gated (emulator / no
+    // enrolled authenticator at write time — see secure-key-store.ts) reads
+    // SILENTLY: firing markFreshLogin there would skip the lock entirely, letting
+    // the app open with no auth at all. So only mark a fresh login when the read
+    // actually was an OS auth; otherwise leave the lock armed and let AppLock
+    // present its own prompt (expo-local-authentication, which asks for the device
+    // PIN/pattern even without biometrics).
     if (await hasStoredKey()) {
       const stored = await getStoredKey();
       if (stored) {
         sessionKey = stored;
-        markFreshLogin();
+        if (await isStoredKeyGated()) markFreshLogin();
         return stored;
       }
       // null → cancelled, or the key was invalidated by a biometric-enrollment

@@ -61,6 +61,13 @@ export interface WalletBalancesStyles {
 export interface WalletBalancesProps {
   /** Optional heading rendered at the top-left of the header row. */
   title?: ReactNode;
+  /**
+   * Override the per-asset "Sell" action. When provided, tapping Sell calls this
+   * instead of opening the built-in sell modal — e.g. to navigate to a dedicated
+   * Sell screen with the asset pre-selected. When omitted, the internal modal
+   * (an inline {@link SellOrderForm}) is used.
+   */
+  onSellAsset?: (asset: AssetOption) => void;
   style?: StyleProp<ViewStyle>;
   styles?: WalletBalancesStyles;
 }
@@ -435,7 +442,12 @@ function TokenCell({
  * actions, grouped by kind (Counterparty · Kontor · Ordinals). Consumes the
  * shared {@link useWalletTokenSummary} hook (same data as web).
  */
-export function WalletBalances({ title, style, styles: stylesProp }: WalletBalancesProps) {
+export function WalletBalances({
+  title,
+  onSellAsset,
+  style,
+  styles: stylesProp,
+}: WalletBalancesProps) {
   const theme = useTheme();
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const iconColor = theme.colors.text;
@@ -538,7 +550,7 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
             line={line}
             onDeposit={openDeposit}
             onWithdraw={setWithdraw}
-            onSell={setSellAsset}
+            onSell={onSellAsset ?? setSellAsset}
             sheet={sheet}
             color={iconColor}
             styleProp={stylesProp?.token}
@@ -579,7 +591,7 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
                 asset={a}
                 onDeposit={openDepositForAsset}
                 onWithdraw={setWithdraw}
-                onSell={setSellAsset}
+                onSell={onSellAsset ?? setSellAsset}
                 sheet={sheet}
                 color={iconColor}
                 mutedColor={mutedColor}
@@ -615,12 +627,15 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
         ) : null}
       </Modal>
 
-      {/* Sell modal */}
+      {/* Sell modal: launched straight to the asset's detail step (initialAsset),
+          with the review rendered inline so it doesn't stack a second modal over
+          this one. The detail-step back button dismisses back to the wallet. */}
       <Modal open={sellAsset != null} onClose={() => setSellAsset(null)} title="Sell">
         {sellAsset ? (
           <SellOrderForm
             key={assetKey(sellAsset)}
             initialAsset={sellAsset}
+            reviewPresentation="inline"
             onClose={() => setSellAsset(null)}
           />
         ) : null}

@@ -48,10 +48,14 @@ import { colors, fonts, radii, spacing } from "../lib/theme.js";
 /** How long the app may sit in the background before it re-locks on return. */
 const GRACE_MS = 30_000;
 
-// The brand mark — the SAME asset the native splash shows (app.json → expo-splash-
-// screen). The boot cover renders it so the splash → cover → lock handoff is a
-// seamless "loading" screen, never a flash of the market underneath.
-const brandLogo = require("../assets/icon.png");
+// The full "Horizon" wordmark (H mark + letters, brand gradient), rendered by the
+// boot cover as the app's "loading" screen. The native splash (app.json → expo-
+// splash-screen) shows the H mark alone — a square icon Android 12 can center
+// without clipping — and this cover expands it into the full wordmark + tagline as
+// the JS boots. Keeping the native splash to the H (not a wide wordmark) is what
+// avoids the OS masking the logo's sides, and the cover sits opaque above the
+// market so nothing flashes underneath during the handoff.
+const brandWordmark = require("../assets/logo-wordmark.png");
 
 interface AppLockContextValue {
   /** Reported by <AppLockBridge/> inside the provider: is a wallet session live? */
@@ -200,7 +204,16 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         {children}
         {showCover && (
           <View style={styles.overlay}>
-            <Image source={brandLogo} style={styles.coverLogo} resizeMode="contain" />
+            <View style={styles.coverBrand}>
+              <Image
+                source={brandWordmark}
+                style={styles.coverLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.coverBaseline}>
+                The DEX of Bitcoin metaprotocols
+              </Text>
+            </View>
             <ActivityIndicator color={colors.primary} style={styles.coverSpinner} />
           </View>
         )}
@@ -291,10 +304,24 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontFamily: fonts.sansBold,
   },
-  // Match the native splash (app.json imageWidth: 200) so the handoff is seamless.
+  // Wordmark + tagline, grouped tight so they read as one lockup.
+  coverBrand: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  // Full "Horizon" wordmark; responsive width (capped) with the logo's native
+  // aspect ratio so it never distorts or overflows on small screens.
   coverLogo: {
-    width: 200,
-    height: 200,
+    width: "72%",
+    maxWidth: 320,
+    aspectRatio: 375 / 76,
+  },
+  coverBaseline: {
+    fontSize: 14,
+    letterSpacing: 0.3,
+    color: colors.mutedStrong,
+    fontFamily: fonts.sans,
+    textAlign: "center",
   },
   coverSpinner: {
     marginTop: spacing.sm,

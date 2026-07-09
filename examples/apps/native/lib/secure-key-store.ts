@@ -49,8 +49,17 @@ import * as SecureStore from "expo-secure-store";
 
 const PRIVATE_KEY_KEY = "horizon.wallet.privateKey";
 // Non-secret marker read by hasStoredKey(): "a wallet key exists". Stored WITHOUT
-// requireAuthentication so presence checks never trigger the biometric prompt.
+// requireAuthentication so presence checks never trigger the biometric prompt. Its
+// VALUE also records whether the key is sealed behind the OS auth gate, so the
+// restore path can tell whether reading the key actually prompts (see below).
 const PRESENCE_KEY = "horizon.wallet.hasKey";
+// Marker values. "gated" → the key was written auth-gated, so reading it triggers a
+// biometric/device-credential prompt (that read IS the app-lock's OS auth). "plain"
+// → written un-gated (device couldn't satisfy requireAuthentication, e.g. an
+// emulator with no enrolled authenticator), so its read is SILENT and must NOT be
+// mistaken for an OS auth.
+const MARKER_GATED = "gated";
+const MARKER_PLAIN = "plain";
 
 // The secret: auth-gated + device-bound. keychainAccessible is iOS-only; Android
 // hardware-encrypts regardless. authenticationPrompt labels the OS sheet on read.
@@ -104,9 +113,11 @@ export async function setStoredKey(key: string): Promise<void> {
     } catch {
       /* nothing to delete */
     }
+    let gated = false;
     try {
       // Strong path: sealed behind the OS auth gate.
       await SecureStore.setItemAsync(PRIVATE_KEY_KEY, key, AUTH_OPTS);
+      gated = true;
     } catch (authErr) {
       // The device can't satisfy requireAuthentication (no biometric/credential
       // enrolled — common on emulators). Degrade to device-bound-only storage so
@@ -121,8 +132,14 @@ export async function setStoredKey(key: string): Promise<void> {
       await SecureStore.setItemAsync(PRIVATE_KEY_KEY, key, NON_AUTH_KEY_OPTS);
     }
     // Mark presence only AFTER a write actually succeeds, so a device that can
-    // store nothing never advertises a key it can't read back.
-    await SecureStore.setItemAsync(PRESENCE_KEY, "1", MARKER_OPTS);
+    // store nothing never advertises a key it can't read back. The value records
+    // whether the key is auth-gated, so the restore path knows if reading it will
+    // prompt (and thus doubles as the app-lock's OS auth) or read silently.
+    await SecureStore.setItemAsync(
+      PRESENCE_KEY,
+      gated ? MARKER_GATED : MARKER_PLAIN,
+      MARKER_OPTS,
+    );
   } catch (err) {
     console.error("Failed to persist wallet key to keystore:", err);
   }
@@ -146,6 +163,25 @@ export async function clearStoredKey(): Promise<void> {
 export async function hasStoredKey(): Promise<boolean> {
   try {
     return (await SecureStore.getItemAsync(PRESENCE_KEY, MARKER_OPTS)) != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True only when the stored key is sealed behind the OS auth gate — i.e. reading it
+ * triggers a biometric / device-credential prompt. On devices that couldn't satisfy
+ * requireAuthentication (emulators, no enrolled authenticator) the key is stored
+ * un-gated, so its read is SILENT and must NOT be mistaken for an OS auth. Anything
+ * but the explicit "gated" marker (including a legacy marker written before this
+ * distinction existed) is treated as un-gated, so the app-lock FAILS CLOSED and
+ * presents its own prompt rather than skipping the lock on a silent read.
+ */
+export async function isStoredKeyGated(): Promise<boolean> {
+  try {
+    return (
+      (await SecureStore.getItemAsync(PRESENCE_KEY, MARKER_OPTS)) === MARKER_GATED
+    );
   } catch {
     return false;
   }
