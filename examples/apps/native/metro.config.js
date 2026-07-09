@@ -2,10 +2,11 @@
 //
 // Two things to make the SDK + Web3Auth resolve under React Native:
 //
-// 1. The SDK is linked via `file:../../..`, and @kontor/sdk lives in the
-//    repo-root node_modules (not this app's). Metro only watches the project
-//    dir by default, so we add the repo root to `watchFolders` and let Metro
-//    walk up to the root node_modules via `nodeModulesPaths`.
+// 1. The Horizon SDK is linked via `file:../../..`, so its source lives outside
+//    this app's dir. Metro only watches the project dir by default, so we add the
+//    repo root to `watchFolders` and let Metro also resolve from the repo-root
+//    node_modules via `nodeModulesPaths`. (@kontor/sdk / @kontor/sdk-native now
+//    come from the npm registry as direct deps of this app — no longer vendored.)
 //
 // 2. bitcoinjs-lib / @web3auth's torus deps deep-import the bare Node modules
 //    `buffer` and `crypto`. RN ships neither. We alias `buffer` to the RN
@@ -25,6 +26,7 @@
 
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
+const fs = require("fs");
 
 const projectRoot = __dirname;
 // examples/apps/native → repo root is three levels up.
@@ -67,8 +69,8 @@ config.resolver.extraNodeModules = {
   // letting Metro append subpaths like `react/jsx-runtime`) keeps one React instance.
   react: nm("react"),
   "react-native": nm("react-native"),
-  // The linked `@kontor/sdk` (repo-root node_modules) imports `@kontor/sdk-native`;
-  // route it to this app's copy so the JSI native module resolves and stays single.
+  // `@kontor/sdk` declares `@kontor/sdk-native` as a peer; route every request to
+  // this app's copy so the JSI native module resolves and stays single.
   "@kontor/sdk-native": nm("@kontor/sdk-native"),
 };
 
@@ -95,11 +97,29 @@ const SINGLETON_PACKAGES = [
   "react-native-safe-area-context",
   "@react-native-async-storage/async-storage",
   // Kontor's JSI backend registers a native TurboModule at import — a second
-  // copy (resolved from the file-linked @kontor/sdk) would register it twice.
+  // copy (e.g. one nested under @kontor/sdk) would register it twice.
   "@kontor/sdk-native",
 ];
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Kontor lazy-chunk redirect. The SDK code-splits every Kontor path behind a
+  // dynamic `import()` (so the native-backed `@kontor/sdk` never evaluates at
+  // startup — see the SDK's tsup.config `react/index.native` entry). Expo/Metro
+  // serves those chunks as ON-DEMAND async bundles, fetched only when a Kontor op
+  // first runs (e.g. buying KOR). Because the SDK is symlinked from the repo root
+  // (OUTSIDE this project root), Metro miscomputes each chunk's request path as
+  // `./dist/<chunk>` relative to THIS app instead of the SDK's real dist, so the
+  // fetch fails with `Unable to resolve module ./dist/chain-… from …/native/.`.
+  // Redirect any such `dist/<chunk>` request to the SDK's real dist. Existence-
+  // gated on the repo-root dist, so it only ever fires for chunks that live there
+  // (the app has no `dist/` of its own and imports nothing via `./dist/`).
+  const distChunk = moduleName.match(/(?:^|\/)dist\/([A-Za-z0-9_-]+)(?:\.js)?$/);
+  if (distChunk) {
+    const real = path.join(repoRoot, "dist", `${distChunk[1]}.js`);
+    if (fs.existsSync(real)) {
+      return { type: "sourceFile", filePath: real };
+    }
+  }
   // Force a SINGLE copy of the framework + native singleton packages. The SDK is
   // linked via `file:../../..`, so its imports of these resolve (via package
   // `exports`, which bypasses extraNodeModules aliases) to the repo-root copies —

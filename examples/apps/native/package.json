@@ -5,12 +5,13 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "postinstall": "node scripts/fix-kontor-autolinking.cjs"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.3.0",
-    "@kontor/sdk": "file:vendor/kontor-sdk-0.3.0-rc.3.tgz",
-    "@kontor/sdk-native": "file:vendor/kontor-sdk-native-0.0.0.tgz",
+    "@kontor/sdk": "^0.3.0-rc.4",
+    "@kontor/sdk-native": "^0.3.0-rc.4",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@unspendablelabs/horizon-market-client": "file:../../..",
     "@web3auth/base": "^9.7.0",
