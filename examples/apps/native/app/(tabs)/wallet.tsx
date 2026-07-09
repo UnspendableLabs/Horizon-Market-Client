@@ -56,7 +56,10 @@ export default function WalletTab() {
     >
       {addresses ? (
         <>
-          <WalletBalances title="Wallet" />
+          {/* Pass a styled node (not a bare string) so the heading matches the
+              other tabs' titles (Sell / Settings) instead of WalletBalances'
+              smaller default title size. */}
+          <WalletBalances title={<Text style={styles.title}>Wallet</Text>} />
           <CreditsRow />
           <Pressable
             onPress={handleDisconnect}

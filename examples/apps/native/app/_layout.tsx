@@ -18,6 +18,12 @@ import {
   persistNetwork,
   type UiNetwork,
 } from "../lib/networks.js";
+import {
+  getInitialDerivationMode,
+  loadPersistedDerivationMode,
+  persistDerivationMode,
+} from "../lib/derivation.js";
+import type { DerivationMode } from "@unspendablelabs/horizon-market-client/react";
 
 // Keep the native splash up until fonts settle (or fail), so the market doesn't
 // flash unstyled text first.
@@ -68,6 +74,16 @@ export default function RootLayout() {
   const [network, setNetwork] = useState<UiNetwork>(getInitialNetwork);
   const userPicked = useRef(false);
 
+  // Address-derivation choice — held here (OUTSIDE the key={network} provider) so
+  // it survives the network remount and is fed back in as a controlled prop. The
+  // Settings toggle drives it through the SDK context; this handler persists it.
+  // Horizon-wallet mode always uses a 12-word phrase (the SDK default), so there's
+  // no word-count state to carry.
+  const [derivationMode, setDerivationMode] = useState<DerivationMode>(
+    getInitialDerivationMode,
+  );
+  const derivationPicked = useRef(false);
+
   // Hydrate the persisted network once on mount (AsyncStorage is async).
   useEffect(() => {
     let active = true;
@@ -78,6 +94,25 @@ export default function RootLayout() {
       active = false;
     };
   }, []);
+
+  // Hydrate the persisted derivation choice once on mount. If the user toggles
+  // before this resolves, `derivationPicked` guards their choice from being
+  // clobbered by the stored value.
+  useEffect(() => {
+    let active = true;
+    void loadPersistedDerivationMode().then((stored) => {
+      if (active && !derivationPicked.current && stored) setDerivationMode(stored);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleDerivationModeChange = (next: DerivationMode) => {
+    derivationPicked.current = true;
+    void persistDerivationMode(next);
+    setDerivationMode(next);
+  };
 
   useEffect(() => {
     if (fontsLoaded || fontError) void SplashScreen.hideAsync();
@@ -121,6 +156,11 @@ export default function RootLayout() {
                 network={sdkNetwork}
                 {...providerConfig}
                 theme={HORIZON_THEME}
+                // Controlled derivation choice — survives the remount and is
+                // driven from the Settings tab via the SDK context.
+                // (mnemonicWordCount stays at its 12-word default.)
+                derivationMode={derivationMode}
+                onDerivationModeChange={handleDerivationModeChange}
               >
                 <SessionRestorer />
                 <AppLockBridge />

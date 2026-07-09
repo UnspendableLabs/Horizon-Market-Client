@@ -204,9 +204,13 @@ export class HDSigner implements Signer {
    * social-login key) by first encoding it as a BIP39 mnemonic via
    * {@link privateKeyToMnemonic}, then deriving the Horizon Wallet keys. This is
    * the canonical web3auth → Horizon Wallet bridge: it is exactly equivalent to
-   * `HDSigner.fromMnemonic(privateKeyToMnemonic(privateKey), opts)`, so a web/
-   * native app connecting with a web3auth key and the CLI importing that same
-   * exported mnemonic derive the SAME p2wpkh + p2tr addresses.
+   * `HDSigner.fromMnemonic(privateKeyToMnemonic(privateKey, { words }), opts)`,
+   * so a web/native app connecting with a web3auth key and a wallet importing
+   * that same exported mnemonic derive the SAME p2wpkh + p2tr addresses.
+   *
+   * `opts.words` selects the phrase length (default 24). Use `12` to match the
+   * Horizon Wallet extension (12-word-only import); the two lengths encode
+   * DIFFERENT wallets — see {@link privateKeyToMnemonic}.
    *
    * NOTE: the resulting keys come from the mnemonic's BIP39 seed, NOT from the
    * raw key directly — so these addresses differ from the legacy single-key
@@ -214,9 +218,12 @@ export class HDSigner implements Signer {
    */
   static fromPrivateKey(
     privateKey: string | Uint8Array,
-    opts: HorizonWalletDeriveOptions = {},
+    opts: HorizonWalletDeriveOptions & { words?: 12 | 24 } = {},
   ): HDSigner {
-    return HDSigner.fromMnemonic(privateKeyToMnemonic(privateKey), opts);
+    return HDSigner.fromMnemonic(
+      privateKeyToMnemonic(privateKey, { words: opts.words }),
+      opts,
+    );
   }
 
   getAddresses(): {

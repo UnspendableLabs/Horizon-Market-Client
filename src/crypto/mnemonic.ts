@@ -8,6 +8,7 @@ import {
 } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 /**
  * Default BIP86 (single-key taproot) derivation path. `coin_type` is fixed to 0
@@ -129,33 +130,65 @@ export function validateMnemonic(mnemonic: string): boolean {
   return bip39ValidateMnemonic(mnemonic, wordlist);
 }
 
+/** Options for {@link privateKeyToMnemonic}. */
+export interface PrivateKeyToMnemonicOptions {
+  /**
+   * Phrase length. `24` (default) uses the full 32-byte key as 256-bit entropy —
+   * a lossless, reversible encoding ({@link mnemonicToPrivateKeyEntropy}).
+   * `12` reduces the key to 128-bit entropy — required to import into wallets
+   * that only accept 12-word phrases (e.g. the Horizon Wallet extension). See
+   * the reduction note below; a 12-word phrase encodes a DIFFERENT wallet than
+   * the 24-word one (different seed → different addresses).
+   */
+  words?: 12 | 24;
+}
+
 /**
- * Encode a raw 32-byte secp256k1 private key as a 24-word BIP39 mnemonic, using
- * the key bytes as 256-bit BIP39 entropy.
+ * Encode a raw 32-byte secp256k1 private key as a BIP39 mnemonic, using the key
+ * (or a reduction of it) as BIP39 entropy.
  *
  * This is the canonical bridge from the web3auth single-key wallets to the
  * mnemonic-based Horizon Wallet convention: a web/native app can turn its
- * web3auth key into this mnemonic, and {@link HDSigner.fromMnemonic} /
- * {@link deriveHorizonWalletKeys} will then derive the SAME p2wpkh + p2tr
- * addresses in the CLI. NOTE: the derived keys come from the mnemonic's BIP39
- * *seed*, not from the original key — so an app that adopts this bridge must
- * derive its displayed addresses from the mnemonic too, not from the raw key.
+ * web3auth key into this mnemonic, and {@link deriveHorizonWalletKeys} /
+ * `HDSigner.fromMnemonic` will then derive the SAME p2wpkh + p2tr addresses that
+ * importing the phrase into Horizon Wallet / XVerse produces. NOTE: the derived
+ * keys come from the mnemonic's BIP39 *seed*, not from the original key — so an
+ * app that adopts this bridge must derive its displayed addresses from the
+ * mnemonic too, not from the raw key.
  *
- * The inverse is {@link mnemonicToPrivateKeyEntropy}.
+ * ── 12 vs 24 words ──────────────────────────────────────────────────────────
+ * BIP39 maps 256-bit entropy → 24 words and 128-bit entropy → 12 words. The
+ * web3auth key is 256-bit, so:
+ *   - `words: 24` (default) uses the key verbatim as entropy → reversible via
+ *     {@link mnemonicToPrivateKeyEntropy}. Importable into 24-word wallets
+ *     (XVerse, etc.), NOT the 12-word-only Horizon Wallet extension.
+ *   - `words: 12` derives 128-bit entropy as `sha256(key)[:16]` — a stable,
+ *     one-way reduction (chosen over raw truncation so the phrase leaks no bytes
+ *     of the actual key). Importable into the Horizon Wallet extension (and any
+ *     12-word wallet). Because it is a DIFFERENT 128-bit seed, its addresses
+ *     differ from the 24-word phrase's — the two are distinct wallets. Not
+ *     reversible: recover it by re-reducing the original key, not from the phrase.
  *
  * @throws if the key is not exactly 32 bytes.
  */
-export function privateKeyToMnemonic(privateKey: string | Uint8Array): string {
+export function privateKeyToMnemonic(
+  privateKey: string | Uint8Array,
+  opts: PrivateKeyToMnemonicOptions = {},
+): string {
   const bytes =
     typeof privateKey === "string"
       ? hexToBytes(privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey)
       : privateKey;
   if (bytes.length !== 32) {
     throw new Error(
-      `Expected a 32-byte private key to encode as a 24-word mnemonic, got ${bytes.length} bytes.`,
+      `Expected a 32-byte private key to encode as a mnemonic, got ${bytes.length} bytes.`,
     );
   }
-  return entropyToMnemonic(bytes, wordlist);
+  // 12 words → 128-bit entropy. sha256(key)[:16] keeps the reduction stable and
+  // decorrelated from the raw key (so the plaintext phrase reveals no key bytes).
+  const entropy =
+    (opts.words ?? 24) === 12 ? sha256(bytes).slice(0, 16) : bytes;
+  return entropyToMnemonic(entropy, wordlist);
 }
 
 /**

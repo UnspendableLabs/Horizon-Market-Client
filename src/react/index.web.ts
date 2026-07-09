@@ -3,6 +3,9 @@ export { useHorizonMarket } from "./context.js";
 export type {
   HorizonMarketContextValue,
   HorizonMarketProviderProps,
+  DerivationMode,
+  MnemonicWordCount,
+  Addresses,
 } from "./context.js";
 
 export {

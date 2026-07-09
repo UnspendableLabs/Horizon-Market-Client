@@ -11,6 +11,11 @@ import {
   persistNetwork,
   type UiNetwork,
 } from "./lib/networks.js";
+import {
+  getInitialDerivationMode,
+  persistDerivationMode,
+} from "./lib/derivation.js";
+import type { DerivationMode } from "@unspendablelabs/horizon-market-client/react";
 
 /**
  * Restores an existing Web3Auth session on app startup — crucially after the
@@ -69,9 +74,23 @@ export default function App() {
   const [network, setNetwork] = useState<UiNetwork>(getInitialNetwork);
   const route = useRoute();
 
+  // Address-derivation choice — owned here (like `network`) so it survives the
+  // key={network} provider remount and is passed back in as a controlled prop.
+  // localStorage is synchronous, so the first render already has the right value.
+  // Horizon-wallet mode always uses a 12-word phrase (the only length Horizon
+  // Wallet imports, and XVerse-compatible too), so there's no word-count choice.
+  const [derivationMode, setDerivationMode] = useState<DerivationMode>(
+    getInitialDerivationMode,
+  );
+
   const handleNetworkChange = (next: UiNetwork) => {
     persistNetwork(next);
     setNetwork(next);
+  };
+
+  const handleDerivationModeChange = (next: DerivationMode) => {
+    persistDerivationMode(next);
+    setDerivationMode(next);
   };
 
   // `sdkNetwork` is the SDK network ("mainnet" | "testnet"); `providerConfig`
@@ -90,6 +109,11 @@ export default function App() {
         // defaults; signet uses the *_SIGNET values from .env.local.
         {...providerConfig}
         theme={HORIZON_THEME}
+        // Address derivation is controlled here so the choice persists across
+        // the network remount; the WalletPage toggle drives it via context.
+        // (mnemonicWordCount is left at its 12-word default.)
+        derivationMode={derivationMode}
+        onDerivationModeChange={handleDerivationModeChange}
       >
         <SessionRestorer />
         <Header />

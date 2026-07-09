@@ -10,6 +10,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { NETWORKS, type UiNetwork } from "../../lib/networks.js";
 import { useNetwork } from "../../lib/network-context.js";
+import { DerivationSettings } from "../../components/DerivationSettings.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
 
 const ORDER: UiNetwork[] = ["mainnet", "signet"];
@@ -101,6 +102,9 @@ export default function SettingsScreen() {
           Signet is a test network — balances and listings there aren't real.
         </Text>
       </View>
+
+      {/* Wallet: address-derivation mode + recovery-phrase export */}
+      <DerivationSettings />
 
       {/* About: legal links + socials + copyright (from the old footer) */}
       <View style={styles.section}>

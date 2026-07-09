@@ -63,6 +63,7 @@ export type {
   HorizonWalletDeriveOptions,
   HorizonWalletKeys,
   DerivedKey,
+  PrivateKeyToMnemonicOptions,
 } from "./crypto/mnemonic.js";
 
 // Cross-platform encrypted keystore helpers (string → string, no file I/O)

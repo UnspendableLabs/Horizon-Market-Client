@@ -4,6 +4,7 @@ import {
   WalletBalances,
 } from "@unspendablelabs/horizon-market-client/react";
 import { goToMarket } from "../lib/route.js";
+import { WalletSettings } from "./WalletSettings.js";
 
 /**
  * Standalone "Wallet" view: the full balances list (BTC shown large, then the
@@ -43,7 +44,10 @@ export function WalletPage() {
   return (
     <div style={{ paddingTop: 24, display: "flex", flexDirection: "column", gap: 24 }}>
       {addresses ? (
-        <WalletBalances title={heading} />
+        <>
+          <WalletBalances title={heading} />
+          <WalletSettings />
+        </>
       ) : (
         <>
           {heading}
