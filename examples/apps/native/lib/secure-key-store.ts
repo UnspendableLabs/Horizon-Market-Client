@@ -29,8 +29,9 @@
  * When an authenticator IS enrolled we attempt only the gated write and NEVER
  * downgrade: a cancelled prompt or transient error leaves no secret stored (the
  * caller just re-restores), so we never silently strip the gate off a raw key.
- * The read path tries the auth-gated entry first, then the non-gated one, so it
- * recovers the key whichever way it was written.
+ * The read path consults the (non-auth) presence marker to learn whether the
+ * secret was written gated, then issues a single read with the matching options —
+ * so a gated secret prompts and an un-gated one is read silently, never the reverse.
  *
  * Platform quirks we design around:
  *   - Android prompts on BOTH read and write; iOS prompts only on read/update of an
@@ -102,18 +103,25 @@ const NON_AUTH_KEY_OPTS: SecureStore.SecureStoreOptions = {
  * null on cancel, error, or an entry invalidated by a biometric-enrollment change;
  * callers treat all of those as "no cache" and fall back to a fresh restore.
  */
-async function readSecret(secretKey: string): Promise<string | null> {
-  // Try the auth-gated entry first (the strong path, triggers the OS prompt),
-  // then the non-gated fallback used on devices without an enrolled authenticator.
-  // A cancel / enrollment-change on a real auth-gated entry makes BOTH fail → null.
+async function readSecret(
+  secretKey: string,
+  presenceKey: string,
+): Promise<string | null> {
+  // Pick the read options from the non-auth presence marker so we issue exactly ONE
+  // keychain read with the RIGHT options. A gated secret is read with AUTH_OPTS —
+  // that read IS the app-lock's OS prompt; an un-gated secret (written on a device
+  // with no enrolled authenticator) is read plainly. Reading an un-gated value with
+  // requireAuthentication would waste a round-trip and — once the user later enrolls
+  // biometrics — pop a spurious prompt on a value that was never sealed. A cancel or
+  // enrollment-change on a gated read still resolves to null → callers fall back to
+  // a fresh restore.
   try {
-    return await SecureStore.getItemAsync(secretKey, AUTH_OPTS);
+    const opts = (await isSecretGated(presenceKey))
+      ? AUTH_OPTS
+      : NON_AUTH_KEY_OPTS;
+    return await SecureStore.getItemAsync(secretKey, opts);
   } catch {
-    try {
-      return await SecureStore.getItemAsync(secretKey, NON_AUTH_KEY_OPTS);
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -220,7 +228,7 @@ async function isSecretGated(presenceKey: string): Promise<boolean> {
  * Web3Auth restore in every one of those cases.
  */
 export function getStoredKey(): Promise<string | null> {
-  return readSecret(PRIVATE_KEY_KEY);
+  return readSecret(PRIVATE_KEY_KEY, PRESENCE_KEY);
 }
 
 export function setStoredKey(key: string): Promise<void> {
@@ -246,7 +254,7 @@ export function isStoredKeyGated(): Promise<boolean> {
  * Returns null on cancel / error / enrollment change (callers treat as "no cache").
  */
 export function getStoredMnemonic(): Promise<string | null> {
-  return readSecret(MNEMONIC_KEY);
+  return readSecret(MNEMONIC_KEY, MNEMONIC_PRESENCE_KEY);
 }
 
 export function setStoredMnemonic(mnemonic: string): Promise<void> {

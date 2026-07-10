@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   Pressable,
   ScrollView,
@@ -19,9 +19,7 @@ import {
 import { FILTER_TABS } from "../internal/swapListConstants.js";
 import { Dropdown } from "../internal/Dropdown.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
-import { useTheme } from "../hooks/useTheme.js";
-import { formatRelativeTime } from "../internal/format.js";
-import type { ResolvedTheme } from "../theme.js";
+import { ListHeader } from "../internal/ListHeader.native.js";
 import { Modal } from "./Modal.native.js";
 import {
   SwapListItem,
@@ -47,50 +45,6 @@ export interface SwapListStyles {
   empty?: StyleProp<TextStyle>;
   loginPanel?: LoginPanelStyles;
   confirmation?: SwapConfirmationStyles;
-}
-
-/**
- * Header-row styles for the optional {@link SwapListProps.title} — mirrors
- * WalletBalances' header (title left, "Refresh" pinned right) for a consistent
- * look across the two list screens.
- */
-function createHeaderSheet(theme: ResolvedTheme) {
-  return {
-    headerRow: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      justifyContent: "space-between" as const,
-      gap: theme.spacing.md,
-      flexWrap: "wrap" as const,
-    },
-    titleText: {
-      fontSize: theme.typography.fontSizeLg,
-      fontWeight: "700" as const,
-      color: theme.colors.text,
-    },
-    headerMeta: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      gap: theme.spacing.sm,
-    },
-    updated: {
-      fontSize: theme.typography.fontSizeSm,
-      color: theme.colors.textMuted,
-    },
-    refreshButton: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: theme.radii.md,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-    },
-    refreshText: {
-      fontSize: 12,
-      color: theme.colors.text,
-      fontWeight: "600" as const,
-    },
-    disabled: { opacity: 0.5 },
-  };
 }
 
 export interface SwapListProps extends UseSwapListOptions {
@@ -134,18 +88,6 @@ export function SwapList({
   ...hookOptions
 }: SwapListProps) {
   const common = useCommonSheet();
-  const theme = useTheme();
-  const headerSheet = useMemo(() => createHeaderSheet(theme), [theme]);
-
-  // Display-only clock so the "Updated …" label ages on its own (e.g. "just now"
-  // → "1 min ago") WITHOUT re-fetching. Ticks only while the header is shown.
-  const hasTitle = title != null;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!hasTitle) return;
-    const id = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, [hasTitle]);
 
   const {
     swaps,
@@ -256,31 +198,15 @@ export function SwapList({
         stylesProp?.root,
       ]}
     >
-      {/* Optional heading + right-pinned "Updated …" + Refresh (mirrors
-          WalletBalances' header exactly). */}
+      {/* Optional heading + right-pinned "Updated …" + Refresh — the shared
+          <ListHeader/> keeps this identical to WalletBalances' header. */}
       {title != null && (
-        <View style={headerSheet.headerRow}>
-          {typeof title === "string" ? (
-            <Text style={headerSheet.titleText}>{title}</Text>
-          ) : (
-            title
-          )}
-          <View style={headerSheet.headerMeta}>
-            <Text style={headerSheet.updated}>
-              Updated {formatRelativeTime(lastFetchedAt, now)}
-            </Text>
-            <Pressable
-              onPress={refetch}
-              disabled={isLoading}
-              style={[headerSheet.refreshButton, isLoading && headerSheet.disabled]}
-              accessibilityRole="button"
-            >
-              <Text style={headerSheet.refreshText}>
-                {isLoading ? "Refreshing…" : "Refresh"}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
+        <ListHeader
+          title={title}
+          lastFetchedAt={lastFetchedAt}
+          busy={isLoading}
+          onRefresh={refetch}
+        />
       )}
 
       {/* Toolbar: asset-type filter + sort dropdowns and, when signed in, the

@@ -11,7 +11,26 @@ import {
   deriveHorizonWalletKeys,
   type HorizonWalletDeriveOptions,
 } from "./mnemonic.js";
-import { assertKontorRuntime } from "../kontor/runtime.js";
+import { assertKontorRuntime, KontorUnavailableError } from "../kontor/runtime.js";
+
+/**
+ * Lazily load `@kontor/sdk`'s `LocalKey`, keeping the Kontor backend out of the
+ * app-startup graph. Enforces the graceful-degrade contract AT THE IMPORT SITE:
+ * asserts a backend can load, then maps any dynamic-import failure — e.g. a React
+ * Native build where the runtime guard optimistically passed but `@kontor/sdk-native`
+ * was never linked — to the documented {@link KontorUnavailableError} instead of a
+ * raw module-load error. Shared by every `getKontorSigning` so the guarantee can't
+ * regress in one signer.
+ */
+async function loadKontorLocalKey() {
+  assertKontorRuntime();
+  try {
+    const { LocalKey } = await import("@kontor/sdk");
+    return LocalKey;
+  } catch (cause) {
+    throw new KontorUnavailableError(undefined, { cause });
+  }
+}
 
 export interface Signer {
   getAddresses(): {
@@ -143,10 +162,9 @@ export class LocalSigner implements Signer {
   async getKontorSigning(chain: unknown): Promise<unknown> {
     // `@kontor/sdk` evaluates its backend at import time (a WASM component on
     // web/Node, a native JSI crate on React Native) — load it lazily, and only
-    // when a Kontor operation actually runs, so nothing evaluates at startup.
-    // Fail fast with a clear error where no backend can load.
-    assertKontorRuntime();
-    const { LocalKey } = await import("@kontor/sdk");
+    // when a Kontor operation actually runs, so nothing evaluates at startup. The
+    // helper fails fast (KontorUnavailableError) where no backend can load.
+    const LocalKey = await loadKontorLocalKey();
     return LocalKey.fromPrivateKey({
       privateKey: this.privateKeyHex,
       chain: chain as never,
@@ -294,8 +312,7 @@ export class HDSigner implements Signer {
    * The key is handed to `LocalKey.fromPrivateKey` and never serialized or logged.
    */
   async getKontorSigning(chain: unknown): Promise<unknown> {
-    assertKontorRuntime();
-    const { LocalKey } = await import("@kontor/sdk");
+    const LocalKey = await loadKontorLocalKey();
     return LocalKey.fromPrivateKey({
       privateKey: this.taprootKeyHex,
       chain: chain as never,

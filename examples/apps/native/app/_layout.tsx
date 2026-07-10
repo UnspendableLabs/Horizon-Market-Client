@@ -62,8 +62,19 @@ function SessionRestorer() {
         // restore (none cached, expired, or the auth prompt was declined) → lift
         // the cover so the market shows instead of hanging on it forever.
         return getPrivateKey("").then((key) => {
-          if (key) initialize(key);
-          else reportNoSession();
+          if (!key) {
+            reportNoSession();
+            return;
+          }
+          // Derive with the PERSISTED derivation mode, read explicitly here rather
+          // than relying on the `derivationMode` prop — which may not have hydrated
+          // from AsyncStorage yet at restore time. Without this a horizon-wallet
+          // user briefly gets single-key (empty) addresses + a redundant sign-in
+          // before the mode flips and re-derives. `null` (nothing stored) falls
+          // back to the SDK's default mode.
+          return loadPersistedDerivationMode().then((mode) => {
+            initialize(key, mode ?? undefined);
+          });
         });
       })
       .catch((err) => {

@@ -14,12 +14,7 @@ import type { AssetOption } from "../hooks/useAssets.js";
 import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
-import {
-  assetImageUrl,
-  assetKey,
-  formatRelativeTime,
-  truncate,
-} from "../internal/format.js";
+import { assetImageUrl, assetKey, truncate } from "../internal/format.js";
 import {
   CheckIcon,
   CopyIcon,
@@ -42,6 +37,7 @@ import {
   type ActionKind,
   type DepositType,
 } from "../internal/useWalletBalancesController.js";
+import { ListHeader } from "../internal/ListHeader.native.js";
 import { Modal } from "./Modal.native.js";
 import { SellOrderForm } from "./SellOrderForm.native.js";
 import { WithdrawForm } from "./WithdrawForm.native.js";
@@ -75,28 +71,6 @@ export interface WalletBalancesProps {
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
     root: { gap: 20 },
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: theme.spacing.md,
-      flexWrap: "wrap",
-    },
-    titleText: {
-      fontSize: theme.typography.fontSizeLg,
-      fontWeight: "700",
-      color: theme.colors.text,
-    },
-    headerMeta: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-    updated: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted },
-    refreshButton: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: theme.radii.md,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-    },
-    refreshText: { fontSize: 12, color: theme.colors.text, fontWeight: "600" },
     section: { gap: theme.spacing.md },
     sectionTitle: { fontSize: theme.typography.fontSizeLg, fontWeight: "700", color: theme.colors.text },
     addressList: { gap: theme.spacing.md },
@@ -481,29 +455,14 @@ export function WalletBalances({
 
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
-      <View style={[sheet.headerRow, stylesProp?.header]}>
-        {/* A bare-string title would crash RN ("Text strings must be rendered
-            within a <Text>"), so wrap strings; render any other node as-is. */}
-        {typeof title === "string" ? (
-          <Text style={sheet.titleText}>{title}</Text>
-        ) : (
-          title
-        )}
-        <View style={sheet.headerMeta}>
-          <Text style={sheet.updated}>Updated {formatRelativeTime(lastFetchedAt)}</Text>
-          <Pressable
-            onPress={refresh}
-            disabled={isFetching}
-            style={[
-              sheet.refreshButton,
-              isFetching && sheet.disabled,
-              stylesProp?.buttonSecondary,
-            ]}
-          >
-            <Text style={sheet.refreshText}>{isFetching ? "Refreshing…" : "Refresh"}</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ListHeader
+        title={title}
+        lastFetchedAt={lastFetchedAt}
+        busy={isFetching}
+        onRefresh={refresh}
+        style={stylesProp?.header}
+        refreshStyle={stylesProp?.buttonSecondary}
+      />
 
       {addresses ? (
         <View style={sheet.section}>

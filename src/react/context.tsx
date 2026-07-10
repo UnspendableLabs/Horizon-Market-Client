@@ -59,7 +59,15 @@ export type SessionSource = "key" | "mnemonic";
 export interface HorizonMarketContextValue {
   client: HorizonMarketClient;
   addresses: Addresses | null;
-  initialize: (privateKey: string | Uint8Array) => void;
+  /**
+   * Connect from a raw private key (e.g. a Web3Auth social login). Pass `mode` to
+   * derive with an EXPLICIT derivation mode instead of the current `derivationMode`
+   * prop — use it on a cold-start restore that reads the persisted mode, so the
+   * first derivation already matches the user's choice instead of deriving with the
+   * not-yet-hydrated default prop and re-deriving once it flips. Omit it to follow
+   * the active prop.
+   */
+  initialize: (privateKey: string | Uint8Array, mode?: DerivationMode) => void;
   /**
    * Connect from a BIP39 recovery phrase instead of a raw key (e.g. "Restore
    * wallet" / "New HD wallet" flows). The phrase is the source of truth: the
@@ -96,10 +104,13 @@ export interface HorizonMarketContextValue {
   /** Change the phrase length; re-derives addresses in place and notifies the host. */
   setMnemonicWordCount: (words: MnemonicWordCount) => void;
   /**
-   * The connected wallet's recovery phrase for the active `mnemonicWordCount`,
-   * or `null` when not connected. Meaningful in `"horizon-wallet"` mode — importing
-   * it into a compatible wallet reproduces the addresses shown. Reads the raw key
-   * held in memory; gate the reveal behind your own auth (biometrics) as needed.
+   * The connected wallet's recovery phrase for the active `mnemonicWordCount`, or
+   * `null` when there's nothing safe to export. A phrase (mnemonic) session always
+   * returns its real backup words. A raw-key (web3auth) session returns the encoded
+   * phrase ONLY in `"horizon-wallet"` mode — where the shown addresses are derived
+   * from it; in the default `"horizon-market"` (single-key) mode the encoded phrase
+   * would reproduce a DIFFERENT, empty wallet, so this returns `null`. Reads the raw
+   * key held in memory; gate the reveal behind your own auth (biometrics) as needed.
    */
   exportMnemonic: () => string | null;
   /**
@@ -294,8 +305,11 @@ export function HorizonMarketProvider({
   //   phrase length (mnemonicWordCount) selects which wallet: 12 words (Horizon
   //   Wallet) vs 24 words (full-key, XVerse & co.).
   const buildSigner = useCallback(
-    (privateKey: string | Uint8Array): Signer =>
-      derivationMode === "horizon-wallet"
+    (
+      privateKey: string | Uint8Array,
+      mode: DerivationMode = derivationMode,
+    ): Signer =>
+      mode === "horizon-wallet"
         ? HDSigner.fromPrivateKey(privateKey, {
             network,
             words: mnemonicWordCount,
@@ -319,12 +333,17 @@ export function HorizonMarketProvider({
   );
 
   const initialize = useCallback(
-    (privateKey: string | Uint8Array) => {
+    (privateKey: string | Uint8Array, mode?: DerivationMode) => {
       // A raw-key (web3auth) session supersedes any prior phrase session.
       mnemonicRef.current = null;
       privateKeyRef.current = privateKey;
       setSessionSource("key");
-      const signer = buildSigner(privateKey);
+      // Build with the caller's explicit mode when given (so a cold-start restore
+      // that reads the persisted mode derives the right addresses on the first
+      // pass, instead of deriving with the not-yet-hydrated default prop and
+      // re-deriving — a double sign-in / a flash of the wrong, empty addresses —
+      // when it flips); otherwise follow the active derivationMode prop.
+      const signer = buildSigner(privateKey, mode);
       setAuthState({ signer, addresses: signer.getAddresses() });
     },
     [buildSigner],
@@ -381,17 +400,22 @@ export function HorizonMarketProvider({
     [onMnemonicWordCountChange],
   );
 
-  // The connected wallet's recovery phrase. A phrase session returns the exact
-  // words it was created/restored with; a raw-key (web3auth) session encodes the
-  // retained key as a mnemonic for the active phrase length.
+  // The connected wallet's recovery phrase.
+  // - A phrase session returns the exact words it was created/restored with — always
+  //   the real backup.
+  // - A raw-key (web3auth) session encodes the retained key as a mnemonic, but ONLY
+  //   in "horizon-wallet" mode, where the shown addresses are derived from that same
+  //   phrase (HDSigner.fromPrivateKey === HDSigner.fromMnemonic(privateKeyToMnemonic(...))).
+  //   In "horizon-market" mode the addresses come straight from the raw key, so the
+  //   encoded phrase would back a DIFFERENT, empty wallet — return null rather than
+  //   hand out a misleading backup a caller might surface unguarded.
   const exportMnemonic = useCallback((): string | null => {
     if (mnemonicRef.current) return mnemonicRef.current;
-    return privateKeyRef.current
-      ? privateKeyToMnemonic(privateKeyRef.current, {
-          words: mnemonicWordCount,
-        })
-      : null;
-  }, [mnemonicWordCount]);
+    if (!privateKeyRef.current || derivationMode !== "horizon-wallet") return null;
+    return privateKeyToMnemonic(privateKeyRef.current, {
+      words: mnemonicWordCount,
+    });
+  }, [derivationMode, mnemonicWordCount]);
 
   const logout = useCallback(() => {
     privateKeyRef.current = null;

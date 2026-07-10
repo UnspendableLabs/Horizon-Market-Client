@@ -25,6 +25,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -179,6 +180,14 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   // the app into "inactive", so keying off that would re-lock during the prompt.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
+      // Ignore any AppState churn while our OS auth is in flight: iOS drives the
+      // app to "inactive" during the sheet, but Android's device-credential
+      // fallback can drive it all the way to "background" — stamping the grace
+      // clock there would re-lock (fighting the unlock we're resolving) if the
+      // user lingers past GRACE_MS at the passcode prompt. `authing` brackets the
+      // whole authenticate() call, so skipping while it's set is safe: a genuine
+      // background during that window leaves the app locked anyway.
+      if (authingRef.current) return;
       if (next === "background") {
         backgroundedAtRef.current = Date.now();
       } else if (next === "active") {
@@ -191,7 +200,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reportNoSession = useCallback(() => setBootSettled(true), []);
-  const value = { setWalletConnected, reportNoSession };
+  // Stable context value — its members (a useState setter + a useCallback) never
+  // change, so memoizing keeps consumers (AppLockBridge, SessionRestorer) from
+  // re-rendering on every lock/boot state transition here.
+  const value = useMemo(
+    () => ({ setWalletConnected, reportNoSession }),
+    [reportNoSession],
+  );
 
   const showLock = supported === true && walletConnected && locked;
   // Cover the app until we know the session status (device probe + boot settled),
