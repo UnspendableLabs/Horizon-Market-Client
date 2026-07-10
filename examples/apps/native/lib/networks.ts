@@ -52,7 +52,13 @@ const DEFAULTS = {
     baseUrl: "https://signet.horizon.market",
     ordApiBaseUrl: "https://signet.counterparty.io:37000",
     counterpartyApiBaseUrl: "https://signet.counterparty.io:34000",
-    kontorIndexerUrl: "https://signet.kontor.network:35100",
+    // The live signet consensus cluster (k8s `kontor-network`, port 35100),
+    // which runs the current `holder-ref` `token` contract matching @kontor/sdk.
+    // We DELIBERATELY override the SDK default (`:35001/api`): that port is the
+    // old `kontor-staging` deployment, still on the pre-holder-ref `string`
+    // contract, so views fail with `invalid value type`. Confirmed via the GKE
+    // Gateway: external :35100 → kontor-network-service (holder-ref).
+    kontorIndexerUrl: "https://signet.kontor.network:35100/api",
   },
 } as const;
 
@@ -92,7 +98,8 @@ export const NETWORKS: Record<UiNetwork, NetworkConfig> = {
       DEFAULTS.signet.counterpartyApiBaseUrl,
     // ZELD signet has no default yet (API not live); set its URL to enable.
     zeldApiBaseUrl: clean(process.env.EXPO_PUBLIC_ZELD_API_URL_SIGNET),
-    // Override with `${baseUrl}/api/kontor-indexer` to avoid CORS.
+    // Unset → the live signet cluster on `:35100/api` (see DEFAULTS.signet). A
+    // browser build would override with `${baseUrl}/api/kontor-indexer` (CORS).
     kontorIndexerUrl:
       clean(process.env.EXPO_PUBLIC_KONTOR_INDEXER_URL_SIGNET) ??
       DEFAULTS.signet.kontorIndexerUrl,
