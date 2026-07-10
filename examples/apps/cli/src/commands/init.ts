@@ -79,10 +79,11 @@ export const initCommand = defineCommand({
         mnemonic = generateMnemonic(words === "12" ? 128 : 256);
       }
 
-      const passphrase =
-        typeof ctx.args.passphrase === "string" && ctx.args.passphrase
-          ? ctx.args.passphrase
-          : undefined;
+      // Resolve via the shared getter (flag OR $HORIZON_PASSPHRASE) so a wallet
+      // created with the env passphrase matches what the unlock commands later
+      // re-derive with — otherwise init would silently make a no-passphrase wallet
+      // and every write command would then fail with DERIVATION_MISMATCH.
+      const passphrase = cli.passphrase;
 
       const wallet = deriveWallet(mnemonic, { account, passphrase });
       const password = await resolvePassword(cli, { confirm: true });

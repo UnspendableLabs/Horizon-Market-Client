@@ -44,6 +44,7 @@ import type { KontorContext } from "./kontor/context.js";
 import {
   assertKontorRuntime,
   kontorRuntimeAvailable,
+  KontorUnavailableError,
 } from "./kontor/runtime.js";
 import {
   getCounterpartyBalances as apiGetCounterpartyBalances,
@@ -228,8 +229,18 @@ export class HorizonMarketClient {
     // Fail fast with a clear error where no Kontor backend can load, before the
     // dynamic import below would throw a raw backend load error.
     assertKontorRuntime();
-    const { resolveKontorChain } = await import("./kontor/chain.js");
-    const chain = resolveKontorChain(this.kontorNetwork);
+    // chain.js statically imports `@kontor/sdk`, so this dynamic import is where
+    // the backend actually loads. If it fails despite the runtime guard passing
+    // (e.g. a React Native build that didn't link `@kontor/sdk-native`), surface
+    // the documented KontorUnavailableError instead of a raw module-load error —
+    // matching getKontorHoldings, which degrades the read path the same way.
+    let chainMod: typeof import("./kontor/chain.js");
+    try {
+      chainMod = await import("./kontor/chain.js");
+    } catch (cause) {
+      throw new KontorUnavailableError(undefined, { cause });
+    }
+    const chain = chainMod.resolveKontorChain(this.kontorNetwork);
     if (!chain) {
       throw new Error(
         'Kontor is only available on signet today. Pass kontorNetwork: "signet" to the client.',
@@ -795,8 +806,9 @@ export class HorizonMarketClient {
               ")",
           );
         }
-        // Resolve the ctx (asserts the WASM runtime) before importing the Kontor
-        // workflow chunk, so a WASM-less engine gets a clean KontorUnavailableError.
+        // Resolve the ctx first — it asserts a Kontor backend can load (WASM on
+        // web/Node, @kontor/sdk-native on RN) and throws a clean
+        // KontorUnavailableError before importing the Kontor workflow chunk.
         const kontorCtx = await this.resolveKontorCtx();
         const { fillKontorSwap } = await import("./workflows/buy-kontor.js");
         return fillKontorSwap(
@@ -826,8 +838,9 @@ export class HorizonMarketClient {
     if (this.kontorNetwork) {
       const swap = await this.getSwap(swapId);
       if (swap.listingType === "kontor") {
-        // Resolve the ctx (asserts the WASM runtime) before importing the Kontor
-        // workflow chunk, so a WASM-less engine gets a clean KontorUnavailableError.
+        // Resolve the ctx first — it asserts a Kontor backend can load (WASM on
+        // web/Node, @kontor/sdk-native on RN) and throws a clean
+        // KontorUnavailableError before importing the Kontor workflow chunk.
         const kontorCtx = await this.resolveKontorCtx();
         const { delistKontorSwap } = await import(
           "./workflows/delist-kontor.js"

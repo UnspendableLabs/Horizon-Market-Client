@@ -57,6 +57,8 @@ export function DerivationSettings() {
     try {
       await Clipboard.setStringAsync(revealed);
       setCopied(true);
+      // Revert the "Copied ✓" label after a moment so it doesn't stick.
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       /* ignore clipboard failures */
     }

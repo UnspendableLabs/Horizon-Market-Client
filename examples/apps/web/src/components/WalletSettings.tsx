@@ -135,7 +135,11 @@ export function WalletSettings() {
                 onClick={() => {
                   void navigator.clipboard
                     ?.writeText(revealed)
-                    .then(() => setCopied(true))
+                    .then(() => {
+                      setCopied(true);
+                      // Revert the "Copied" label after a moment so it doesn't stick.
+                      window.setTimeout(() => setCopied(false), 1500);
+                    })
                     .catch(() => {});
                 }}
                 style={{

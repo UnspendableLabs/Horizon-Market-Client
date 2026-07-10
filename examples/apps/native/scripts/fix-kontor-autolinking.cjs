@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * TEMPORARY workaround for a packaging bug in @kontor/sdk-native@0.3.0-rc.4.
+ * TEMPORARY workaround for a packaging bug still present in
+ * @kontor/sdk-native@0.3.0-rc.5. (The two sibling build bugs this app used to
+ * patch — the sonameless-core link and the RN 0.83 CallInvoker unwrap — were
+ * fixed upstream in rc.5, so those scripts were deleted; only this one remains.)
  *
  * @kontor/sdk-native is a uniffi-bindgen-react-native TurboModule that registers
  * itself through a plain `TurboReactPackage` (com.kontor.sdknative.KontorSdkNative

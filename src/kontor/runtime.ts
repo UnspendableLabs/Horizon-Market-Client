@@ -26,13 +26,14 @@
 
 /** Thrown when a Kontor operation is attempted where its backend can't load. */
 export class KontorUnavailableError extends Error {
-  constructor(message?: string) {
+  constructor(message?: string, options?: { cause?: unknown }) {
     super(
       message ??
         "Kontor is unavailable in this environment: @kontor/sdk could not load a " +
           "backend. Kontor (KOR token + Kontor NFTs) needs either a WebAssembly " +
           "runtime (browsers, Node) or the native module @kontor/sdk-native linked " +
           "into the app build (React Native / Hermes).",
+      options,
     );
     this.name = "KontorUnavailableError";
   }

@@ -47,11 +47,10 @@ config.resolver.nodeModulesPaths = [
 // core modules that the bitcoin crypto chain (bip322-js → bitcoinjs-message →
 // create-hash / cipher-base / secp256k1) deep-imports. RN ships none of these.
 //
-// NB: NOT @craftzdog/react-native-buffer — it depends on react-native-quick-base64,
-// a C++ TurboModule that only registers under the New Architecture. This app runs
-// the old architecture, so anything that imports it crashes at startup with
-// `TurboModuleRegistry.getEnforcing('QuickBase64') could not be found`. Routing all
-// `buffer` imports to the pure-JS package keeps quick-base64 out of the graph.
+// NB: NOT @craftzdog/react-native-buffer — it pulls in react-native-quick-base64,
+// an extra native (C++ TurboModule) dependency. The bitcoin crypto chain only needs
+// a plain Buffer, so routing all `buffer` imports to the pure-JS package keeps
+// quick-base64 out of the graph — one fewer prebuilt native module to link/rebuild.
 const nm = (name) => path.resolve(projectRoot, "node_modules", name);
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
@@ -114,7 +113,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // gated on the repo-root dist, so it only ever fires for chunks that live there
   // (the app has no `dist/` of its own and imports nothing via `./dist/`).
   const distChunk = moduleName.match(/(?:^|\/)dist\/([A-Za-z0-9_-]+)(?:\.js)?$/);
-  if (distChunk) {
+  // Only the SDK's code-split CHUNKS are miscomputed as `./dist/<chunk>`; the
+  // package entry (`dist/index.js`) is always resolved via package `exports`, never
+  // as a bare `./dist/index` specifier. Excluding `index` keeps this redirect from
+  // hijacking a foreign `./dist/index.js` (or the SDK's own entry) to the wrong file.
+  if (distChunk && distChunk[1] !== "index") {
     const real = path.join(repoRoot, "dist", `${distChunk[1]}.js`);
     if (fs.existsSync(real)) {
       return { type: "sourceFile", filePath: real };
@@ -138,10 +141,16 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       platform,
     );
   }
-  // Node-only builtins that transitive deps deep-import (node:fs, node:path, …).
-  // RN ships none of them and nothing in the graph needs them at runtime, so stub
-  // them to an empty module to let the bundle build. Covers both `node:`-prefixed
-  // and bare specifiers. (The native @kontor/sdk backend imports no Node builtins.)
+  // `node:`-prefixed forms of the builtins we DO polyfill (buffer/stream/events/
+  // util/process/string_decoder): strip the prefix so they resolve through
+  // extraNodeModules exactly like their bare specifiers — previously the `node:`
+  // form was stubbed to an empty module, inconsistently with the bare form.
+  if (/^node:(buffer|stream|events|util|process|string_decoder)$/.test(moduleName)) {
+    return context.resolveRequest(context, moduleName.slice(5), platform);
+  }
+  // Node-only builtins with no RN equivalent that nothing needs at runtime
+  // (fs/path/os, plus any other `node:` import): stub to an empty module so the
+  // bundle builds. (The native @kontor/sdk backend imports no Node builtins.)
   if (/^node:/.test(moduleName) || /^(fs|path|os)(\/.*)?$/.test(moduleName)) {
     return { type: "sourceFile", filePath: EMPTY_MODULE };
   }

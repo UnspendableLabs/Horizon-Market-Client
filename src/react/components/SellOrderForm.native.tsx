@@ -316,17 +316,26 @@ export function SellOrderForm({
   // keeps its own native EditText text, so it never reproduced there.) With no
   // `value` prop nothing is written back to native mid-typing, so the input can't be
   // clobbered; onChangeText still pushes the sanitized value up to the controller,
-  // which owns validation and the confirm/review step. The only programmatic set
-  // while the form is mounted is the Max button, which bumps `qtyNonce` to remount
-  // the quantity field so its defaultValue re-applies; New-order reset and the
-  // confirm round-trip re-mount the whole form, so those need no nonce.
+  // which owns validation and the confirm/review step. Two nonces remount the
+  // uncontrolled inputs when their text must change programmatically:
+  //   - `qtyNonce` remounts ONLY the quantity field, so the Max button can push a
+  //     new defaultValue into it without disturbing a typed price.
+  //   - `formNonce` remounts BOTH fields on a full reset (New order / switching
+  //     asset). Required because in modal mode the detail screen never unmounts
+  //     (the review pops OVER it), so a bare `reset()` clears `formValues` yet
+  //     leaves the native inputs showing the old text — a filled-looking but
+  //     disabled form. Bumping `formNonce` re-applies the now-empty defaultValue.
   const [qtyNonce, setQtyNonce] = useState(0);
+  const [formNonce, setFormNonce] = useState(0);
 
   const asset = formValues.asset;
   const onDetail = screen === "detail" && asset != null;
 
   const selectAsset = (item: AssetOption) => {
-    setFormValues({ asset: item });
+    // Start each asset's detail with empty fields rather than carrying over the
+    // quantity/price typed for a previously viewed asset. The detail screen mounts
+    // fresh on the list→detail switch, so clearing the values suffices (no nonce).
+    setFormValues({ asset: item, quantity: "", priceSats: "" });
     setScreen("detail");
   };
 
@@ -343,6 +352,10 @@ export function SellOrderForm({
   // launched mode re-seeds the original asset and returns to its detail step.
   const newOrder = () => {
     reset();
+    // In modal mode the detail screen stays mounted across confirm→result, so
+    // remount both inputs to clear their now-stale native text (reset() only
+    // clears formValues). Harmless in browse mode (returns to the list anyway).
+    setFormNonce((n) => n + 1);
     if (launched && initialAsset) {
       setFormValues({ asset: initialAsset });
       setScreen("detail");
@@ -546,7 +559,7 @@ export function SellOrderForm({
         <View style={sheet.field}>
           <Text style={sheet.fieldLabel}>Quantity</Text>
           <AmountInput
-            key={`qty-${qtyNonce}`}
+            key={`qty-${formNonce}-${qtyNonce}`}
             sheet={sheet}
             defaultValue={formValues.quantity}
             onChangeText={(t) =>
@@ -576,6 +589,7 @@ export function SellOrderForm({
       <View style={sheet.field}>
         <Text style={sheet.fieldLabel}>Price (sats)</Text>
         <AmountInput
+          key={`price-${formNonce}`}
           sheet={sheet}
           defaultValue={formValues.priceSats}
           onChangeText={(t) =>

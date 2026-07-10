@@ -239,6 +239,21 @@ export async function getPrivateKey(email: string): Promise<string> {
 export async function logout(): Promise<void> {
   sessionKey = null;
   await clearStoredKey();
+  // Only boot the heavy Web3Auth graph if there's actually a session to revoke.
+  // If it was already initialized this run (`ready` set) the cost is paid, so
+  // finish the revoke. Otherwise probe the SDK's un-gated "sessionId" marker
+  // WITHOUT loading it: a mnemonic-only session never created one, so we skip the
+  // init entirely. On an uncertain read we do NOT skip — revoke to be safe.
+  if (ready == null) {
+    let maybeSession = true;
+    try {
+      maybeSession =
+        (await SecureStore.getItemAsync(WEB3AUTH_SESSION_KEY)) != null;
+    } catch {
+      maybeSession = true;
+    }
+    if (!maybeSession) return;
+  }
   const { web3auth } = await ensureWeb3Auth();
   if (web3auth.connected) {
     await web3auth.logout();

@@ -20,13 +20,15 @@
  * This raises the bar past sandboxing alone: a rooted/jailbroken device or a
  * forensic extraction cannot read the key without the user's biometric.
  *
- * GRACEFUL DEGRADATION: `requireAuthentication` needs an enrolled authenticator
- * (biometric or device credential). On a device/emulator with NONE enrolled the
- * auth-gated write is *rejected* ("No biometrics are currently enrolled"), so we
- * fall back to storing the key device-bound but WITHOUT the auth gate — still
- * hardware-encrypted and excluded from backups, just without the extra prompt the
- * device can't present anyway. This mirrors the app-lock, which also skips its
- * gate when the device has no secure lock (see lib/app-lock.ts `canUseAppLock`).
+ * GRACEFUL DEGRADATION (fail-closed): `requireAuthentication` needs an enrolled
+ * authenticator (biometric or device credential). We decide up front with the SAME
+ * gate the app-lock uses (`canUseAppLock`): only when NOTHING is enrolled
+ * (emulators, a phone with no lock) do we fall back to storing the secret
+ * device-bound but WITHOUT the auth gate — still hardware-encrypted and excluded
+ * from backups, just without the extra prompt the device can't present anyway.
+ * When an authenticator IS enrolled we attempt only the gated write and NEVER
+ * downgrade: a cancelled prompt or transient error leaves no secret stored (the
+ * caller just re-restores), so we never silently strip the gate off a raw key.
  * The read path tries the auth-gated entry first, then the non-gated one, so it
  * recovers the key whichever way it was written.
  *
@@ -46,6 +48,7 @@
  * non-fatal (worst case: a slow restore, never a crash).
  */
 import * as SecureStore from "expo-secure-store";
+import { canUseAppLock } from "./app-lock.js";
 
 const PRIVATE_KEY_KEY = "horizon.wallet.privateKey";
 // Non-secret marker read by hasStoredKey(): "a wallet key exists". Stored WITHOUT
@@ -129,21 +132,24 @@ async function writeSecret(
     } catch {
       /* nothing to delete */
     }
+    // Decide gated-vs-not up front from actual enrollment, NOT by catching the
+    // gated write's error. This is what makes the fallback fail-closed: on a device
+    // that CAN authenticate, a thrown gated write (a cancelled prompt — Android
+    // prompts on write too — or a transient error) propagates to the outer catch
+    // and stores nothing, instead of silently re-writing the raw key un-gated.
     let gated = false;
-    try {
+    if (await canUseAppLock()) {
       // Strong path: sealed behind the OS auth gate.
       await SecureStore.setItemAsync(secretKey, value, AUTH_OPTS);
       gated = true;
-    } catch (authErr) {
-      // The device can't satisfy requireAuthentication (no biometric/credential
-      // enrolled — common on emulators). Degrade to device-bound-only storage so
-      // the wallet still persists across cold starts. Not console.error: this is
-      // an expected fallback, not a failure — an .error would pop the dev LogBox
-      // overlay on top of the app.
+    } else {
+      // No biometric/credential enrolled (common on emulators). Degrade to
+      // device-bound-only storage so the wallet still persists across cold starts.
+      // Not console.error: this is an expected degradation, not a failure — an
+      // .error would pop the dev LogBox overlay on top of the app.
       console.warn(
         `Auth-gated keystore unavailable (no biometrics/credential enrolled); ` +
           `storing the ${label} device-bound only.`,
-        authErr,
       );
       await SecureStore.setItemAsync(secretKey, value, NON_AUTH_KEY_OPTS);
     }

@@ -221,6 +221,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       );
       setSwaps(filtered);
       setTotal(count - (items.length - filtered.length));
+      // Stamp freshness on SUCCESS only (not in finish()/finally), so a failed
+      // fetch doesn't show "Updated just now" next to stale data + an error banner.
+      setLastFetchedAt(Date.now());
     };
 
     const applyError = (err: unknown) => {
@@ -231,7 +234,6 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     const finish = () => {
       if (seq === fetchSeqRef.current) {
         setIsLoading(false);
-        setLastFetchedAt(Date.now());
       }
     };
 

@@ -10,7 +10,17 @@
     // Resolve the SDK's "react-native" export condition so typecheck uses the
     // native ".native" declarations (e.g. SwapList's `scrollable` prop) — same
     // condition Metro applies at bundle time.
-    "customConditions": ["react-native"]
+    "customConditions": ["react-native"],
+    // Force every `react` import in the program — including the ones inside the
+    // file-linked SDK's `.d.ts` — to resolve to THIS app's single @types/react@19.
+    // Without this, the SDK (linked via `file:../../..`) pulls the repo root's
+    // devDep @types/react@18, so React's globals are declared twice and every RN
+    // element fails as a JSX component ("bigint not assignable to ReactNode").
+    "baseUrl": ".",
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }
