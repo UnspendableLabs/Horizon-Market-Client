@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
 import Svg, { Circle, Path } from "react-native-svg";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
@@ -102,11 +102,14 @@ const TABS: Record<string, { label: string; Icon: (p: IconProps) => ReactNode }>
 
 /**
  * Fixed bottom navigation bar (classic mobile-app tab bar) rendered by the
- * `<Tabs>` navigator via its `tabBar` prop. Owns the bottom safe-area inset so
- * its background reaches the home-indicator edge; the root SafeAreaView only
- * insets the top/sides.
+ * {@link SwipeTabs} (Material top-tabs) navigator via its `tabBar` prop, pinned to
+ * the bottom. Owns the bottom safe-area inset so its background reaches the
+ * home-indicator edge; the root SafeAreaView only insets the top/sides.
+ *
+ * The swipe gesture and taps drive the same navigation state, so `state.index`
+ * always reflects the visible page — the bar stays in sync while the user swipes.
  */
-export function TabBar({ state, navigation }: BottomTabBarProps) {
+export function TabBar({ state, navigation }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (

@@ -22,6 +22,12 @@ export default function BuyScreen() {
 const styles = StyleSheet.create({
   list: {
     flex: 1,
+    // <SwapList>'s root is transparent. Under the old bottom-tabs the navigator's
+    // per-scene `sceneStyle` tinted it; the swipeable pager (react-native-pager-view)
+    // instead paints an opaque white background behind transparent scenes on
+    // Android, so tint the Buy scene itself — the way the other three tabs already
+    // set their own background.
+    backgroundColor: colors.background,
   },
   title: {
     fontSize: 22,
