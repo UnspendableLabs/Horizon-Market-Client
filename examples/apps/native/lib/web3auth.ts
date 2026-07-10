@@ -39,6 +39,7 @@ import {
   hasStoredKey,
   isStoredKeyGated,
 } from "./secure-key-store.js";
+import { hasMnemonicSession } from "./mnemonic-session.js";
 
 const REDIRECT_URL = "horizonmarket://auth";
 
@@ -62,15 +63,17 @@ let sessionKey: string | null = null;
  * Fast (no Web3Auth init, no biometric prompt) probe of whether a session is worth
  * restoring. So the app-lock boot cover can hold until the lock is up instead of
  * flashing the market, this must be true for EVERY restorable session:
- *   - our cached raw key (the fast, no-Web3Auth restore path), and
+ *   - our cached raw key (the fast, no-Web3Auth restore path),
+ *   - a stored recovery phrase (the Restore / New HD wallet path), and
  *   - a legacy Web3Auth session that predates the key cache — detected via the
  *     SDK's own un-gated "sessionId" marker, so a pre-existing session still keeps
  *     the cover up (then hands straight off to the lock once addresses land).
- * A genuinely logged-out user has neither marker → the cover lifts immediately and
+ * A genuinely logged-out user has none of these → the cover lifts immediately and
  * the public market shows without paying Web3Auth's lazy init.
  */
 export async function hasPersistedSession(): Promise<boolean> {
   if (sessionKey != null || (await hasStoredKey())) return true;
+  if (await hasMnemonicSession()) return true;
   return hasWeb3AuthSession();
 }
 

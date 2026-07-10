@@ -13,15 +13,26 @@ import { colors, fonts, radii, spacing } from "../lib/theme.js";
  *     wallet can be re-imported into the Horizon Wallet extension / XVerse and
  *     reach the same addresses.
  *
+ * The switch only applies to a Web3Auth (raw-key) session — that key can be
+ * derived either way. A wallet connected from a recovery phrase (Restore / New
+ * HD wallet) is already an HD wallet, so we hide the toggle for it (`sessionSource
+ * === "mnemonic"`) and just offer the phrase reveal.
+ *
  * 12 words (not 24): Horizon Wallet only imports 12-word phrases, and XVerse
  * accepts 12 too — so 12 is the one length that works everywhere. Driven through
  * the SDK context (setDerivationMode); the root layout persists the choice.
  */
 export function DerivationSettings() {
-  const { addresses, derivationMode, setDerivationMode, exportMnemonic } =
+  const { addresses, derivationMode, setDerivationMode, exportMnemonic, sessionSource } =
     useHorizonMarket();
 
+  // A phrase wallet is always HD — the single-key toggle doesn't apply, so hide it.
+  const isMnemonic = sessionSource === "mnemonic";
   const bip39 = derivationMode === "horizon-wallet";
+  // Revealing a recovery phrase only makes sense when the phrase maps to the
+  // shown addresses: for a phrase wallet always, for a key wallet only in
+  // horizon-wallet mode (in single-key mode the encoded phrase's addresses differ).
+  const canReveal = isMnemonic || bip39;
   const [revealed, setRevealed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -57,29 +68,38 @@ export function DerivationSettings() {
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>Wallet</Text>
 
-      {/* Mode switch */}
-      <View style={styles.card}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchText}>
-            <Text style={styles.switchTitle}>Use BIP39 derivation</Text>
-            <Text style={styles.switchSub}>
-              {bip39
-                ? "BIP84 + BIP86 — exportable to Horizon Wallet / XVerse."
-                : "Off — addresses match horizon.market (single key)."}
-            </Text>
+      {/* Mode switch — Web3Auth (raw-key) sessions only; a phrase wallet is
+          always HD, so the single-key toggle is hidden for it. */}
+      {!isMnemonic && (
+        <View style={styles.card}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.switchTitle}>Use BIP39 derivation</Text>
+              <Text style={styles.switchSub}>
+                {bip39
+                  ? "BIP84 + BIP86 — exportable to Horizon Wallet / XVerse."
+                  : "Off — addresses match horizon.market (single key)."}
+              </Text>
+            </View>
+            <Switch
+              value={bip39}
+              onValueChange={(on) =>
+                setDerivationMode(on ? "horizon-wallet" : "horizon-market")
+              }
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.foreground}
+            />
           </View>
-          <Switch
-            value={bip39}
-            onValueChange={(on) =>
-              setDerivationMode(on ? "horizon-wallet" : "horizon-market")
-            }
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor={colors.foreground}
-          />
         </View>
-      </View>
+      )}
 
-      {bip39 && (
+      {isMnemonic && (
+        <Text style={styles.hint}>
+          This wallet is backed by a 12-word recovery phrase (BIP84 + BIP86).
+        </Text>
+      )}
+
+      {canReveal && (
         <>
           {/* Reveal recovery phrase (12 words) */}
           {addresses ? (

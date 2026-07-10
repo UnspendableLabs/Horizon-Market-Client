@@ -9,6 +9,7 @@ import { HorizonMarketProvider, useHorizonMarket } from "@unspendablelabs/horizo
 import { AppLockProvider, AppLockBridge, useAppLockBoot } from "../components/AppLock.js";
 import { PrivacyScreen } from "../components/PrivacyScreen.js";
 import { getPrivateKey } from "../lib/web3auth.js";
+import { restoreMnemonicSession } from "../lib/mnemonic-session.js";
 import { colors, HORIZON_THEME } from "../lib/theme.js";
 import { NetworkProvider } from "../lib/network-context.js";
 import {
@@ -30,33 +31,46 @@ import type { DerivationMode } from "@unspendablelabs/horizon-market-client/reac
 void SplashScreen.preventAutoHideAsync();
 
 /**
- * Restores an existing Web3Auth session on startup — and re-derives addresses for
- * the newly selected network after the provider remounts on a network switch (the
- * remount resets authState, so this re-probes the persisted key). Mirrors the web
+ * Restores an existing session on startup — and re-derives addresses for the newly
+ * selected network after the provider remounts on a network switch (the remount
+ * resets authState, so this re-probes the persisted credential). Mirrors the web
  * app's SessionRestorer.
+ *
+ * A session persists EITHER a recovery phrase (Restore / New HD wallet) or a raw
+ * Web3Auth key, so try the phrase first and only fall through to the key path when
+ * there's none. Both settle into the same connected state.
  */
 function SessionRestorer() {
-  const { initialize, addresses } = useHorizonMarket();
+  const { initialize, initializeWithMnemonic, addresses } = useHorizonMarket();
   const reportNoSession = useAppLockBoot();
   const ranRef = useRef(false);
 
   useEffect(() => {
     if (ranRef.current || addresses) return;
     ranRef.current = true;
-    getPrivateKey("")
-      .then((key) => {
-        // A found key lands as `addresses` → the app-lock cover hands off to the
-        // lock. No key means there's no session to restore (none cached, expired,
-        // or the auth prompt was declined) — lift the cover so the market shows
-        // instead of hanging on it forever.
-        if (key) initialize(key);
-        else reportNoSession();
+    restoreMnemonicSession()
+      .then((mnemonic) => {
+        if (mnemonic) {
+          // A phrase wallet is always Horizon Wallet HD — derive it as such
+          // explicitly (the connect flow already persisted horizon-wallet; this
+          // just makes the invariant hold regardless of the restored prop).
+          initializeWithMnemonic(mnemonic, "horizon-wallet");
+          return;
+        }
+        // No phrase → try the Web3Auth key. A found credential lands as
+        // `addresses` → the app-lock cover hands off to the lock. Nothing to
+        // restore (none cached, expired, or the auth prompt was declined) → lift
+        // the cover so the market shows instead of hanging on it forever.
+        return getPrivateKey("").then((key) => {
+          if (key) initialize(key);
+          else reportNoSession();
+        });
       })
       .catch((err) => {
-        console.error("Web3Auth session restore failed:", err);
+        console.error("Session restore failed:", err);
         reportNoSession();
       });
-  }, [initialize, addresses, reportNoSession]);
+  }, [initialize, initializeWithMnemonic, addresses, reportNoSession]);
 
   return null;
 }

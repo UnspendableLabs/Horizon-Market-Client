@@ -44,11 +44,45 @@ export type DerivationMode = "horizon-market" | "horizon-wallet";
  */
 export type MnemonicWordCount = 12 | 24;
 
+/**
+ * How the connected wallet was established:
+ * - `"key"` — a raw private key, e.g. a Web3Auth social login through
+ *   `initialize`. Its addresses can be derived either way, so the
+ *   derivation-mode toggle is meaningful.
+ * - `"mnemonic"` — a BIP39 recovery phrase through `initializeWithMnemonic`
+ *   (the Restore / New HD wallet flows). The phrase *is* the wallet — it is
+ *   always an HD wallet — so the single-key `"horizon-market"` mode doesn't
+ *   apply and a host should hide the toggle.
+ */
+export type SessionSource = "key" | "mnemonic";
+
 export interface HorizonMarketContextValue {
   client: HorizonMarketClient;
   addresses: Addresses | null;
   initialize: (privateKey: string | Uint8Array) => void;
+  /**
+   * Connect from a BIP39 recovery phrase instead of a raw key (e.g. "Restore
+   * wallet" / "New HD wallet" flows). The phrase is the source of truth: the
+   * signer is built with `HDSigner.fromMnemonic` in `"horizon-wallet"` mode
+   * (BIP84 + BIP86 — importable into Horizon Wallet / XVerse) or
+   * `LocalSigner.fromMnemonic` in `"horizon-market"` mode, and `exportMnemonic()`
+   * returns exactly these words. Supersedes any `initialize()` key session.
+   *
+   * Pass `mode` to derive with an EXPLICIT derivation mode instead of the current
+   * `derivationMode` prop. Use this when a connect flow also persists that mode
+   * through `onDerivationModeChange`: the controlled prop only flips on the next
+   * render, so without the explicit mode the first derivation would use the stale
+   * prop value and the addresses would then re-derive once it settles. Omit it to
+   * follow the active prop.
+   */
+  initializeWithMnemonic: (mnemonic: string, mode?: DerivationMode) => void;
   logout: () => void;
+  /**
+   * How the current wallet connected (see {@link SessionSource}), or `null` when
+   * disconnected. Lets a host tailor UI to the connection — e.g. hide the
+   * derivation-mode toggle for phrase (mnemonic) wallets, which are always HD.
+   */
+  sessionSource: SessionSource | null;
   /** Active address-derivation mode (see {@link DerivationMode}). */
   derivationMode: DerivationMode;
   /**
@@ -166,11 +200,22 @@ export function HorizonMarketProvider({
   children,
 }: HorizonMarketProviderProps) {
   const [authState, setAuthState] = useState<AuthState | null>(null);
+  // How the active session connected (raw key vs. recovery phrase), or null when
+  // disconnected. Tracked as state (not derived from the refs below) so consumers
+  // re-render when it changes — e.g. Settings hiding the derivation toggle for a
+  // phrase wallet.
+  const [sessionSource, setSessionSource] = useState<SessionSource | null>(null);
   // Raw connected key, retained so a mode / word-count change can re-derive
   // addresses in place without a reconnect. Never surfaced except via
   // exportMnemonic() (mnemonic form). Held in a ref (not state) so it stays out
   // of the value object graph / memo deps.
   const privateKeyRef = useRef<string | Uint8Array | null>(null);
+  // Active recovery phrase for a mnemonic-based session (Restore / New HD wallet),
+  // or null for a raw-key (web3auth) session. When set it is the source of truth:
+  // the signer is built from the phrase itself (not re-encoded from a key), so a
+  // mode / word-count / network change re-derives faithfully and exportMnemonic()
+  // returns these exact words. Held in a ref for the same reasons as privateKeyRef.
+  const mnemonicRef = useRef<string | null>(null);
   const [session, setSession] = useState<{
     token: string;
     credits: number;
@@ -259,13 +304,46 @@ export function HorizonMarketProvider({
     [derivationMode, mnemonicWordCount, network],
   );
 
+  // Signer for a phrase-based session, built natively from the mnemonic (not via
+  // the key bridge) so the addresses match the words exactly:
+  // - "horizon-wallet": HDSigner.fromMnemonic (BIP84 + BIP86) — the phrase reaches
+  //   the SAME addresses in the Horizon Wallet extension / XVerse;
+  // - "horizon-market": LocalSigner.fromMnemonic (single key at the default path),
+  //   matching horizon.market's single-key model.
+  const buildSignerFromMnemonic = useCallback(
+    (mnemonic: string, mode: DerivationMode = derivationMode): Signer =>
+      mode === "horizon-wallet"
+        ? HDSigner.fromMnemonic(mnemonic, { network })
+        : LocalSigner.fromMnemonic(mnemonic, { network }),
+    [derivationMode, network],
+  );
+
   const initialize = useCallback(
     (privateKey: string | Uint8Array) => {
+      // A raw-key (web3auth) session supersedes any prior phrase session.
+      mnemonicRef.current = null;
       privateKeyRef.current = privateKey;
+      setSessionSource("key");
       const signer = buildSigner(privateKey);
       setAuthState({ signer, addresses: signer.getAddresses() });
     },
     [buildSigner],
+  );
+
+  const initializeWithMnemonic = useCallback(
+    (mnemonic: string, mode?: DerivationMode) => {
+      // The phrase is the source of truth — drop any prior raw key.
+      privateKeyRef.current = null;
+      mnemonicRef.current = mnemonic;
+      setSessionSource("mnemonic");
+      // Build with the caller's explicit mode when given (so a connect that also
+      // persists that mode derives the right addresses on the first pass, instead
+      // of deriving with the current prop and re-deriving when it flips);
+      // otherwise follow the active derivationMode prop.
+      const signer = buildSignerFromMnemonic(mnemonic, mode);
+      setAuthState({ signer, addresses: signer.getAddresses() });
+    },
+    [buildSignerFromMnemonic],
   );
 
   // Re-derive the connected wallet's addresses in place when the derivation mode
@@ -275,11 +353,21 @@ export function HorizonMarketProvider({
   // but a network switch remounts the whole provider (key={network}), so within a
   // mounted instance this only ever fires on a mode / word-count change.
   useEffect(() => {
+    // Rebuild from whichever source backs the current session. A phrase session
+    // re-derives natively from the mnemonic (so a cold-start restore settles onto
+    // the Horizon Wallet addresses once the persisted mode hydrates); a key
+    // session re-derives from the retained raw key as before.
+    const mnemonic = mnemonicRef.current;
+    if (mnemonic) {
+      const signer = buildSignerFromMnemonic(mnemonic);
+      setAuthState({ signer, addresses: signer.getAddresses() });
+      return;
+    }
     const pk = privateKeyRef.current;
     if (!pk) return;
     const signer = buildSigner(pk);
     setAuthState({ signer, addresses: signer.getAddresses() });
-  }, [buildSigner]);
+  }, [buildSigner, buildSignerFromMnemonic]);
 
   // Mode / word-count are host-owned (controlled) so the choice can be persisted
   // and survive the network remount: the setters notify the host, which flips the
@@ -293,20 +381,23 @@ export function HorizonMarketProvider({
     [onMnemonicWordCountChange],
   );
 
-  // The recovery phrase for the active phrase length, from the retained key.
-  const exportMnemonic = useCallback(
-    (): string | null =>
-      privateKeyRef.current
-        ? privateKeyToMnemonic(privateKeyRef.current, {
-            words: mnemonicWordCount,
-          })
-        : null,
-    [mnemonicWordCount],
-  );
+  // The connected wallet's recovery phrase. A phrase session returns the exact
+  // words it was created/restored with; a raw-key (web3auth) session encodes the
+  // retained key as a mnemonic for the active phrase length.
+  const exportMnemonic = useCallback((): string | null => {
+    if (mnemonicRef.current) return mnemonicRef.current;
+    return privateKeyRef.current
+      ? privateKeyToMnemonic(privateKeyRef.current, {
+          words: mnemonicWordCount,
+        })
+      : null;
+  }, [mnemonicWordCount]);
 
   const logout = useCallback(() => {
     privateKeyRef.current = null;
+    mnemonicRef.current = null;
     signedInFor.current = null;
+    setSessionSource(null);
     setSession(null);
     setAuthState(null);
   }, []);
@@ -398,7 +489,9 @@ export function HorizonMarketProvider({
       client: authedClient ?? anonClient,
       addresses: authState?.addresses ?? null,
       initialize,
+      initializeWithMnemonic,
       logout,
+      sessionSource,
       derivationMode,
       setDerivationMode,
       mnemonicWordCount,
@@ -417,7 +510,7 @@ export function HorizonMarketProvider({
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, logout, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
   );
 
   return (

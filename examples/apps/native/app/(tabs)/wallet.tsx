@@ -7,6 +7,7 @@ import {
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
 import { useSellIntent } from "../../lib/sell-intent.js";
 import { logout as web3authLogout } from "../../lib/web3auth.js";
+import { clearMnemonicSession } from "../../lib/mnemonic-session.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
 
 /** Credits (paid + free) — the market's per-listing allowance, surfaced from the
@@ -40,13 +41,17 @@ export default function WalletTab() {
   const router = useRouter();
   const { requestSell } = useSellIntent();
 
-  // Disconnect clears BOTH sessions: the SDK's local state (logout) and the
-  // Web3Auth session persisted in secure storage. Update the UI first, then
-  // revoke Web3Auth in the background — after a fast cold-start restore Web3Auth
-  // was never initialised this session, so awaiting its lazy init would freeze
-  // the button for seconds. (Mirrors the old header's handleLogout.)
+  // Disconnect clears every session: the SDK's local state (logout), any stored
+  // recovery phrase, and the Web3Auth session persisted in secure storage. Update
+  // the UI first, then wipe the persisted credentials in the background — after a
+  // fast cold-start restore Web3Auth was never initialised this session, so
+  // awaiting its lazy init would freeze the button for seconds. (Mirrors the old
+  // header's handleLogout.)
   const handleDisconnect = () => {
     logout();
+    clearMnemonicSession().catch((err) => {
+      console.error("Clearing recovery phrase failed:", err);
+    });
     web3authLogout().catch((err) => {
       console.error("Web3Auth logout failed:", err);
     });

@@ -53,6 +53,13 @@ const PRIVATE_KEY_KEY = "horizon.wallet.privateKey";
 // VALUE also records whether the key is sealed behind the OS auth gate, so the
 // restore path can tell whether reading the key actually prompts (see below).
 const PRESENCE_KEY = "horizon.wallet.hasKey";
+
+// The mnemonic slot: a BIP39 recovery phrase from a Restore / New HD wallet flow.
+// Same gated-at-rest posture and presence-marker scheme as the raw key above — it
+// just holds words instead of a hex key. A given session persists EITHER a key
+// (web3auth) or a mnemonic, never both.
+const MNEMONIC_KEY = "horizon.wallet.mnemonic";
+const MNEMONIC_PRESENCE_KEY = "horizon.wallet.hasMnemonic";
 // Marker values. "gated" → the key was written auth-gated, so reading it triggers a
 // biometric/device-credential prompt (that read IS the app-lock's OS auth). "plain"
 // → written un-gated (device couldn't satisfy requireAuthentication, e.g. an
@@ -82,41 +89,50 @@ const NON_AUTH_KEY_OPTS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
 
+// ── Shared secret slot implementation ───────────────────────────────────────
+// The raw key and the mnemonic are stored the same way — auth-gated at rest with
+// a non-auth presence marker — so both slots share these helpers, parameterized
+// by their secret + marker keys and a human label used only in fallback logs.
+
 /**
- * Reads the raw key — triggers the OS auth prompt. Returns null on cancel, error,
- * or a key invalidated by a biometric-enrollment change; callers fall back to a
- * Web3Auth restore in every one of those cases.
+ * Reads a secret — triggers the OS auth prompt when the entry is gated. Returns
+ * null on cancel, error, or an entry invalidated by a biometric-enrollment change;
+ * callers treat all of those as "no cache" and fall back to a fresh restore.
  */
-export async function getStoredKey(): Promise<string | null> {
+async function readSecret(secretKey: string): Promise<string | null> {
   // Try the auth-gated entry first (the strong path, triggers the OS prompt),
   // then the non-gated fallback used on devices without an enrolled authenticator.
-  // A cancel / enrollment-change on a real auth-gated key makes BOTH fail → null,
-  // and callers fall back to a Web3Auth restore.
+  // A cancel / enrollment-change on a real auth-gated entry makes BOTH fail → null.
   try {
-    return await SecureStore.getItemAsync(PRIVATE_KEY_KEY, AUTH_OPTS);
+    return await SecureStore.getItemAsync(secretKey, AUTH_OPTS);
   } catch {
     try {
-      return await SecureStore.getItemAsync(PRIVATE_KEY_KEY, NON_AUTH_KEY_OPTS);
+      return await SecureStore.getItemAsync(secretKey, NON_AUTH_KEY_OPTS);
     } catch {
       return null;
     }
   }
 }
 
-export async function setStoredKey(key: string): Promise<void> {
+async function writeSecret(
+  secretKey: string,
+  presenceKey: string,
+  value: string,
+  label: string,
+): Promise<void> {
   try {
     // Delete any prior entry first so the value is always bound to a FRESHLY
-    // generated key — requireAuthentication won't cleanly update a pre-existing
-    // entry, and this also wipes any stale key left by an older build. No auth needed.
+    // written secret — requireAuthentication won't cleanly update a pre-existing
+    // entry, and this also wipes any stale value left by an older build. No auth.
     try {
-      await SecureStore.deleteItemAsync(PRIVATE_KEY_KEY);
+      await SecureStore.deleteItemAsync(secretKey);
     } catch {
       /* nothing to delete */
     }
     let gated = false;
     try {
       // Strong path: sealed behind the OS auth gate.
-      await SecureStore.setItemAsync(PRIVATE_KEY_KEY, key, AUTH_OPTS);
+      await SecureStore.setItemAsync(secretKey, value, AUTH_OPTS);
       gated = true;
     } catch (authErr) {
       // The device can't satisfy requireAuthentication (no biometric/credential
@@ -125,64 +141,120 @@ export async function setStoredKey(key: string): Promise<void> {
       // an expected fallback, not a failure — an .error would pop the dev LogBox
       // overlay on top of the app.
       console.warn(
-        "Auth-gated keystore unavailable (no biometrics/credential enrolled); " +
-          "storing the wallet key device-bound only.",
+        `Auth-gated keystore unavailable (no biometrics/credential enrolled); ` +
+          `storing the ${label} device-bound only.`,
         authErr,
       );
-      await SecureStore.setItemAsync(PRIVATE_KEY_KEY, key, NON_AUTH_KEY_OPTS);
+      await SecureStore.setItemAsync(secretKey, value, NON_AUTH_KEY_OPTS);
     }
     // Mark presence only AFTER a write actually succeeds, so a device that can
-    // store nothing never advertises a key it can't read back. The value records
-    // whether the key is auth-gated, so the restore path knows if reading it will
+    // store nothing never advertises a secret it can't read back. The value records
+    // whether the secret is auth-gated, so the restore path knows if reading it will
     // prompt (and thus doubles as the app-lock's OS auth) or read silently.
     await SecureStore.setItemAsync(
-      PRESENCE_KEY,
+      presenceKey,
       gated ? MARKER_GATED : MARKER_PLAIN,
       MARKER_OPTS,
     );
   } catch (err) {
-    console.error("Failed to persist wallet key to keystore:", err);
+    console.error(`Failed to persist wallet ${label} to keystore:`, err);
   }
 }
 
-export async function clearStoredKey(): Promise<void> {
+async function clearSecret(
+  secretKey: string,
+  presenceKey: string,
+): Promise<void> {
   // Delete both entries; deletion never requires auth (so logout never prompts).
   try {
-    await SecureStore.deleteItemAsync(PRIVATE_KEY_KEY);
+    await SecureStore.deleteItemAsync(secretKey);
   } catch {
     /* ignore — non-fatal */
   }
   try {
-    await SecureStore.deleteItemAsync(PRESENCE_KEY);
+    await SecureStore.deleteItemAsync(presenceKey);
   } catch {
     /* ignore — non-fatal */
   }
 }
 
 /** Presence check via the non-auth marker → never prompts. */
-export async function hasStoredKey(): Promise<boolean> {
+async function hasSecret(presenceKey: string): Promise<boolean> {
   try {
-    return (await SecureStore.getItemAsync(PRESENCE_KEY, MARKER_OPTS)) != null;
+    return (await SecureStore.getItemAsync(presenceKey, MARKER_OPTS)) != null;
   } catch {
     return false;
   }
 }
 
 /**
- * True only when the stored key is sealed behind the OS auth gate — i.e. reading it
- * triggers a biometric / device-credential prompt. On devices that couldn't satisfy
- * requireAuthentication (emulators, no enrolled authenticator) the key is stored
- * un-gated, so its read is SILENT and must NOT be mistaken for an OS auth. Anything
- * but the explicit "gated" marker (including a legacy marker written before this
- * distinction existed) is treated as un-gated, so the app-lock FAILS CLOSED and
+ * True only when the stored secret is sealed behind the OS auth gate — i.e. reading
+ * it triggers a biometric / device-credential prompt. On devices that couldn't
+ * satisfy requireAuthentication (emulators, no enrolled authenticator) the secret is
+ * stored un-gated, so its read is SILENT and must NOT be mistaken for an OS auth.
+ * Anything but the explicit "gated" marker (including a legacy marker written before
+ * this distinction existed) is treated as un-gated, so the app-lock FAILS CLOSED and
  * presents its own prompt rather than skipping the lock on a silent read.
  */
-export async function isStoredKeyGated(): Promise<boolean> {
+async function isSecretGated(presenceKey: string): Promise<boolean> {
   try {
     return (
-      (await SecureStore.getItemAsync(PRESENCE_KEY, MARKER_OPTS)) === MARKER_GATED
+      (await SecureStore.getItemAsync(presenceKey, MARKER_OPTS)) === MARKER_GATED
     );
   } catch {
     return false;
   }
+}
+
+// ── Raw private key (web3auth) ───────────────────────────────────────────────
+
+/**
+ * Reads the raw key — triggers the OS auth prompt. Returns null on cancel, error,
+ * or a key invalidated by a biometric-enrollment change; callers fall back to a
+ * Web3Auth restore in every one of those cases.
+ */
+export function getStoredKey(): Promise<string | null> {
+  return readSecret(PRIVATE_KEY_KEY);
+}
+
+export function setStoredKey(key: string): Promise<void> {
+  return writeSecret(PRIVATE_KEY_KEY, PRESENCE_KEY, key, "key");
+}
+
+export function clearStoredKey(): Promise<void> {
+  return clearSecret(PRIVATE_KEY_KEY, PRESENCE_KEY);
+}
+
+export function hasStoredKey(): Promise<boolean> {
+  return hasSecret(PRESENCE_KEY);
+}
+
+export function isStoredKeyGated(): Promise<boolean> {
+  return isSecretGated(PRESENCE_KEY);
+}
+
+// ── BIP39 mnemonic (Restore / New HD wallet) ─────────────────────────────────
+
+/**
+ * Reads the stored recovery phrase — triggers the OS auth prompt when gated.
+ * Returns null on cancel / error / enrollment change (callers treat as "no cache").
+ */
+export function getStoredMnemonic(): Promise<string | null> {
+  return readSecret(MNEMONIC_KEY);
+}
+
+export function setStoredMnemonic(mnemonic: string): Promise<void> {
+  return writeSecret(MNEMONIC_KEY, MNEMONIC_PRESENCE_KEY, mnemonic, "mnemonic");
+}
+
+export function clearStoredMnemonic(): Promise<void> {
+  return clearSecret(MNEMONIC_KEY, MNEMONIC_PRESENCE_KEY);
+}
+
+export function hasStoredMnemonic(): Promise<boolean> {
+  return hasSecret(MNEMONIC_PRESENCE_KEY);
+}
+
+export function isStoredMnemonicGated(): Promise<boolean> {
+  return isSecretGated(MNEMONIC_PRESENCE_KEY);
 }
