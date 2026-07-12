@@ -10,7 +10,7 @@ import { CliError, note, runCommand } from "../lib/output.js";
 import { getNetworkConfig } from "../lib/networks.js";
 import { keystoreExists, writeKeystore, type StoredKeystore } from "../lib/keystore.js";
 import { deriveWallet } from "../lib/wallet.js";
-import { resolvePassword } from "../lib/prompt.js";
+import { resolveMnemonicImport, resolvePassword } from "../lib/prompt.js";
 import { kv } from "../lib/format.js";
 
 export const initCommand = defineCommand({
@@ -23,7 +23,13 @@ export const initCommand = defineCommand({
     mnemonic: {
       type: "positional",
       required: false,
-      description: "Import an existing BIP39 mnemonic (else a fresh one is generated)",
+      description:
+        "Import an existing BIP39 mnemonic (DISCOURAGED — lands in shell history; prefer --import)",
+    },
+    import: {
+      type: "boolean",
+      description: "Import an existing mnemonic via hidden prompt (TTY) or stdin (piped)",
+      default: false,
     },
     words: {
       type: "string",
@@ -62,13 +68,26 @@ export const initCommand = defineCommand({
         throw new CliError('--words must be "12" or "24"', "BAD_WORDS");
       }
 
-      const account = Number(ctx.args.account);
-      if (!Number.isInteger(account) || account < 0) {
-        throw new CliError("--account must be a non-negative integer", "BAD_ACCOUNT");
+      // Strict decimal digits only (`Number()` would accept "0x2", "1e2", "");
+      // BIP32 hardened child indexes must fit below 2^31.
+      const accountRaw = String(ctx.args.account);
+      const account = /^\d+$/.test(accountRaw) ? Number(accountRaw) : Number.NaN;
+      if (!Number.isInteger(account) || account < 0 || account >= 2 ** 31) {
+        throw new CliError(
+          "--account must be a non-negative integer below 2^31",
+          "BAD_ACCOUNT",
+        );
       }
 
-      const provided =
+      let provided =
         typeof ctx.args.mnemonic === "string" ? ctx.args.mnemonic.trim() : "";
+      if (provided) {
+        // The argv path persists the phrase in shell history and exposes it via
+        // `ps` for the process lifetime — steer users to --import.
+        note(cli, "⚠ Mnemonic passed as an argument can leak via shell history — prefer `horizon init --import`.");
+      } else if (ctx.args.import) {
+        provided = await resolveMnemonicImport(cli);
+      }
       let mnemonic: string;
       if (provided) {
         if (!validateMnemonic(provided)) {
@@ -100,6 +119,15 @@ export const initCommand = defineCommand({
       writeKeystore(cli.homeDir, stored);
 
       const addresses = wallet.addresses[cfg.sdkNetwork];
+
+      // The JSON payload contains the cleartext phrase (the only scriptable way
+      // to capture it). Redirection auto-enables JSON mode, so warn on stderr —
+      // it never pollutes the stdout contract.
+      if (cli.json) {
+        process.stderr.write(
+          "⚠ The recovery phrase is included in this JSON output — secure or delete anything that captured it.\n",
+        );
+      }
 
       return {
         json: {

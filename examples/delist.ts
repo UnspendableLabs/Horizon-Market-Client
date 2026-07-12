@@ -26,7 +26,7 @@ async function delistViaWorkflow() {
 
 // ─── Manual start → sign → confirm ───────────────────────────────────────────
 
-async function delistManual() {
+export async function delistManual() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "testnet",
@@ -52,7 +52,7 @@ async function delistManual() {
 
 // ─── Read helpers ─────────────────────────────────────────────────────────────
 
-async function readHelpers() {
+export async function readHelpers() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "testnet",

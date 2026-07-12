@@ -14,11 +14,20 @@ terminal UX.
 
 ## Install
 
+The CLI ships as the npm package's `bin` — a global install is all you need:
+
+```bash
+npm install -g @unspendablelabs/horizon-market-client
+horizon --help
+```
+
+### From source (this repo)
+
 The CLI consumes the SDK's built `dist/` via `file:../..`, so **build the SDK
 first**, then build the CLI:
 
 ```bash
-# 1. From the repo root — build the SDK (with the new mnemonic/keystore exports)
+# 1. From the repo root — build the SDK
 npm install && npm run build
 
 # 2. In this directory
@@ -41,13 +50,21 @@ Fast dev loop (no build): `npm run horizon -- <command> [flags]` (runs via `tsx`
 | `buy`      | password    | Fill (purchase) a swap |
 | `send`     | password    | Send / withdraw any asset type |
 
-¹ `balances --include-kontor` unlocks the keystore (Kontor reads need the signer).
+¹ `balances --include-kontor` unlocks the keystore (Kontor reads need the
+signer) — on signet only; on mainnet it prints a note and skips the Kontor read.
 
 Run `horizon <command> --help` for the full flag list.
 
+### Importing a wallet
+
+`horizon init --import` reads an existing mnemonic via a **hidden prompt** (TTY)
+or **stdin** (piped) so the phrase never lands in your shell history. A positional
+mnemonic argument still works but is discouraged for that reason.
+
 ### Networks
 
-`--network mainnet|signet` (default: the keystore's network, else mainnet).
+`--network mainnet|signet` (default: the keystore's network, else mainnet —
+`init` itself always defaults to mainnet since no keystore exists yet).
 "Signet" maps to the SDK's `network:"testnet"` + `kontorNetwork:"signet"`.
 Endpoints follow `apps/web/src/lib/networks.ts` and are overridable via
 `HORIZON_*` env vars (see `.env.example`).
@@ -79,7 +96,7 @@ HORIZON_PASSWORD=test horizon sell --network signet \
 
 Enabled by `--json` **or** whenever stdout is not a TTY (pipes, CI). In this mode:
 
-- no color, spinner or prompt; workflow progress is suppressed;
+- no color or prompt; workflow progress is suppressed;
 - success → a single JSON object on **stdout**, exit `0` (bigints serialized as strings);
 - error → `{ "error": { "message", "code"? } }` on **stderr**, exit `≠0`;
 - **write** commands with a confirmation step (`sell` / `buy` / `send`) require
@@ -94,13 +111,18 @@ Enabled by `--json` **or** whenever stdout is not a TTY (pipes, CI). In this mod
   (`m/86'/<coin>'/<account>'/0/0`) backs the Taproot (p2tr) address, with
   `coin_type` per network (`0'` mainnet, `1'` signet/testnet). Import the same
   mnemonic here and in Horizon Wallet and you get the **same** Segwit *and*
-  Taproot addresses. Pick the account with `--account N` (default 0).
+  Taproot addresses. Pick the account with `init --account N` (default 0; the
+  other commands read it from the keystore). Note: `init` generates a 24-word
+  phrase by default — pass `--words 12` if the wallet must also be importable
+  into 12-word-only wallets (Horizon Wallet, XVerse).
 - Address routing per asset mirrors the SDK's `depositTargetFor`:
   ordinal / Kontor-NFT / KOR → Taproot; BTC / Counterparty / ZELD → Segwit.
   Kontor/KOR sign with the BIP86 (Taproot) key.
 - **BIP39 passphrase** — not stored. If you created the wallet with
-  `--passphrase`, supply it again on write commands via `--passphrase` or
+  `--passphrase`, supply it again on every command that unlocks the keystore
+  (writes, and `balances --include-kontor`) via `--passphrase` or
   `HORIZON_PASSPHRASE` (the CLI verifies the re-derived addresses match).
-- **ZELD** is mainnet-only. **Kontor** writes (sell/buy/send) are wired but
-  experimental on signet.
+- **ZELD** is mainnet-only by default (a signet endpoint can be supplied via
+  `HORIZON_ZELD_API_URL_SIGNET`). **Kontor** writes (sell/buy/send) are wired
+  but experimental on signet.
 - The mnemonic is printed **only once**, at `init`.

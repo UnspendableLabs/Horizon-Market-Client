@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { bigintReplacer, CliError, runCommand } from "./output.js";
 
@@ -43,24 +44,27 @@ describe("runCommand (JSON envelope)", () => {
     expect(JSON.parse(written)).toEqual({ ok: true, sats: "10" });
   });
 
+  // Errors are emitted through fs.writeSync(2, …), not process.stderr.write —
+  // stderr pipe writes are async on macOS/Windows and would be lost on exit(1).
   it("writes {error:{message,code}} to stderr and exits 1 on a CliError", async () => {
-    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const err = vi.spyOn(fs, "writeSync").mockReturnValue(0);
     const exit = vi
       .spyOn(process, "exit")
       .mockImplementation(() => undefined as never);
     await runCommand({ json: true }, () =>
       Promise.reject(new CliError("nope", "E_NOPE")),
     );
-    const written = err.mock.calls.map((c) => String(c[0])).join("");
+    const written = err.mock.calls.map((c) => String(c[1])).join("");
+    expect(err.mock.calls[0]?.[0]).toBe(2);
     expect(JSON.parse(written)).toEqual({ error: { message: "nope", code: "E_NOPE" } });
     expect(exit).toHaveBeenCalledWith(1);
   });
 
   it("omits code when the error is not a CliError", async () => {
-    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const err = vi.spyOn(fs, "writeSync").mockReturnValue(0);
     vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
     await runCommand({ json: true }, () => Promise.reject(new Error("plain")));
-    const written = err.mock.calls.map((c) => String(c[0])).join("");
+    const written = err.mock.calls.map((c) => String(c[1])).join("");
     expect(JSON.parse(written)).toEqual({ error: { message: "plain" } });
   });
 });

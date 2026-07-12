@@ -16,7 +16,6 @@ import * as ws from "./styles.web.js";
 export interface SellReviewClassNames {
   button?: string;
   buttonSecondary?: string;
-  summary?: string;
 }
 
 export interface SellReviewProps {

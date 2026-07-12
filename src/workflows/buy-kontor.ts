@@ -14,6 +14,33 @@ import type {
 import { WorkflowProgressReporter } from "./progress.js";
 
 /**
+ * The buyer's swap reveal was broadcast on-chain (`accept()`), but recording the
+ * purchase with Horizon failed. The offer is CONSUMED — do not retry
+ * `fillSwaps` (it would fail at inspect). Retry only the recording POST with the
+ * carried `txId`, or wait for the indexer to settle the purchase.
+ */
+export class KontorPurchaseNotRecordedError extends Error {
+  readonly swapId: string;
+  /** Txid of the already-broadcast swap reveal. */
+  readonly txId: string;
+  readonly buyerAddress: string;
+  override readonly cause?: unknown;
+
+  constructor(swapId: string, txId: string, buyerAddress: string, cause: unknown) {
+    super(
+      "Kontor offer was accepted on-chain (swap reveal broadcast) but the " +
+        "purchase could not be recorded server-side. Do NOT retry fillSwaps — " +
+        "the offer is already consumed. Retry recording with the carried txId.",
+    );
+    this.name = "KontorPurchaseNotRecordedError";
+    this.swapId = swapId;
+    this.txId = txId;
+    this.buyerAddress = buyerAddress;
+    this.cause = cause;
+  }
+}
+
+/**
  * fillKontorSwap — inspect offer → accept (broadcast swap reveal, client-side SDK) → record.
  *
  * The buyer's commit + swap reveal are composed, signed, and broadcast by the
@@ -81,9 +108,17 @@ export async function fillKontorSwap(
       incoming.accept(),
     );
 
-    const pendingSale = await progress.runAsync("submitPurchase", () =>
-      kontorBuy(http, swap.id, { buyerAddress, txId: txid }),
-    );
+    // The swap reveal is on-chain now: a failure recording it must carry the
+    // txid so the purchase can be recovered without re-accepting (mirrors
+    // KontorListingNotRecordedError / KontorDelistNotRecordedError).
+    let pendingSale: PendingSale;
+    try {
+      pendingSale = await progress.runAsync("submitPurchase", () =>
+        kontorBuy(http, swap.id, { buyerAddress, txId: txid }),
+      );
+    } catch (cause) {
+      throw new KontorPurchaseNotRecordedError(swap.id, txid, buyerAddress, cause);
+    }
 
     return [pendingSale];
   } finally {

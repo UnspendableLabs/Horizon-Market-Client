@@ -39,6 +39,35 @@ export async function resolvePassword(
 }
 
 /**
+ * Read a mnemonic for `init --import` WITHOUT it transiting argv (shell history,
+ * `ps`): a masked interactive prompt in a TTY, else the whole of stdin (e.g.
+ * `horizon init --import < phrase.txt`). The positional-argument path still
+ * exists but is discouraged.
+ */
+export async function resolveMnemonicImport(cli: CliContext): Promise<string> {
+  if (cli.isTty && !cli.json) {
+    const m = await clack.password({
+      message: "Recovery phrase (input hidden)",
+      validate: (v) => (!v || v.trim().length === 0 ? "Enter your mnemonic" : undefined),
+    });
+    if (clack.isCancel(m)) throw new CliError("Cancelled", "CANCELLED");
+    return m.trim();
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) {
+    throw new CliError(
+      "--import expected the mnemonic on stdin in a non-interactive session.",
+      "BAD_MNEMONIC",
+    );
+  }
+  return text;
+}
+
+/**
  * Guard a scriptable write: in `--json` mode a confirmation prompt is impossible,
  * so `--auto-confirm` is mandatory. Fails fast (before any network / unlock) so
  * scripts get a clean, deterministic error. `init` is exempt — it has no confirm

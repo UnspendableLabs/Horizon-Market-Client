@@ -74,10 +74,12 @@ export function resolveContext(args: Record<string, unknown>): CliContext {
   const isTty = Boolean(process.stdout.isTTY && process.stdin.isTTY);
   const json = Boolean(args.json) || !process.stdout.isTTY;
 
-  // `--passphrase` wins over $HORIZON_PASSPHRASE; both are optional.
+  // `--passphrase` wins over $HORIZON_PASSPHRASE; both are optional. Neither is
+  // trimmed: BIP39 passphrases are byte-significant, and silently stripping
+  // whitespace would derive a different wallet than other tools.
   const passphraseArg =
     typeof args.passphrase === "string" && args.passphrase ? args.passphrase : undefined;
-  const passphrase = passphraseArg ?? (process.env.HORIZON_PASSPHRASE?.trim() || undefined);
+  const passphrase = passphraseArg ?? (process.env.HORIZON_PASSPHRASE || undefined);
 
   return {
     json,

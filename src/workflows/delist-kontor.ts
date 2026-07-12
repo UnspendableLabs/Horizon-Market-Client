@@ -18,8 +18,9 @@ import { WorkflowProgressReporter } from "./progress.js";
  * but the server-side BIP322 delist did not complete. The asset is NOT at risk —
  * the listing is now unfulfillable (a buyer's `accept()` would double-spend the
  * reclaimed escrow and fail) — but it may still show as active server-side.
- * Safe to retry: the revoke has already happened, so only the server delist needs
- * to be re-run (`startDelist` → sign → `confirmDelist`) for swap `swapId`.
+ * Recovery: re-run ONLY the server delist (`startDelist` → sign →
+ * `confirmDelist`) for swap `swapId`. Do not call `delistSwap` again — it would
+ * attempt the on-chain revoke a second time and fail.
  */
 export class KontorDelistNotRecordedError extends Error {
   readonly swapId: string;
@@ -28,8 +29,9 @@ export class KontorDelistNotRecordedError extends Error {
   constructor(swapId: string, cause: unknown) {
     super(
       "Kontor offer was revoked on-chain (escrow reclaimed) but the listing " +
-        "could not be marked delisted server-side. Retry the delist; the " +
-        "on-chain revoke will not be repeated.",
+        "could not be marked delisted server-side. Do NOT re-run delistSwap — " +
+        "it would attempt the revoke again and fail. Complete the server-side " +
+        "delist only: startDelist → signMessage → confirmDelist for this swapId.",
     );
     this.name = "KontorDelistNotRecordedError";
     this.swapId = swapId;

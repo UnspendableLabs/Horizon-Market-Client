@@ -2,7 +2,9 @@ import { assertMutuallyExclusive } from "./assert.js";
 import type { BuyQuoteParams } from "./types/index.js";
 
 export function isP2WpkhAddress(address: string): boolean {
-  return address.startsWith("bc1q") || address.startsWith("tb1q");
+  // v0 20-byte witness program: 42-char bech32 ("bc1q…" / "tb1q…"). The length
+  // check excludes P2WSH, which shares the prefix but is 62 chars.
+  return /^(bc1q|tb1q)[a-z0-9]{38}$/.test(address);
 }
 
 export function assertP2WpkhBuyerAddress(address: string): void {

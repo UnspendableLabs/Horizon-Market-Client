@@ -39,13 +39,19 @@ export function Modal({ open, onClose, title, maxWidth = 450, children }: ModalP
   const cardStyle: CSSProperties = { ...ws.modalCard, maxWidth };
 
   return (
-    <div style={ws.modalOverlay} onClick={onClose} role="presentation">
-      <div
-        style={cardStyle}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
+    <div
+      style={ws.modalOverlay}
+      // Dismiss on `mousedown` (not `click`): a drag that starts inside the card
+      // (e.g. selecting text in an input) and releases over the backdrop fires
+      // `click` on the common ancestor — the overlay — which would close the
+      // modal and destroy form state. `mousedown` is keyed on where the gesture
+      // STARTED, so only a true backdrop press dismisses.
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <div style={cardStyle} role="dialog" aria-modal="true">
         <div style={ws.modalHeader}>
           {title != null ? <h2 style={ws.modalTitle}>{title}</h2> : <span />}
           <button

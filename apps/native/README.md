@@ -89,9 +89,8 @@ Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet
 > `rc.6` ships all the packaging fixes the app used to apply via `postinstall`
 > (`homepage` + `codegenConfig` in package.json, correctly-named
 > `KontorSdkNative.xcframework`, clean Android codegen, no stray
-> `expo-module.config.json`), so those workaround scripts are gone. This wiring
-> typechecks cleanly (`npx tsc --noEmit`); on-device verification is pending a
-> native rebuild (`npx expo run:ios` / `run:android`).
+> `expo-module.config.json`), so those workaround scripts are gone. Verified
+> on-device (market + wallet flows) after a native rebuild.
 
 ## App lock (biometrics / device passcode)
 
@@ -105,7 +104,7 @@ mirrors banking-app behaviour (e.g. Kraken). Implemented with
   with no wallet is never gated (`components/AppLock.tsx` reads the SDK's
   `addresses` via `<AppLockBridge/>`).
 - **Cold start** — the moment a restored session produces addresses, the lock
-  overlay covers the whole app (Header included) until the OS auth succeeds.
+  overlay covers the whole app (tab bar included) until the OS auth succeeds.
 - **Background** — re-locks after a ~30s grace period in the background, so a
   quick app-switch doesn't force a re-scan.
 - **Fallback** — `authenticate()` passes `disableDeviceFallback: false`, so iOS
@@ -127,8 +126,10 @@ a network switch (otherwise every switch would force a spurious re-auth).
 `components/PrivacyScreen.tsx` covers the app with an opaque brand screen whenever
 it leaves the foreground (any non-`active` AppState), so the OS multitasking
 snapshot doesn't leak balances/addresses. It's a JS-only cover — reliable on iOS;
-on Android a native `FLAG_SECURE` would be more airtight but would also block all
-screenshots, which isn't the goal here.
+on Android it's complemented by `components/ScreenCaptureGuard.tsx`, which applies
+`FLAG_SECURE` (via `expo-screen-capture`) on the recovery-phrase screens only, so
+regular screens stay screenshot-able. `plugins/withAndroidSecurity.js` also forces
+`android:allowBackup="false"` so app data is excluded from device backups.
 
 > Requires a native rebuild: `expo-local-authentication` is a native module and
 > the Face ID usage string is added via an `app.json` config plugin, so run

@@ -22,6 +22,18 @@ For the optional React UI (web or React Native), also install peer dependencies:
 npm install react
 # React Native apps only:
 npm install react-native
+# Optional native peers — wallet/brand icons and address copy:
+npm install react-native-svg expo-clipboard
+```
+
+### CLI
+
+The package ships the `horizon` CLI ([apps/cli](apps/cli)) as its `bin` — a global
+install puts it on your PATH:
+
+```bash
+npm install -g @unspendablelabs/horizon-market-client
+horizon --help    # init / list / balances / sell / buy / send
 ```
 
 ## Quote → sign → submit
@@ -53,7 +65,7 @@ flowchart LR
 
 Use the high-level workflow methods (`openSellOrder`, `fillSwaps`, `delistSwap`) or the REST helpers for manual control.
 
-For manual sell flows, `signAndFinalizeSellPrep(quote, signer, network)` signs and finalizes attach or zeld transfer prep PSBTs from a sell quote.
+For manual sell flows, `signAndFinalizeSellPrep(quote, signer, btcNetwork)` signs and finalizes attach or zeld transfer prep PSBTs from a sell quote (`btcNetwork` is a bitcoinjs-lib `Network` object — see [examples/sell.ts](examples/sell.ts)).
 
 ## Progress callbacks
 
@@ -73,13 +85,13 @@ await client.openSellOrder(params, {
 
 Each step emits `phase: "start"` before work begins and `phase: "complete"` when done. On failure, `phase: "error"` is emitted for the failing step before the error is re-thrown.
 
-| Workflow | Steps |
-|----------|-------|
-| `openSellOrder` | `validateParams` → `requestSellQuote` → `signPrepPsbt`* → `finalizePrepPsbt`* → `signSwapPsbt` → `signFeePsbt`* → `createSwap` |
-| `fillSwaps` | `validateParams` → `requestBuyQuote` → `signBuyerPsbt` → `submitPurchase` |
-| `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` |
+| Workflow | Steps (PSBT listings) | Steps (Kontor listings) |
+|----------|-----------------------|-------------------------|
+| `openSellOrder` | `validateParams` → `requestSellQuote` → `signPrepPsbt`* → `finalizePrepPsbt`* → `signSwapPsbt` → `signFeePsbt`* → `createSwap` | `validateParams` → `reserveKontorFee` → `composeKontorOffer` → `createSwap` |
+| `fillSwaps` | `validateParams` → `requestBuyQuote` → `signBuyerPsbt` → `submitPurchase` | `validateParams` → `inspectKontorOffer` → `acceptKontorOffer` → `submitPurchase` |
+| `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` | `revokeKontorOffer` → `startDelist` → `signDelistMessage` → `confirmDelist` |
 
-\* omitted when not applicable (no prep PSBT / no fee PSBT). `totalSteps` is `null` on the first `openSellOrder` events until the sell quote is received and the step plan is known.
+\* omitted when not applicable (no prep PSBT / no fee PSBT). For PSBT listings, `totalSteps` is `null` on the first `openSellOrder` events until the sell quote is received and the step plan is known; Kontor workflows know their step count up front.
 
 ## React UI (optional)
 
@@ -114,11 +126,14 @@ function App() {
 | `HorizonMarketProvider` | Context: client, addresses, `initialize` / `logout`, theme |
 | `useHorizonMarket`, `useTheme` | Access provider state and resolved theme |
 | `useLoginPanel`, `useAssets`, `useSellOrder`, `useSwapConfirmation`, `useSwapList` | Headless hooks (build your own UI) |
+| `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
 | `SellOrderForm` | Multi-step sell listing from the wallet's owned balances (pick asset, confirm, progress) |
 | `SwapConfirmation` | Buy or delist a swap with progress UI |
-| `WorkflowProgress` | Standalone progress list (also used inside the forms) |
+| `WithdrawForm`, `WalletBalances`, `WalletBalanceSummary` | Wallet UI: send/withdraw any asset, full balances view, compact summary |
+| `WorkflowProgress`, `Modal` | Standalone progress list and the shared overlay modal |
+| `defaultTheme`, `resolveTheme` | Theme helpers (plus `themeToCssVars` / `webTokens` on web) |
 
 On **web**, the provider injects theme CSS variables (`--hm-*`) and falls back to shadcn/ui tokens when present. On **React Native**, pass `styles` overrides per component.
 
@@ -219,10 +234,13 @@ sent). To supply them yourself — or use a dedicated funding address — pass `
 on sell, `kontorFundingUtxos` on buy, or `fundingUtxos` in `delistSwap` options (a
 `KontorUtxoInput[]` or a `() => Promise<KontorUtxoInput[]>` fetcher).
 
-**Orphan protection.** The attach reveal is broadcast on-chain *before* the listing is
-recorded. If the recording POST fails, `openSellOrder` throws
-`KontorListingNotRecordedError` carrying `{ offerBlob, createRequest }` so you can retry the
-POST without re-broadcasting (or revoke to reclaim the escrowed asset).
+**Orphan protection.** Kontor transactions are broadcast on-chain *before* the
+corresponding server-side record. If the recording POST fails after the broadcast,
+the workflows throw marker errors so you can recover without re-broadcasting:
+
+- `openSellOrder` → `KontorListingNotRecordedError` carrying `{ offerBlob, createRequest }` — retry the POST, or revoke to reclaim the escrowed asset
+- `fillSwaps` → `KontorPurchaseNotRecordedError` carrying `{ swapId, txId, buyerAddress }` — the offer is consumed; retry only the recording
+- `delistSwap` → `KontorDelistNotRecordedError` carrying `{ swapId }` — the revoke happened; re-run only `startDelist` → sign → `confirmDelist`
 
 > Requires a `LocalSigner` (i.e. construct with `privateKey`). Custom signers must
 > implement the optional `getKontorSigning(chain)` capability to support Kontor.
@@ -250,13 +268,15 @@ if (locked["my-txid:0"]) {
 
 ```ts
 new HorizonMarketClient({
-  privateKey?: string | Uint8Array,  // hex, with or without 0x
-  mnemonic?: string,                 // BIP39 phrase (derived via LocalSigner.fromMnemonic)
-  mnemonicOptions?: { path?, passphrase? }, // derivation overrides for `mnemonic`
+  privateKey?: string | Uint8Array,  // hex, with or without 0x (single key backs both addresses)
+  mnemonic?: string,                 // BIP39 phrase — derived via HDSigner.fromMnemonic (Horizon Wallet convention: BIP84 segwit + BIP86 taproot)
+  mnemonicOptions?: { account?, passphrase? }, // BIP32 account index + BIP39 passphrase for `mnemonic`
   signer?: Signer,                   // custom signer (hardware wallet, etc.)
   network?: "mainnet" | "testnet",   // default: "mainnet"
   baseUrl?: string,                  // default: "https://horizon.market"
   fetch?: typeof globalThis.fetch,   // injectable fetch (for tests / custom runtimes)
+  sessionToken?: string,             // reuse a NextAuth session cookie (fee credits) across processes
+  bearerToken?: string,              // reuse a bearer token from signInWithWallet (cross-origin friendly)
   kontorNetwork?: "signet",          // enable Kontor ops (signet-only today; requires network: "testnet")
   kontorIndexerUrl?: string,         // default: public signet indexer; set for self-hosting / browser CORS
   kontorNftContractAddress?: string, // NFT contract to enumerate owned Kontor NFTs (no cross-contract query)
@@ -267,6 +287,12 @@ new HorizonMarketClient({
 
 Signer precedence when several are given: `signer` > `privateKey` > `mnemonic`.
 
+Note the two mnemonic paths derive **different** keys: the constructor `mnemonic`
+option follows the Horizon Wallet convention (`HDSigner` — a BIP84 key for the
+SegWit address, a BIP86 key for the Taproot address, `coin_type` per network),
+while `LocalSigner.fromMnemonic` derives a **single** BIP86 key backing both
+addresses (the web3auth model).
+
 ### Mnemonic & Keystore
 
 Pure-JS helpers (no `node:crypto`, no WASM — usable in Node, the browser and
@@ -275,14 +301,14 @@ React Native with the `react-native-get-random-values` polyfill):
 - `generateMnemonic(strength?)` — 128-bit (12 words) or 256-bit (24 words, default) BIP39 phrase
 - `validateMnemonic(mnemonic)` — wordlist + checksum check
 - `mnemonicToPrivateKey(mnemonic, { path?, passphrase? })` — derive a raw secp256k1 key (hex)
-- `LocalSigner.fromMnemonic(mnemonic, { network?, path?, passphrase? })` — a ready signer
+- `LocalSigner.fromMnemonic(mnemonic, { network?, path?, passphrase? })` — single-key signer (one BIP86 key backs both addresses — web3auth model; the SegWit address will **not** match a standard BIP84 wallet)
+- `HDSigner.fromMnemonic(mnemonic, { network?, account?, passphrase? })` — Horizon-Wallet-compatible two-key signer (BIP84 segwit + BIP86 taproot, `coin_type` per network); this is what the client `mnemonic` option uses
+- `deriveHorizonWalletKeys`, `horizonWalletPath`, `coinTypeForNetwork`, `privateKeyToMnemonic` — lower-level derivation helpers
 - `DEFAULT_DERIVATION_PATH` — BIP86 `m/86'/0'/0'/0/0` (`coin_type` fixed to 0; network chosen at address time)
 - `encryptKeystore(secret, password, opts?)` / `decryptKeystore(json, password)` — scrypt + AES-256-GCM keystore blobs (string → string; you own storage)
 
-A single derived key backs **both** the p2wpkh and p2tr address (matching the
-web/native web3auth model), so the Segwit address will **not** equal the first
-receive address of a standard BIP84 wallet. See `apps/cli` for an
-end-to-end integration (encrypted `0600` keystore file, `init` / `sell` / `buy` / `send`).
+See `apps/cli` for an end-to-end integration (encrypted `0600` keystore file,
+`init` / `list` / `balances` / `sell` / `buy` / `send`).
 
 ### Owned-Balance Reads
 
@@ -292,11 +318,32 @@ Read the connected wallet's real holdings (used by `SellOrderForm` / `useAssets`
 - `getZeldBalances(addresses)` — ZELD balance per address from the ZeldHash API (its own protocol; mainnet only)
 - `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`)
 
+### Send / Withdraw
+
+Compose, sign, and broadcast a plain transfer of any supported asset type
+(BTC / Counterparty / ZELD / ordinal / KOR / Kontor NFT) — used by the
+`WithdrawForm` component and the CLI `send` command:
+
+- `prepareSend(request, options?)` — compose + sign; returns a `PreparedSend` with the exact `feeSats` and a `broadcast()` method
+- `send(request, options?)` — prepare + broadcast in one call, returns `{ txid }`
+- Types: `SendRequest` (discriminated on `kind`), `SendResult`, `PreparedSend`; `options.protectedUtxoIds` keeps inscription UTXOs out of BTC funding
+
+### Authentication & Credits (optional)
+
+Wallet sign-in (BIP322) for platform-fee credits. Anonymous use works fine — these
+only unlock fee waivers:
+
+- `signInWithWallet(params)` — bearer-token sign-in (`WalletTokenSignIn`); pass the token back via the `bearerToken` option
+- `signInWithWalletCookie(params)` — cookie-based variant for same-origin apps (see `sessionToken`)
+- `getCredits()` — `CreditBalance | null` (`null` = signed out; throws on transient server errors)
+- `getSession()` / `isAuthenticated()` / `signOut()` — session introspection and teardown
+
 ### Workflow Methods
 
-- `openSellOrder(params)` — quote → sign → submit sell listing
-- `fillSwaps(params)` — quote → sign → submit purchase
-- `delistSwap(swapId)` — start → sign (BIP322) → confirm delist
+- `openSellOrder(params, options?)` — quote → sign → submit sell listing; returns `{ swap, created, transactions }` (`transactions` = on-chain txs the listing broadcast)
+- `fillSwaps(params, options?)` — quote → sign → submit purchase
+- `delistSwap(swapId, options?)` — start → sign (BIP322) → confirm delist
+- `previewKontorListingFee(address)` — side-effect-free Kontor listing-fee preview
 
 ### REST Helpers
 

@@ -63,15 +63,18 @@ function ThumbnailOrPlaceholder({
   /** Custom artwork for listings with no image (e.g. the Kontor mark for KOR). */
   placeholderContent?: ReactNode;
 }) {
-  const [errored, setErrored] = useState(false);
-  if (thumbnailUrl && !errored) {
+  // Track the URL that failed (not a bare boolean) so a corrected/refreshed
+  // `thumbnailUrl` automatically re-attempts instead of sticking on the
+  // placeholder — same pattern as AssetAvatar.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (thumbnailUrl && failedUrl !== thumbnailUrl) {
     return (
       <img
         src={thumbnailUrl}
         alt={assetName ?? ""}
         className={imageClassName}
         style={imageStyle}
-        onError={() => setErrored(true)}
+        onError={() => setFailedUrl(thumbnailUrl)}
       />
     );
   }

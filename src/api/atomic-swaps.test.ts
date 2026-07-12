@@ -421,7 +421,7 @@ describe("createSwap", () => {
 describe("purchaseSwaps", () => {
   it("maps wire pending sales to domain type", async () => {
     const wireSales = [
-      { tx_id: "txid_1", buyer_address: "bc1qbuyer", atomic_swap: { id: "swap_abc" } },
+      { tx_id: "txid_1", buyer_address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", atomic_swap: { id: "swap_abc" } },
     ];
     const http = new HttpClient({
       baseUrl: "https://example.com",
@@ -429,11 +429,11 @@ describe("purchaseSwaps", () => {
     });
     const sales = await purchaseSwaps(http, {
       swapIds: ["swap_abc"],
-      buyerAddress: "bc1qbuyer",
+      buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
       psbtHex: "70736274ff",
     });
     expect(sales).toEqual([
-      { txId: "txid_1", buyerAddress: "bc1qbuyer", atomicSwap: { id: "swap_abc" } },
+      { txId: "txid_1", buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", atomicSwap: { id: "swap_abc" } },
     ]);
   });
 });
@@ -481,7 +481,7 @@ describe("getPendingPurchaseTxIds", () => {
       baseUrl: "https://example.com",
       fetch: makeFetch(200, { data: txIds }),
     });
-    const result = await getPendingPurchaseTxIds(http, "swap_abc", "bc1qbuyer");
+    const result = await getPendingPurchaseTxIds(http, "swap_abc", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
     expect(result).toEqual(txIds);
   });
 });

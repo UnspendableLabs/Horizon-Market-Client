@@ -19,7 +19,7 @@ describe("requestBuyQuote", () => {
     });
     const quote = await requestBuyQuote(http, {
       swapIds: ["swap_abc"],
-      buyerAddress: "bc1qbuyer",
+      buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
     });
     expect(quote).toEqual({
       psbt: "70736274ff_buy",
@@ -35,13 +35,13 @@ describe("requestBuyQuote", () => {
     const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
     await requestBuyQuote(http, {
       swapIds: ["swap_abc", "swap_def"],
-      buyerAddress: "bc1qbuyer",
+      buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
       detach: true,
     });
     const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.swap_ids).toEqual(["swap_abc", "swap_def"]);
-    expect(body.buyer_address).toBe("bc1qbuyer");
+    expect(body.buyer_address).toBe("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
     expect(body.detach).toBe(true);
     expect(body).not.toHaveProperty("data");
   });
@@ -51,7 +51,7 @@ describe("requestBuyQuote", () => {
     const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
     await requestBuyQuote(http, {
       swapIds: ["swap_ordinal"],
-      buyerAddress: "bc1qbuyer",
+      buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
       buyerTaprootAddress: "bc1pinscription",
     });
     const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
@@ -62,7 +62,7 @@ describe("requestBuyQuote", () => {
   it("omits optional params when not provided", async () => {
     const fetchFn = makeFetch(200, { data: WIRE_BUY_QUOTE });
     const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
-    await requestBuyQuote(http, { swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" });
+    await requestBuyQuote(http, { swapIds: ["swap_abc"], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" });
     const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body).not.toHaveProperty("buyer_taproot_address");
@@ -78,7 +78,7 @@ describe("requestBuyQuote", () => {
     });
     const quote = await requestBuyQuote(http, {
       swapIds: ["swap_abc"],
-      buyerAddress: "bc1qbuyer",
+      buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
     });
     expect(quote.royaltySats).toBe(1000);
     expect(quote.royaltyAddress).toBe("bc1qroyalty");

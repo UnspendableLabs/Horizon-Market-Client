@@ -40,13 +40,11 @@ export interface SellOrderFormStyles {
   root?: StyleProp<ViewStyle>;
   label?: StyleProp<TextStyle>;
   input?: StyleProp<TextStyle>;
-  dropdown?: StyleProp<ViewStyle>;
   dropdownText?: StyleProp<TextStyle>;
   button?: StyleProp<ViewStyle>;
   buttonText?: StyleProp<TextStyle>;
   buttonSecondary?: StyleProp<ViewStyle>;
   buttonSecondaryText?: StyleProp<TextStyle>;
-  summary?: StyleProp<ViewStyle>;
   progress?: WorkflowProgressStyles;
   error?: StyleProp<TextStyle>;
 }

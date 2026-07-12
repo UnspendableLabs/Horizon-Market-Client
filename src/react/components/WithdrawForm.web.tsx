@@ -24,7 +24,6 @@ export interface WithdrawFormClassNames {
   input?: string;
   button?: string;
   buttonSecondary?: string;
-  summary?: string;
   error?: string;
   success?: string;
 }

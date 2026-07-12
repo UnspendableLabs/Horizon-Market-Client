@@ -491,7 +491,9 @@ export function HorizonMarketProvider({
 
   const refreshCredits = useCallback(async () => {
     if (!authState) return;
-    const balance = await (authedClient ?? anonClient).getCredits();
+    // getCredits throws on transient server errors (5xx) — keep the last known
+    // balance rather than surfacing an unhandled rejection mid-refresh.
+    const balance = await (authedClient ?? anonClient).getCredits().catch(() => null);
     if (balance) {
       setSession((prev) =>
         prev

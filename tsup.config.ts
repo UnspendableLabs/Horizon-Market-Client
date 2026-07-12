@@ -1,4 +1,9 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "tsup";
+
+const pkg = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+) as { version: string };
 
 // Cleaning is handled by the `clean` npm script (run before `tsup`). Setting
 // `clean: true` on one entry while running multiple entries in parallel could
@@ -44,5 +49,23 @@ export default defineConfig([
     esbuildOptions(options) {
       options.jsx = "automatic";
     },
+  },
+  {
+    // The `horizon` CLI (apps/cli), shipped as this package's `bin` so a global
+    // `npm install -g` puts `horizon` on the PATH. Its terminal-only helpers
+    // (citty, prompts, colors, tables) are inlined via `noExternal`; the SDK
+    // import stays external and resolves at runtime through Node's package
+    // self-reference (the bin lives inside the package, so
+    // `@unspendablelabs/horizon-market-client` resolves to `./dist/index.js`).
+    entry: { "cli/index": "apps/cli/src/index.ts" },
+    format: ["esm"],
+    platform: "node",
+    target: "node20",
+    splitting: false,
+    sourcemap: true,
+    banner: { js: "#!/usr/bin/env node" },
+    external: ["@unspendablelabs/horizon-market-client"],
+    noExternal: ["citty", "@clack/prompts", "cli-table3", "picocolors"],
+    define: { __HORIZON_CLI_VERSION__: JSON.stringify(pkg.version) },
   },
 ]);

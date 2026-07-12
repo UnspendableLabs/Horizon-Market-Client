@@ -48,14 +48,34 @@ function toBigInt(value: unknown): bigint | null {
   return null;
 }
 
+/** Exact base-unit bigint from the API's `quantity_normalized` decimal string. */
+function normalizedToBigInt(normalized: string, divisible: boolean): bigint | null {
+  const t = normalized.trim();
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  if (!divisible) return t.includes(".") ? null : BigInt(t);
+  const [whole, frac = ""] = t.split(".");
+  if (frac.length > 8) return null;
+  return BigInt(whole) * 100_000_000n + BigInt(frac.padEnd(8, "0"));
+}
+
 function mapRow(raw: unknown, address: string): CounterpartyBalance | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as BalanceRowWire;
   if (typeof row.asset !== "string" || row.asset.length === 0) return null;
   if (row.asset === ZELD_ASSET) return null;
-  const quantity = toBigInt(row.quantity);
-  if (quantity === null || quantity <= 0n) return null;
   const divisible = row.asset_info?.divisible === true;
+  let quantity = toBigInt(row.quantity);
+  // `quantity` rides through res.json() as an IEEE-754 double: above 2^53 the
+  // parsed number is already rounded. `quantity_normalized` is an exact decimal
+  // string — rebuild the base-unit bigint from it for large balances.
+  if (
+    typeof row.quantity === "number" &&
+    !Number.isSafeInteger(row.quantity) &&
+    typeof row.quantity_normalized === "string"
+  ) {
+    quantity = normalizedToBigInt(row.quantity_normalized, divisible) ?? quantity;
+  }
+  if (quantity === null || quantity <= 0n) return null;
   const quantityNormalized =
     typeof row.quantity_normalized === "string"
       ? row.quantity_normalized

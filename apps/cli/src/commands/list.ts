@@ -142,8 +142,18 @@ export const listCommand = defineCommand({
         throw new CliError(`Invalid --type "${type}"`, "BAD_TYPE");
       }
 
-      const limit = Math.max(1, Number(ctx.args.limit) || 24);
-      const page = Math.max(0, Number(ctx.args.page) || 0);
+      // Strict decimal integers — silently coercing "abc" → 24 or "1.5" → a
+      // fractional server offset would hide caller mistakes (cf. BAD_SORT above).
+      const limitRaw = String(ctx.args.limit);
+      if (!/^\d+$/.test(limitRaw) || Number(limitRaw) < 1 || Number(limitRaw) > 500) {
+        throw new CliError("--limit must be an integer between 1 and 500", "BAD_LIMIT");
+      }
+      const limit = Number(limitRaw);
+      const pageRaw = String(ctx.args.page);
+      if (!/^\d+$/.test(pageRaw)) {
+        throw new CliError("--page must be a non-negative integer", "BAD_PAGE");
+      }
+      const page = Number(pageRaw);
 
       // Kontor is signet-only: without kontorNetwork the query returns nothing.
       const kontorUnavailable = type === "kontor" && cfg.kontorNetwork !== "signet";
