@@ -1,7 +1,9 @@
 /**
  * Privacy screen — an opaque brand cover shown whenever the app is not in the
  * foreground, so the OS app-switcher / multitasking snapshot doesn't leak wallet
- * balances or addresses.
+ * balances or addresses. It's the SAME <BrandCover/> as the app-lock boot cover and
+ * lock overlay (just the H mark), so leaving/returning to the app is visually
+ * seamless with the splash — no separate wordmark screen to jump to.
  *
  * The snapshot is captured as the app leaves the foreground, so we cover on any
  * non-"active" AppState ("inactive" and "background"). Rendering on "inactive"
@@ -14,8 +16,8 @@
  * shows briefly behind the system prompt — harmless (it's the same brand screen).
  */
 import { useEffect, useState } from "react";
-import { AppState, StyleSheet, Text, View } from "react-native";
-import { colors, fonts, spacing } from "../lib/theme.js";
+import { AppState } from "react-native";
+import { BrandCover } from "./BrandCover.js";
 
 export function PrivacyScreen() {
   const [hidden, setHidden] = useState(false);
@@ -29,32 +31,5 @@ export function PrivacyScreen() {
 
   if (!hidden) return null;
 
-  return (
-    <View style={styles.cover} pointerEvents="none">
-      <Text style={styles.wordmark}>Horizon</Text>
-      <Text style={styles.tagline}>The DEX of Bitcoin metaprotocols</Text>
-    </View>
-  );
+  return <BrandCover pointerEvents="none" />;
 }
-
-const styles = StyleSheet.create({
-  cover: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-  },
-  wordmark: {
-    fontSize: 28,
-    color: colors.foreground,
-    fontFamily: fonts.sansBold,
-    letterSpacing: -0.5,
-  },
-  tagline: {
-    fontSize: 13,
-    color: colors.muted,
-    fontFamily: fonts.sansSemiBold,
-    letterSpacing: 0.2,
-  },
-});

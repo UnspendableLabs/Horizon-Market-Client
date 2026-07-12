@@ -30,24 +30,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AppState, Image, Pressable, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppState, Pressable, StyleSheet, View } from "react-native";
 import { useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { authenticate, canUseAppLock } from "../lib/app-lock.js";
 import { onFreshLogin } from "../lib/app-lock-events.js";
 import { hasPersistedSession } from "../lib/web3auth.js";
-import { colors } from "../lib/theme.js";
+import { BrandCover, BrandMark, useBrandOverlayStyle } from "./BrandCover.js";
 
 /** How long the app may sit in the background before it re-locks on return. */
 const GRACE_MS = 30_000;
 
 // Both the boot cover AND the lock overlay are seamless continuations of the native
-// splash: same H mark (assets/icon.png), same size (200px, matching app.json →
-// expo-splash-screen's imageWidth), same background, centered on the FULL screen
-// (see the -insets.top offset below). So the OS splash → boot cover → lock handoff
-// is invisible: the user just sees the splash logo, unmoving, while the OS auth sheet
+// splash — just the H mark, centered on the full screen (see <BrandCover/> and the
+// shared useBrandOverlayStyle). So the OS splash → boot cover → lock handoff is
+// invisible: the user just sees the splash logo, unmoving, while the OS auth sheet
 // slides over it. No wordmark, tagline, spinner, or Unlock button — just the H.
-const brandMark = require("../assets/icon.png");
+// The same cover backs the app-switcher privacy screen, so all three stay identical.
 
 interface AppLockContextValue {
   /** Reported by <AppLockBridge/> inside the provider: is a wallet session live? */
@@ -89,11 +87,9 @@ export function AppLockBridge() {
 }
 
 export function AppLockProvider({ children }: { children: ReactNode }) {
-  // The overlays live inside the app's SafeAreaView (top inset), but the native
-  // splash centers on the FULL screen. Pull the overlay up by the top inset so its
-  // logo lands on the true screen center — otherwise it sits ~half the status-bar
-  // height too low and the splash → cover handoff visibly jumps.
-  const insets = useSafeAreaInsets();
+  // Inset-corrected full-screen overlay style, shared with <BrandCover/> and the
+  // privacy screen so the interactive lock lines up pixel-for-pixel with them.
+  const overlayStyle = useBrandOverlayStyle();
   const [walletConnected, setWalletConnected] = useState(false);
   // `null` while we probe the device; `false` disables the gate entirely (no
   // biometrics and no passcode configured — nothing to authenticate against).
@@ -213,32 +209,22 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     <AppLockContext.Provider value={value}>
       <View style={styles.container}>
         {children}
-        {showCover && (
-          <View style={[styles.overlay, { top: -insets.top }]}>
-            <Image
-              source={brandMark}
-              style={styles.coverLogo}
-              resizeMode="contain"
-            />
-          </View>
-        )}
+        {showCover && <BrandCover />}
         {/* The lock screen is visually the splash: just the H. The OS auth sheet
             (auto-triggered above) slides over it, so there's no in-app button or
             text to flash before/after the system prompt. If the user cancels the
-            sheet, a tap anywhere re-runs auth (runAuth is re-entrancy guarded). */}
+            sheet, a tap anywhere re-runs auth (runAuth is re-entrancy guarded). It's
+            a Pressable (not a <BrandCover/>), so it shares the overlay style + mark
+            rather than the plain View. */}
         {showLock && (
           <Pressable
-            style={[styles.overlay, { top: -insets.top }]}
+            style={overlayStyle}
             onPress={() => void runAuth()}
             disabled={authing}
             accessibilityRole="button"
             accessibilityLabel="Authenticate to unlock"
           >
-            <Image
-              source={brandMark}
-              style={styles.coverLogo}
-              resizeMode="contain"
-            />
+            <BrandMark />
           </Pressable>
         )}
       </View>
@@ -249,21 +235,5 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  // Opaque full-bleed cover: sits above every screen so nothing behind it is
-  // visible or tappable. Extended to the full screen (top: -insets.top, applied
-  // inline) so its centered logo lands exactly where the native splash's does.
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  // The H mark alone, sized to match the native splash (app.json imageWidth: 200)
-  // so the JS cover is a pixel-continuation of the OS splash. Square: icon.png
-  // carries its own dark padding, so `contain` on colors.background is seamless.
-  coverLogo: {
-    width: 200,
-    height: 200,
   },
 });
