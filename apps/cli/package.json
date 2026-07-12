@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
-    "@unspendablelabs/horizon-market-client": "file:../../..",
+    "@unspendablelabs/horizon-market-client": "file:../..",
     "citty": "^0.2.2",
     "cli-table3": "^0.6.5",
     "picocolors": "^1.1.1"

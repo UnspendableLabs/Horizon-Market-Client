@@ -2,7 +2,7 @@
 //
 // Two things to make the SDK + Web3Auth resolve under React Native:
 //
-// 1. The Horizon SDK is linked via `file:../../..`, so its source lives outside
+// 1. The Horizon SDK is linked via `file:../..`, so its source lives outside
 //    this app's dir. Metro only watches the project dir by default, so we add the
 //    repo root to `watchFolders` and let Metro also resolve from the repo-root
 //    node_modules via `nodeModulesPaths`. (@kontor/sdk / @kontor/sdk-native now
@@ -29,8 +29,8 @@ const path = require("path");
 const fs = require("fs");
 
 const projectRoot = __dirname;
-// examples/apps/native → repo root is three levels up.
-const repoRoot = path.resolve(projectRoot, "../../..");
+// apps/native → repo root is two levels up.
+const repoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
@@ -61,7 +61,7 @@ config.resolver.extraNodeModules = {
   string_decoder: nm("string_decoder"),
   process: nm("process"),
   // Force a SINGLE copy of React / React Native. The SDK is linked via
-  // `file:../../..`, so its `import ... from "react"` would otherwise resolve to the
+  // `file:../..`, so its `import ... from "react"` would otherwise resolve to the
   // repo-root React (a different version than this app's), giving the SDK a mismatched
   // — effectively null — React and crashing its components with
   // `Cannot read property 'useState' of null`. Pinning both to this app's copy (and
@@ -124,7 +124,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
   // Force a SINGLE copy of the framework + native singleton packages. The SDK is
-  // linked via `file:../../..`, so its imports of these resolve (via package
+  // linked via `file:../..`, so its imports of these resolve (via package
   // `exports`, which bypasses extraNodeModules aliases) to the repo-root copies —
   // different instances than this app's. Duplicates break in two ways:
   //   • two `react` copies → two hook dispatchers → the SDK's components crash with

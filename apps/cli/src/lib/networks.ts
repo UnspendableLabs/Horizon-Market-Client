@@ -1,5 +1,5 @@
 /**
- * Network table — the CLI mirror of `examples/apps/web/src/lib/networks.ts`,
+ * Network table — the CLI mirror of `apps/web/src/lib/networks.ts`,
  * reading `process.env` (not Vite's `import.meta.env`). Maps a UI network to the
  * concrete `HorizonMarketClient` endpoints plus the CLI-only `ordApiBaseUrl`
  * (the ord server URL is consumed by `lib/ordinals.ts`, not the client).

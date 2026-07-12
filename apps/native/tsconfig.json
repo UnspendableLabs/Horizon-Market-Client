@@ -13,7 +13,7 @@
     "customConditions": ["react-native"],
     // Force every `react` import in the program — including the ones inside the
     // file-linked SDK's `.d.ts` — to resolve to THIS app's single @types/react@19.
-    // Without this, the SDK (linked via `file:../../..`) pulls the repo root's
+    // Without this, the SDK (linked via `file:../..`) pulls the repo root's
     // devDep @types/react@18, so React's globals are declared twice and every RN
     // element fails as a JSX component ("bigint not assignable to ReactNode").
     //

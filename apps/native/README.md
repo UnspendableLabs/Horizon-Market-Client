@@ -10,7 +10,7 @@ passwordless), a swap list, a sell flow, and a runtime mainnet ⇄ signet switch
 # from the repo root: build the library once so the file: dependency resolves
 npm install && npm run build
 
-cd examples/apps/native
+cd apps/native
 npm install
 npx expo start
 ```

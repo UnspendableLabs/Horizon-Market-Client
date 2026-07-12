@@ -9,7 +9,7 @@ library (Web3Auth login + swap list).
 # from the repo root: build the library once so the file: dependency resolves
 npm install && npm run build
 
-cd examples/apps/web
+cd apps/web
 npm install
 npm run dev
 ```
@@ -18,7 +18,7 @@ Environment variables live in `.env.local` (gitignored). See the keys below.
 
 ## Deploying to Vercel
 
-This example depends on the parent library via `"@unspendablelabs/horizon-market-client": "file:../../.."`.
+This example depends on the parent library via `"@unspendablelabs/horizon-market-client": "file:../.."`.
 The library is **not** published to npm, so Vercel must build it from source
 during the deploy. That is wired up in [`vercel.json`](./vercel.json):
 
@@ -26,9 +26,9 @@ during the deploy. That is wired up in [`vercel.json`](./vercel.json):
 {
   "framework": "vite",
   // install web deps, then the library's deps (cwd = repo root → honors root .npmrc)
-  "installCommand": "npm install && (cd ../../.. && npm install)",
+  "installCommand": "npm install && (cd ../.. && npm install)",
   // build the library first (creates its dist/), then build this app
-  "buildCommand": "(cd ../../.. && npm run build) && npm run build"
+  "buildCommand": "(cd ../.. && npm run build) && npm run build"
 }
 ```
 
@@ -36,9 +36,9 @@ during the deploy. That is wired up in [`vercel.json`](./vercel.json):
 
 These are **Project Settings** and cannot be expressed in `vercel.json`:
 
-1. **Root Directory** → `examples/apps/web`
+1. **Root Directory** → `apps/web`
 2. **Include source files outside of the Root Directory in the Build Step** →
-   **ON** (required — the `file:../../..` dependency and the `cd ../../..` build
+   **ON** (required — the `file:../..` dependency and the `cd ../..` build
    step need the full repo checked out).
 3. **Node.js Version** → `20.x` (matches the library's `engines.node >= 20`).
 4. Leave the dashboard **Build / Install Command** fields blank so the committed
@@ -65,8 +65,8 @@ dashboard, or login will fail on the deployed origin.
 ### Deploy via CLI (optional)
 
 ```bash
-cd examples/apps/web
-vercel link          # set Root Directory = examples/apps/web when prompted
+cd apps/web
+vercel link          # set Root Directory = apps/web when prompted
 vercel               # preview deploy
 vercel --prod        # production deploy
 ```

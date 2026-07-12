@@ -15,7 +15,7 @@
     "@kontor/sdk-native": "0.3.0-rc.5",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/material-top-tabs": "^7.6.7",
-    "@unspendablelabs/horizon-market-client": "file:../../..",
+    "@unspendablelabs/horizon-market-client": "file:../..",
     "@web3auth/base": "^9.7.0",
     "@web3auth/base-provider": "^9.7.0",
     "@web3auth/react-native-sdk": "^8.1.0",

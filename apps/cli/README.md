@@ -14,7 +14,7 @@ terminal UX.
 
 ## Install
 
-The CLI consumes the SDK's built `dist/` via `file:../../..`, so **build the SDK
+The CLI consumes the SDK's built `dist/` via `file:../..`, so **build the SDK
 first**, then build the CLI:
 
 ```bash
@@ -22,7 +22,7 @@ first**, then build the CLI:
 npm install && npm run build
 
 # 2. In this directory
-cd examples/apps/cli
+cd apps/cli
 npm install
 npm run build
 npm link            # optional: exposes `horizon` on your PATH
@@ -49,7 +49,7 @@ Run `horizon <command> --help` for the full flag list.
 
 `--network mainnet|signet` (default: the keystore's network, else mainnet).
 "Signet" maps to the SDK's `network:"testnet"` + `kontorNetwork:"signet"`.
-Endpoints follow `examples/apps/web/src/lib/networks.ts` and are overridable via
+Endpoints follow `apps/web/src/lib/networks.ts` and are overridable via
 `HORIZON_*` env vars (see `.env.example`).
 
 ## Examples

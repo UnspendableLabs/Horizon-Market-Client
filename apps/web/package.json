@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.2",
-    "@unspendablelabs/horizon-market-client": "file:../../..",
+    "@unspendablelabs/horizon-market-client": "file:../..",
     "@web3auth/auth-adapter": "^9.7.0",
     "@web3auth/base": "^9.7.0",
     "@web3auth/base-provider": "^9.7.0",

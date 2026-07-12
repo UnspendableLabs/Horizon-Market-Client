@@ -4,10 +4,10 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
-// The repo root, three levels up from this example app. @kontor/sdk and the
-// horizon-market-client (a `file:../../..` link) are installed there, not in
+// The repo root, two levels up from this app. @kontor/sdk and the
+// horizon-market-client (a `file:../..` link) are installed there, not in
 // this app's node_modules.
-const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 // @scure/bip39's wordlist files (e.g. wordlists/english.js) end with a
 // `//# sourceMappingURL=english.js.map` comment, but the package ships no .map

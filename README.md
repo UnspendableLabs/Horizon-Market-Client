@@ -281,7 +281,7 @@ React Native with the `react-native-get-random-values` polyfill):
 
 A single derived key backs **both** the p2wpkh and p2tr address (matching the
 web/native web3auth model), so the Segwit address will **not** equal the first
-receive address of a standard BIP84 wallet. See `examples/apps/cli` for an
+receive address of a standard BIP84 wallet. See `apps/cli` for an
 end-to-end integration (encrypted `0600` keystore file, `init` / `sell` / `buy` / `send`).
 
 ### Owned-Balance Reads
