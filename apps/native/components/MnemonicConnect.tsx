@@ -17,6 +17,8 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { markFreshLogin } from "../lib/app-lock-events.js";
 import { persistMnemonicSession } from "../lib/mnemonic-session.js";
+import { useSecretClipboard } from "../lib/secret-clipboard.js";
+import { ScreenCaptureGuard } from "./ScreenCaptureGuard.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
 /**
@@ -202,6 +204,10 @@ export function RestoreWalletForm({ onBack }: FormProps) {
 
   return (
     <View style={styles.root}>
+      {/* Each word shows in clear while its field is focused, so over the course of
+          typing all 12 a screen recorder would see the whole phrase — block capture
+          for the life of the form. */}
+      <ScreenCaptureGuard guardKey="restore-seed" />
       <Text style={styles.heading}>Restore wallet</Text>
       <Text style={styles.body}>
         Enter your 12-word recovery phrase, or tap Paste to fill all 12 at once.
@@ -258,6 +264,7 @@ export function RestoreWalletForm({ onBack }: FormProps) {
 
 export function NewWalletForm({ onBack }: FormProps) {
   const { connect, busy } = useMnemonicConnect();
+  const copySecret = useSecretClipboard();
   // Generate once — a re-render must not mint a different phrase under the user.
   const phrase = useMemo(() => generateMnemonic(128), []); // 128 bits → 12 words
   const words = useMemo(() => phrase.split(" "), [phrase]);
@@ -266,7 +273,8 @@ export function NewWalletForm({ onBack }: FormProps) {
 
   const copy = async () => {
     try {
-      await Clipboard.setStringAsync(phrase);
+      // Auto-wipes from the clipboard after a minute (see useSecretClipboard).
+      await copySecret(phrase);
       setCopied(true);
     } catch {
       /* ignore clipboard failures */
@@ -277,6 +285,9 @@ export function NewWalletForm({ onBack }: FormProps) {
 
   return (
     <View style={styles.root}>
+      {/* The fresh phrase is on screen for its whole life here — block
+          screenshots / screen recording / the recents snapshot the whole time. */}
+      <ScreenCaptureGuard guardKey="new-wallet-seed" />
       <Text style={styles.heading}>New HD wallet</Text>
       <Text style={styles.body}>
         Write down these 12 words in order and keep them somewhere safe. They are
@@ -295,6 +306,9 @@ export function NewWalletForm({ onBack }: FormProps) {
       <Pressable onPress={() => void copy()} style={styles.copyButton} accessibilityRole="button">
         <Text style={styles.copyButtonText}>{copied ? "Copied ✓" : "Copy"}</Text>
       </Pressable>
+      {copied && (
+        <Text style={styles.hint}>Cleared from the clipboard after a minute.</Text>
+      )}
 
       <Text style={styles.warning}>
         Anyone with this phrase controls the funds on this wallet. Never share it.
@@ -437,6 +451,12 @@ const styles = StyleSheet.create({
   warning: {
     fontSize: 12,
     color: colors.error,
+    fontFamily: fonts.sans,
+    lineHeight: 18,
+  },
+  hint: {
+    fontSize: 12,
+    color: colors.muted,
     fontFamily: fonts.sans,
     lineHeight: 18,
   },

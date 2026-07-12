@@ -16,12 +16,12 @@
 import "react-native-get-random-values";
 
 // Pure-JS `buffer` (base64-js under the hood), NOT @craftzdog/react-native-buffer:
-// the latter depends on react-native-quick-base64, a C++ TurboModule that only
-// registers under the New Architecture. This app runs the old architecture
-// (newArchEnabled=false), so importing it throws at startup
-// (`TurboModuleRegistry.getEnforcing('QuickBase64') could not be found`) — a
-// white-screen crash on the very first polyfill import. Plain `buffer` runs on
-// Hermes with no native module and is API-compatible for bitcoinjs / @web3auth.
+// the latter depends on react-native-quick-base64, an extra native (C++ TurboModule)
+// dependency. Plain `buffer` needs NO native module — it runs on Hermes and is
+// API-compatible for bitcoinjs / @web3auth — so routing every `buffer` import to it
+// keeps the crypto stack off any native base64 module and the linking/registration
+// pitfalls that come with one (a QuickBase64-not-linked white-screen crash on the
+// very first polyfill import bit us historically). Same choice in metro.config.js.
 import { Buffer } from "buffer";
 
 // bitcoinjs-lib + @web3auth expect a global Buffer (Node-style). RN has none.
