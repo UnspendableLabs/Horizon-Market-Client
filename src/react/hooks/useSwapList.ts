@@ -54,6 +54,8 @@ export interface UseSwapListResult {
   total: number;
   isLoading: boolean;
   error: Error | null;
+  /** Epoch ms when the list was last (re-)fetched, or null before the first fetch. */
+  lastFetchedAt: number | null;
   listingType: SwapListingType | null;
   setListingType: (t: SwapListingType | null) => void;
   sortOption: SortOption;
@@ -115,6 +117,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  // When the current list was last (re-)fetched, for an "Updated …" label.
+  const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
 
   const [pendingSwap, setPendingSwap] = useState<AtomicSwap | null>(null);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -184,6 +188,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       setError(null);
       setSwaps([]);
       setTotal(0);
+      setLastFetchedAt(Date.now());
       return;
     }
 
@@ -216,6 +221,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       );
       setSwaps(filtered);
       setTotal(count - (items.length - filtered.length));
+      // Stamp freshness on SUCCESS only (not in finish()/finally), so a failed
+      // fetch doesn't show "Updated just now" next to stale data + an error banner.
+      setLastFetchedAt(Date.now());
     };
 
     const applyError = (err: unknown) => {
@@ -332,6 +340,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     total,
     isLoading,
     error,
+    lastFetchedAt,
     listingType,
     setListingType,
     sortOption,

@@ -2,9 +2,15 @@ import type { Signer } from "./crypto/signer.js";
 
 export const DEFAULT_BASE_URL = "https://horizon.market";
 
-/** Public Kontor signet indexer — the default transport target for Node consumers. */
+/**
+ * Public Kontor signet indexer — the default transport target for Node consumers.
+ * Port `35100` is the live `kontor-network` cluster running the current
+ * `holder-ref` `token` contract (matching `@kontor/sdk`). The older `:35001`
+ * endpoint is the pre-`holder-ref` `string`-contract staging deployment, whose
+ * views fail with `invalid value type` — do not use it.
+ */
 export const DEFAULT_KONTOR_INDEXER_URL =
-  "https://signet.kontor.network:35001/api";
+  "https://signet.kontor.network:35100/api";
 
 /** Public mainnet Counterparty API v2 base URL (used to read owned balances). */
 export const DEFAULT_COUNTERPARTY_API_BASE_URL =
@@ -61,7 +67,7 @@ export interface HorizonMarketClientOptions {
   kontorNetwork?: "signet";
   /**
    * Kontor indexer URL the SDK transport submits signed transactions to. Defaults
-   * to the public signet indexer (`https://signet.kontor.network:35001/api`), so
+   * to the public signet indexer (`https://signet.kontor.network:35100/api`), so
    * Node consumers broadcast directly without proxying through Horizon. Browser
    * consumers can point this at `${baseUrl}/api/kontor-indexer` to avoid CORS.
    */

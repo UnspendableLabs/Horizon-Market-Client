@@ -1,49 +1,76 @@
 /**
- * Runtime guard for the WebAssembly-backed `@kontor/sdk`.
+ * Runtime guard for `@kontor/sdk`.
  *
- * `@kontor/sdk` is a WASM *component*: it instantiates its embedded module at
- * **import time** (a top-level `await $init` that compiles/instantiates the
- * `.core.wasm`) and relies on the JSPI stack-switching proposal
- * (`WebAssembly.promising`). It therefore only loads on engines that ship a
- * capable `WebAssembly` — browsers and Node. It **cannot** run on React Native's
- * Hermes/JSC engines, which expose no `WebAssembly` global at all (merely
- * *importing* the module throws `ReferenceError: WebAssembly is not defined`).
+ * `@kontor/sdk` ships two interchangeable backends behind one identical API,
+ * selected by the package's conditional exports:
+ *   • Web / Node — a WebAssembly *component*, instantiated at import time
+ *     (a top-level `await $init` that compiles the embedded module).
+ *   • React Native — a native JSI module (`@kontor/sdk-native`, a uniffi wrapper
+ *     over the same Rust core), because Hermes/JSC ship no `WebAssembly`. Its
+ *     entry `import "@kontor/sdk-native"` installs a Rust crate into the runtime
+ *     at import time.
  *
- * To keep the client usable on such engines, every Kontor code path is reached
- * through a dynamic `import()` — so the WASM module never evaluates at app
- * startup — and is gated by the helpers below. Non-Kontor features (BTC,
- * Counterparty/XCP, ZELD, wallet, sell/buy of non-Kontor assets) then work
- * everywhere; only KOR/Kontor-NFT reads and writes degrade: reads return empty
- * holdings, writes throw {@link KontorUnavailableError} with a clear message
- * instead of crashing the host app with a raw `ReferenceError`.
+ * Either way, loading `@kontor/sdk` is **eager and heavy** at module-evaluation
+ * time. So every Kontor code path in this client is reached through a dynamic
+ * `import()` — the backend never evaluates at app startup — and is gated by the
+ * helpers below. Non-Kontor features (BTC, Counterparty/XCP, ZELD, wallet,
+ * sell/buy of non-Kontor assets) then work everywhere, and Kontor degrades
+ * cleanly where its backend can't load (e.g. a React Native build that did not
+ * link `@kontor/sdk-native`, or a plain browserless/WASM-less engine): reads
+ * return empty holdings, writes throw {@link KontorUnavailableError} with a
+ * clear message instead of surfacing a raw load error.
  *
- * This module intentionally has **no** static `@kontor/sdk` import, so it is
- * safe to load on any engine.
+ * This module intentionally has **no** `@kontor/sdk` import (static or dynamic),
+ * so it is safe to load on any engine.
  */
 
-/** Thrown when a Kontor operation is attempted on an engine without a WASM runtime. */
+/** Thrown when a Kontor operation is attempted where its backend can't load. */
 export class KontorUnavailableError extends Error {
-  constructor(message?: string) {
+  constructor(message?: string, options?: { cause?: unknown }) {
     super(
       message ??
-        "Kontor is unavailable on this device: @kontor/sdk requires a WebAssembly " +
-          "runtime, which this JavaScript engine (e.g. React Native / Hermes) does " +
-          "not provide. Kontor (KOR token + Kontor NFTs) is only supported where " +
-          "WebAssembly is available (browsers, Node).",
+        "Kontor is unavailable in this environment: @kontor/sdk could not load a " +
+          "backend. Kontor (KOR token + Kontor NFTs) needs either a WebAssembly " +
+          "runtime (browsers, Node) or the native module @kontor/sdk-native linked " +
+          "into the app build (React Native / Hermes).",
+      options,
     );
     this.name = "KontorUnavailableError";
   }
 }
 
-/** True when the host engine can load the `@kontor/sdk` WASM runtime. */
+/**
+ * True when the host engine can load a `@kontor/sdk` backend: a WebAssembly
+ * runtime (web/Node), or a React Native engine (its native JSI backend).
+ *
+ * On React Native this can't cheaply prove `@kontor/sdk-native` is actually
+ * linked without loading it, so it optimistically reports available; a missing
+ * native module then surfaces at the dynamic `import()` — reads degrade to empty
+ * holdings, writes throw {@link KontorUnavailableError}.
+ */
 export function kontorRuntimeAvailable(): boolean {
-  return (
+  if (
     typeof WebAssembly !== "undefined" &&
     typeof WebAssembly.instantiate === "function"
-  );
+  ) {
+    return true;
+  }
+  return isReactNative();
 }
 
-/** Throw {@link KontorUnavailableError} when the WASM runtime is absent. */
+/** Throw {@link KontorUnavailableError} when no Kontor backend can load. */
 export function assertKontorRuntime(): void {
   if (!kontorRuntimeAvailable()) throw new KontorUnavailableError();
+}
+
+/**
+ * React Native (Hermes/JSC) sets `navigator.product === "ReactNative"` — the
+ * canonical, WASM-free way to detect the engine where `@kontor/sdk`'s native
+ * JSI backend applies.
+ */
+function isReactNative(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    (navigator as { product?: string }).product === "ReactNative"
+  );
 }

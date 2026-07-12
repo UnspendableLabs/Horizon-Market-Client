@@ -5,6 +5,7 @@ import {
   privateKeyToMnemonic,
   mnemonicToPrivateKeyEntropy,
   mnemonicToPrivateKey,
+  validateMnemonic,
 } from "./mnemonic.js";
 import { HDSigner, LocalSigner } from "./signer.js";
 
@@ -120,6 +121,32 @@ describe("privateKeyToMnemonic (web3auth-key bridge)", () => {
   it("rejects a non-32-byte key", () => {
     expect(() => privateKeyToMnemonic("dead")).toThrow(/32-byte/);
   });
+
+  it("produces a valid 12-word phrase for words:12 (Horizon Wallet import)", () => {
+    const mnemonic = privateKeyToMnemonic(RAW_KEY, { words: 12 });
+    expect(mnemonic.trim().split(/\s+/)).toHaveLength(12);
+    expect(validateMnemonic(mnemonic)).toBe(true);
+  });
+
+  it("is deterministic and 0x/bytes-agnostic for words:12", () => {
+    const a = privateKeyToMnemonic("0x" + RAW_KEY, { words: 12 });
+    const b = privateKeyToMnemonic(
+      Uint8Array.from(RAW_KEY.match(/../g)!.map((h) => parseInt(h, 16))),
+      { words: 12 },
+    );
+    expect(a).toBe(b);
+    expect(a).toBe(privateKeyToMnemonic(RAW_KEY, { words: 12 }));
+  });
+
+  it("12- and 24-word phrases for the same key are different wallets", () => {
+    const twelve = privateKeyToMnemonic(RAW_KEY, { words: 12 });
+    const twentyFour = privateKeyToMnemonic(RAW_KEY, { words: 24 });
+    expect(twelve).not.toBe(twentyFour);
+    // 12-word entropy = sha256(key)[:16], so it does NOT invert back to the key.
+    expect(mnemonicToPrivateKeyEntropy(twelve)).not.toBe(RAW_KEY);
+    // 24-word entropy = the key verbatim → reversible.
+    expect(mnemonicToPrivateKeyEntropy(twentyFour)).toBe(RAW_KEY);
+  });
 });
 
 describe("HDSigner.fromPrivateKey (web3auth bridge, used by web/native)", () => {
@@ -151,5 +178,33 @@ describe("HDSigner.fromPrivateKey (web3auth bridge, used by web/native)", () => 
     const legacy = new LocalSigner(RAW_KEY, "mainnet").getAddresses();
     expect(hd.p2wpkh).not.toBe(legacy.p2wpkh);
     expect(hd.p2tr).not.toBe(legacy.p2tr);
+  });
+
+  it("words:12 matches the phrase importable into Horizon Wallet", () => {
+    for (const network of ["mainnet", "testnet"] as const) {
+      const viaKey = HDSigner.fromPrivateKey(RAW_KEY, {
+        network,
+        words: 12,
+      }).getAddresses();
+      // Exactly what a user would get typing the exported 12 words into a wallet.
+      const viaPhrase = HDSigner.fromMnemonic(
+        privateKeyToMnemonic(RAW_KEY, { words: 12 }),
+        { network },
+      ).getAddresses();
+      expect(viaKey).toEqual(viaPhrase);
+    }
+  });
+
+  it("words:12 and words:24 yield different addresses (distinct wallets)", () => {
+    const twelve = HDSigner.fromPrivateKey(RAW_KEY, {
+      network: "mainnet",
+      words: 12,
+    }).getAddresses();
+    const twentyFour = HDSigner.fromPrivateKey(RAW_KEY, {
+      network: "mainnet",
+      words: 24,
+    }).getAddresses();
+    expect(twelve.p2wpkh).not.toBe(twentyFour.p2wpkh);
+    expect(twelve.p2tr).not.toBe(twentyFour.p2tr);
   });
 });

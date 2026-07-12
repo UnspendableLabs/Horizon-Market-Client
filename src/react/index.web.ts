@@ -3,7 +3,15 @@ export { useHorizonMarket } from "./context.js";
 export type {
   HorizonMarketContextValue,
   HorizonMarketProviderProps,
+  DerivationMode,
+  MnemonicWordCount,
+  SessionSource,
+  Addresses,
 } from "./context.js";
+
+// BIP39 helpers surfaced through the React entry so apps can offer a
+// "Restore wallet" / "New HD wallet" connect flow without a second import path.
+export { generateMnemonic, validateMnemonic } from "../crypto/mnemonic.js";
 
 export {
   useTheme,

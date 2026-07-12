@@ -19,6 +19,7 @@ import {
 import { FILTER_TABS } from "../internal/swapListConstants.js";
 import { Dropdown } from "../internal/Dropdown.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
+import { ListHeader } from "../internal/ListHeader.native.js";
 import { Modal } from "./Modal.native.js";
 import {
   SwapListItem,
@@ -52,6 +53,13 @@ export interface SwapListProps extends UseSwapListOptions {
    * Required for the login modal shown when an unauthenticated user clicks Buy.
    */
   getPrivateKey: (email: string) => Promise<string>;
+  /**
+   * Optional heading rendered above the toolbar, with a "Refresh" button pinned
+   * to the right that re-fetches the swap list (same header pattern as
+   * WalletBalances). A string is styled as a title; any other node renders as-is
+   * (pass a styled `<Text>` to match the app's other screen titles).
+   */
+  title?: ReactNode;
   onSwapSelect?: (swap: AtomicSwap) => void;
   /**
    * When true, the toolbar (filters/sort) stays fixed and only the swap list
@@ -71,6 +79,7 @@ export interface SwapListProps extends UseSwapListOptions {
 
 export function SwapList({
   getPrivateKey,
+  title,
   onSwapSelect,
   scrollable,
   footerSlot,
@@ -84,6 +93,7 @@ export function SwapList({
     swaps,
     isLoading,
     error,
+    lastFetchedAt,
     listingType,
     setListingType,
     sortOption,
@@ -188,6 +198,17 @@ export function SwapList({
         stylesProp?.root,
       ]}
     >
+      {/* Optional heading + right-pinned "Updated …" + Refresh — the shared
+          <ListHeader/> keeps this identical to WalletBalances' header. */}
+      {title != null && (
+        <ListHeader
+          title={title}
+          lastFetchedAt={lastFetchedAt}
+          busy={isLoading}
+          onRefresh={refetch}
+        />
+      )}
+
       {/* Toolbar: asset-type filter + sort dropdowns and, when signed in, the
           "My swaps" toggle — all on a single row at the same height (native has
           no <select>; keeps the controls compact). */}

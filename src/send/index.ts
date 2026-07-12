@@ -32,9 +32,9 @@ export type {
  * - `zeld` — local bitcoinjs PSBT with a ZELD OP_RETURN distribution
  * - `kor` / `kontor-nft` — `@kontor/sdk` contract transfer (composed at submit)
  *
- * The Kontor branches load `./kontor.js` (and its WASM-backed `@kontor/sdk`
- * dependency) via dynamic `import()` so this module — and the withdraw path that
- * uses it — never evaluates the WASM at startup on engines that lack it.
+ * The Kontor branches load `./kontor.js` (and its `@kontor/sdk` dependency) via
+ * dynamic `import()` so this module — and the withdraw path that uses it — never
+ * evaluates a Kontor backend (WASM or native) at startup.
  */
 export async function prepareSend(
   request: SendRequest,

@@ -14,12 +14,7 @@ import type { AssetOption } from "../hooks/useAssets.js";
 import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
-import {
-  assetImageUrl,
-  assetKey,
-  formatRelativeTime,
-  truncate,
-} from "../internal/format.js";
+import { assetImageUrl, assetKey, truncate } from "../internal/format.js";
 import {
   CheckIcon,
   CopyIcon,
@@ -42,6 +37,7 @@ import {
   type ActionKind,
   type DepositType,
 } from "../internal/useWalletBalancesController.js";
+import { ListHeader } from "../internal/ListHeader.native.js";
 import { Modal } from "./Modal.native.js";
 import { SellOrderForm } from "./SellOrderForm.native.js";
 import { WithdrawForm } from "./WithdrawForm.native.js";
@@ -61,6 +57,13 @@ export interface WalletBalancesStyles {
 export interface WalletBalancesProps {
   /** Optional heading rendered at the top-left of the header row. */
   title?: ReactNode;
+  /**
+   * Override the per-asset "Sell" action. When provided, tapping Sell calls this
+   * instead of opening the built-in sell modal — e.g. to navigate to a dedicated
+   * Sell screen with the asset pre-selected. When omitted, the internal modal
+   * (an inline {@link SellOrderForm}) is used.
+   */
+  onSellAsset?: (asset: AssetOption) => void;
   style?: StyleProp<ViewStyle>;
   styles?: WalletBalancesStyles;
 }
@@ -68,28 +71,6 @@ export interface WalletBalancesProps {
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
     root: { gap: 20 },
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: theme.spacing.md,
-      flexWrap: "wrap",
-    },
-    titleText: {
-      fontSize: theme.typography.fontSizeLg,
-      fontWeight: "700",
-      color: theme.colors.text,
-    },
-    headerMeta: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-    updated: { fontSize: theme.typography.fontSizeSm, color: theme.colors.textMuted },
-    refreshButton: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: theme.radii.md,
-      borderWidth: theme.borderWidth,
-      borderColor: theme.colors.border,
-    },
-    refreshText: { fontSize: 12, color: theme.colors.text, fontWeight: "600" },
     section: { gap: theme.spacing.md },
     sectionTitle: { fontSize: theme.typography.fontSizeLg, fontWeight: "700", color: theme.colors.text },
     addressList: { gap: theme.spacing.md },
@@ -435,7 +416,12 @@ function TokenCell({
  * actions, grouped by kind (Counterparty · Kontor · Ordinals). Consumes the
  * shared {@link useWalletTokenSummary} hook (same data as web).
  */
-export function WalletBalances({ title, style, styles: stylesProp }: WalletBalancesProps) {
+export function WalletBalances({
+  title,
+  onSellAsset,
+  style,
+  styles: stylesProp,
+}: WalletBalancesProps) {
   const theme = useTheme();
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const iconColor = theme.colors.text;
@@ -469,29 +455,14 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
 
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
-      <View style={[sheet.headerRow, stylesProp?.header]}>
-        {/* A bare-string title would crash RN ("Text strings must be rendered
-            within a <Text>"), so wrap strings; render any other node as-is. */}
-        {typeof title === "string" ? (
-          <Text style={sheet.titleText}>{title}</Text>
-        ) : (
-          title
-        )}
-        <View style={sheet.headerMeta}>
-          <Text style={sheet.updated}>Updated {formatRelativeTime(lastFetchedAt)}</Text>
-          <Pressable
-            onPress={refresh}
-            disabled={isFetching}
-            style={[
-              sheet.refreshButton,
-              isFetching && sheet.disabled,
-              stylesProp?.buttonSecondary,
-            ]}
-          >
-            <Text style={sheet.refreshText}>{isFetching ? "Refreshing…" : "Refresh"}</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ListHeader
+        title={title}
+        lastFetchedAt={lastFetchedAt}
+        busy={isFetching}
+        onRefresh={refresh}
+        style={stylesProp?.header}
+        refreshStyle={stylesProp?.buttonSecondary}
+      />
 
       {addresses ? (
         <View style={sheet.section}>
@@ -538,7 +509,7 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
             line={line}
             onDeposit={openDeposit}
             onWithdraw={setWithdraw}
-            onSell={setSellAsset}
+            onSell={onSellAsset ?? setSellAsset}
             sheet={sheet}
             color={iconColor}
             styleProp={stylesProp?.token}
@@ -579,7 +550,7 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
                 asset={a}
                 onDeposit={openDepositForAsset}
                 onWithdraw={setWithdraw}
-                onSell={setSellAsset}
+                onSell={onSellAsset ?? setSellAsset}
                 sheet={sheet}
                 color={iconColor}
                 mutedColor={mutedColor}
@@ -615,12 +586,15 @@ export function WalletBalances({ title, style, styles: stylesProp }: WalletBalan
         ) : null}
       </Modal>
 
-      {/* Sell modal */}
+      {/* Sell modal: launched straight to the asset's detail step (initialAsset),
+          with the review rendered inline so it doesn't stack a second modal over
+          this one. The detail-step back button dismisses back to the wallet. */}
       <Modal open={sellAsset != null} onClose={() => setSellAsset(null)} title="Sell">
         {sellAsset ? (
           <SellOrderForm
             key={assetKey(sellAsset)}
             initialAsset={sellAsset}
+            reviewPresentation="inline"
             onClose={() => setSellAsset(null)}
           />
         ) : null}
