@@ -6,13 +6,12 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "typecheck": "tsc --noEmit",
-    "postinstall": "node scripts/fix-kontor-autolinking.cjs && node scripts/fix-kontor-packaging.cjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.3.0",
-    "@kontor/sdk": "0.3.0-rc.5",
-    "@kontor/sdk-native": "0.3.0-rc.5",
+    "@kontor/sdk": "0.3.0-rc.6",
+    "@kontor/sdk-native": "0.3.0-rc.6",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/material-top-tabs": "^7.6.7",
     "@unspendablelabs/horizon-market-client": "file:../..",

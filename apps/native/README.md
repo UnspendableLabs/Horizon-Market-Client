@@ -84,13 +84,14 @@ reads return empty holdings, writes throw a clear `KontorUnavailableError`.
 Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet.
 
 > Note: `@kontor/sdk` and `@kontor/sdk-native` are consumed from the npm registry
-> (both pinned to `0.3.0-rc.5`), and the native binaries (iOS xcframework +
+> (both pinned to `0.3.0-rc.6`), and the native binaries (iOS xcframework +
 > Android `.so`s) ship inside the `@kontor/sdk-native` tarball — no local build.
-> Two `postinstall` scripts (`scripts/fix-kontor-*.cjs`) patch known packaging
-> defects still present in that rc.5 tarball; delete them once `@kontor/sdk-native`
-> ships the fix (rc.6). This wiring typechecks cleanly (`npx tsc --noEmit`);
-> on-device verification is pending a native rebuild (`npx expo run:ios` /
-> `run:android`).
+> `rc.6` ships all the packaging fixes the app used to apply via `postinstall`
+> (`homepage` + `codegenConfig` in package.json, correctly-named
+> `KontorSdkNative.xcframework`, clean Android codegen, no stray
+> `expo-module.config.json`), so those workaround scripts are gone. This wiring
+> typechecks cleanly (`npx tsc --noEmit`); on-device verification is pending a
+> native rebuild (`npx expo run:ios` / `run:android`).
 
 ## App lock (biometrics / device passcode)
 

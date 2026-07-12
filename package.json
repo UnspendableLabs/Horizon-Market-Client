@@ -75,7 +75,7 @@
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.1.1",
-    "@kontor/sdk": "^0.3.0-rc.5",
+    "@kontor/sdk": "^0.3.0-rc.6",
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip32": "^2.2.0",
