@@ -30,33 +30,24 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  ActivityIndicator,
-  AppState,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import Svg, { Path, Rect } from "react-native-svg";
+import { AppState, Image, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { authenticate, canUseAppLock } from "../lib/app-lock.js";
 import { onFreshLogin } from "../lib/app-lock-events.js";
 import { hasPersistedSession } from "../lib/web3auth.js";
-import { colors, fonts, radii, spacing } from "../lib/theme.js";
+import { colors } from "../lib/theme.js";
 
 /** How long the app may sit in the background before it re-locks on return. */
 const GRACE_MS = 30_000;
 
-// The full "Horizon" wordmark (H mark + letters, brand gradient), rendered by the
-// boot cover as the app's "loading" screen. The native splash (app.json → expo-
-// splash-screen) shows the H mark alone — a square icon Android 12 can center
-// without clipping — and this cover expands it into the full wordmark + tagline as
-// the JS boots. Keeping the native splash to the H (not a wide wordmark) is what
-// avoids the OS masking the logo's sides, and the cover sits opaque above the
-// market so nothing flashes underneath during the handoff.
-const brandWordmark = require("../assets/logo-wordmark.png");
+// Both the boot cover AND the lock overlay are seamless continuations of the native
+// splash: same H mark (assets/icon.png), same size (200px, matching app.json →
+// expo-splash-screen's imageWidth), same background, centered on the FULL screen
+// (see the -insets.top offset below). So the OS splash → boot cover → lock handoff
+// is invisible: the user just sees the splash logo, unmoving, while the OS auth sheet
+// slides over it. No wordmark, tagline, spinner, or Unlock button — just the H.
+const brandMark = require("../assets/icon.png");
 
 interface AppLockContextValue {
   /** Reported by <AppLockBridge/> inside the provider: is a wallet session live? */
@@ -98,6 +89,11 @@ export function AppLockBridge() {
 }
 
 export function AppLockProvider({ children }: { children: ReactNode }) {
+  // The overlays live inside the app's SafeAreaView (top inset), but the native
+  // splash centers on the FULL screen. Pull the overlay up by the top inset so its
+  // logo lands on the true screen center — otherwise it sits ~half the status-bar
+  // height too low and the splash → cover handoff visibly jumps.
+  const insets = useSafeAreaInsets();
   const [walletConnected, setWalletConnected] = useState(false);
   // `null` while we probe the device; `false` disables the gate entirely (no
   // biometrics and no passcode configured — nothing to authenticate against).
@@ -218,74 +214,35 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       <View style={styles.container}>
         {children}
         {showCover && (
-          <View style={styles.overlay}>
-            <View style={styles.coverBrand}>
-              <Image
-                source={brandWordmark}
-                style={styles.coverLogo}
-                resizeMode="contain"
-              />
-              <Text style={styles.coverBaseline}>
-                The DEX of Bitcoin metaprotocols
-              </Text>
-            </View>
-            <ActivityIndicator color={colors.primary} style={styles.coverSpinner} />
+          <View style={[styles.overlay, { top: -insets.top }]}>
+            <Image
+              source={brandMark}
+              style={styles.coverLogo}
+              resizeMode="contain"
+            />
           </View>
         )}
+        {/* The lock screen is visually the splash: just the H. The OS auth sheet
+            (auto-triggered above) slides over it, so there's no in-app button or
+            text to flash before/after the system prompt. If the user cancels the
+            sheet, a tap anywhere re-runs auth (runAuth is re-entrancy guarded). */}
         {showLock && (
-          <View style={styles.overlay}>
-            <View style={styles.lockBadge}>
-              <LockGlyph />
-            </View>
-            <Text style={styles.appName}>Horizon Market</Text>
-            <Text style={styles.subtitle}>
-              Locked — authenticate to continue
-            </Text>
-            <Pressable
-              onPress={() => void runAuth()}
-              disabled={authing}
-              style={({ pressed }) => [
-                styles.unlockButton,
-                (pressed || authing) && styles.unlockButtonPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Unlock the app"
-            >
-              {authing ? (
-                <ActivityIndicator color={colors.primaryForeground} />
-              ) : (
-                <Text style={styles.unlockText}>Unlock</Text>
-              )}
-            </Pressable>
-          </View>
+          <Pressable
+            style={[styles.overlay, { top: -insets.top }]}
+            onPress={() => void runAuth()}
+            disabled={authing}
+            accessibilityRole="button"
+            accessibilityLabel="Authenticate to unlock"
+          >
+            <Image
+              source={brandMark}
+              style={styles.coverLogo}
+              resizeMode="contain"
+            />
+          </Pressable>
         )}
       </View>
     </AppLockContext.Provider>
-  );
-}
-
-/** lucide `lock` glyph, tinted with the brand primary. */
-function LockGlyph() {
-  return (
-    <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
-      <Rect
-        x={3}
-        y={11}
-        width={18}
-        height={11}
-        rx={2}
-        ry={2}
-        stroke={colors.primary}
-        strokeWidth={2}
-      />
-      <Path
-        d="M7 11V7a5 5 0 0 1 10 0v4"
-        stroke={colors.primary}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
   );
 }
 
@@ -293,75 +250,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  // Opaque full-bleed cover: sits above every screen (Header included) so nothing
-  // behind it is visible or tappable while locked.
+  // Opaque full-bleed cover: sits above every screen so nothing behind it is
+  // visible or tappable. Extended to the full screen (top: -insets.top, applied
+  // inline) so its centered logo lands exactly where the native splash's does.
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.md,
   },
-  lockBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: radii.full,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.sm,
-  },
-  appName: {
-    fontSize: 22,
-    color: colors.foreground,
-    fontFamily: fonts.sansBold,
-  },
-  // Wordmark + tagline, grouped tight so they read as one lockup.
-  coverBrand: {
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  // Full "Horizon" wordmark; responsive width (capped) with the logo's native
-  // aspect ratio so it never distorts or overflows on small screens.
+  // The H mark alone, sized to match the native splash (app.json imageWidth: 200)
+  // so the JS cover is a pixel-continuation of the OS splash. Square: icon.png
+  // carries its own dark padding, so `contain` on colors.background is seamless.
   coverLogo: {
-    width: "72%",
-    maxWidth: 320,
-    aspectRatio: 375 / 76,
-  },
-  coverBaseline: {
-    fontSize: 14,
-    letterSpacing: 0.3,
-    color: colors.mutedStrong,
-    fontFamily: fonts.sans,
-    textAlign: "center",
-  },
-  coverSpinner: {
-    marginTop: spacing.sm,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.muted,
-    fontFamily: fonts.sans,
-    textAlign: "center",
-  },
-  unlockButton: {
-    marginTop: spacing.md,
-    minWidth: 200,
-    height: 48,
-    borderRadius: radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.primary,
-  },
-  unlockButtonPressed: {
-    opacity: 0.85,
-  },
-  unlockText: {
-    fontSize: 15,
-    color: colors.primaryForeground,
-    fontFamily: fonts.sansBold,
+    width: 200,
+    height: 200,
   },
 });
