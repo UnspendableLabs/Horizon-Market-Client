@@ -33,11 +33,10 @@ import * as SecureStore from "expo-secure-store";
 import type { WEB3AUTH_NETWORK_TYPE } from "@web3auth/base";
 import { markFreshLogin } from "./app-lock-events.js";
 import {
-  getStoredKey,
+  getStoredKeyWithGate,
   setStoredKey,
   clearStoredKey,
   hasStoredKey,
-  isStoredKeyGated,
 } from "./secure-key-store.js";
 import { hasMnemonicSession } from "./mnemonic-session.js";
 
@@ -186,10 +185,11 @@ export async function getPrivateKey(email: string): Promise<string> {
     // present its own prompt (expo-local-authentication, which asks for the device
     // PIN/pattern even without biometrics).
     if (await hasStoredKey()) {
-      const stored = await getStoredKey();
+      // Read the key and whether it was gated in a SINGLE keychain round-trip.
+      const { value: stored, gated } = await getStoredKeyWithGate();
       if (stored) {
         sessionKey = stored;
-        if (await isStoredKeyGated()) markFreshLogin();
+        if (gated) markFreshLogin();
         return stored;
       }
       // null → cancelled, or the key was invalidated by a biometric-enrollment

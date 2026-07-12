@@ -16,6 +16,13 @@
     // Without this, the SDK (linked via `file:../../..`) pulls the repo root's
     // devDep @types/react@18, so React's globals are declared twice and every RN
     // element fails as a JSX component ("bigint not assignable to ReactNode").
+    //
+    // These `paths` are for TYPECHECK ONLY. Expo's Metro also reads tsconfig
+    // `paths` by default, which would redirect the RUNTIME `react` import to
+    // `@types/react` (no runtime code → "unable to resolve react"). We disable
+    // that in app.json (`expo.experiments.tsconfigPaths: false`); Metro then does
+    // its own resolution via metro.config.js (which pins the single React copy),
+    // while `tsc` still honours these paths here.
     "baseUrl": ".",
     "paths": {
       "react": ["./node_modules/@types/react"],

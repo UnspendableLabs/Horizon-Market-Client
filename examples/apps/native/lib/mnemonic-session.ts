@@ -12,11 +12,10 @@
  */
 import { markFreshLogin } from "./app-lock-events.js";
 import {
-  getStoredMnemonic,
+  getStoredMnemonicWithGate,
   setStoredMnemonic,
   clearStoredMnemonic,
   hasStoredMnemonic,
-  isStoredMnemonicGated,
 } from "./secure-key-store.js";
 
 /**
@@ -54,10 +53,11 @@ export async function restoreMnemonicSession(): Promise<string | null> {
   // reuse it with no keystore read, so switching networks never re-prompts.
   if (sessionMnemonic) return sessionMnemonic;
   if (!(await hasStoredMnemonic())) return null;
-  const stored = await getStoredMnemonic();
+  // Read the phrase and whether it was gated in a SINGLE keychain round-trip.
+  const { value: stored, gated } = await getStoredMnemonicWithGate();
   if (!stored) return null; // cancelled or invalidated → caller tries the key path
   sessionMnemonic = stored;
-  if (await isStoredMnemonicGated()) markFreshLogin();
+  if (gated) markFreshLogin();
   return stored;
 }
 

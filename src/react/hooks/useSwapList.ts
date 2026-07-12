@@ -232,9 +232,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     };
 
     const finish = () => {
-      if (seq === fetchSeqRef.current) {
-        setIsLoading(false);
-      }
+      if (seq === fetchSeqRef.current) setIsLoading(false);
     };
 
     if (sellerAddresses.length > 1) {

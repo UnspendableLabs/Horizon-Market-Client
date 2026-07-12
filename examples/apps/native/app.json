@@ -6,6 +6,9 @@
     "orientation": "portrait",
     "scheme": "horizonmarket",
     "userInterfaceStyle": "dark",
+    "experiments": {
+      "tsconfigPaths": false
+    },
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,

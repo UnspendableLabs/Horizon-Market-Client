@@ -98,30 +98,46 @@ const NON_AUTH_KEY_OPTS: SecureStore.SecureStoreOptions = {
 // a non-auth presence marker — so both slots share these helpers, parameterized
 // by their secret + marker keys and a human label used only in fallback logs.
 
+/** A secret read together with whether the entry was sealed behind the OS auth gate. */
+export interface StoredSecretRead {
+  /** The secret, or null on absent / cancel / enrollment-invalidated / error. */
+  value: string | null;
+  /**
+   * True when the entry was auth-gated — so the read that produced `value` DID
+   * prompt the OS (and thus doubles as the app-lock's unlock). False for an
+   * un-gated (silent) read, which must NOT be mistaken for an OS auth.
+   */
+  gated: boolean;
+}
+
 /**
- * Reads a secret — triggers the OS auth prompt when the entry is gated. Returns
- * null on cancel, error, or an entry invalidated by a biometric-enrollment change;
- * callers treat all of those as "no cache" and fall back to a fresh restore.
+ * Reads a secret AND reports whether it was auth-gated, in a single marker read.
+ * `value` is null on cancel, error, or an entry invalidated by a biometric-
+ * enrollment change; callers treat all of those as "no cache" and fall back to a
+ * fresh restore.
  */
 async function readSecret(
   secretKey: string,
   presenceKey: string,
-): Promise<string | null> {
-  // Pick the read options from the non-auth presence marker so we issue exactly ONE
-  // keychain read with the RIGHT options. A gated secret is read with AUTH_OPTS —
-  // that read IS the app-lock's OS prompt; an un-gated secret (written on a device
-  // with no enrolled authenticator) is read plainly. Reading an un-gated value with
+): Promise<StoredSecretRead> {
+  // ONE marker read serves BOTH jobs: pick the read options AND report `gated` back
+  // to the caller — so a restore path needn't re-read the marker just to decide
+  // markFreshLogin. A gated secret is read with AUTH_OPTS (that read IS the app-lock's
+  // OS prompt); an un-gated secret (written on a device with no enrolled
+  // authenticator) is read plainly. Reading an un-gated value with
   // requireAuthentication would waste a round-trip and — once the user later enrolls
   // biometrics — pop a spurious prompt on a value that was never sealed. A cancel or
   // enrollment-change on a gated read still resolves to null → callers fall back to
   // a fresh restore.
   try {
-    const opts = (await isSecretGated(presenceKey))
-      ? AUTH_OPTS
-      : NON_AUTH_KEY_OPTS;
-    return await SecureStore.getItemAsync(secretKey, opts);
+    const gated = await isSecretGated(presenceKey);
+    const value = await SecureStore.getItemAsync(
+      secretKey,
+      gated ? AUTH_OPTS : NON_AUTH_KEY_OPTS,
+    );
+    return { value, gated };
   } catch {
-    return null;
+    return { value: null, gated: false };
   }
 }
 
@@ -223,11 +239,13 @@ async function isSecretGated(presenceKey: string): Promise<boolean> {
 // ── Raw private key (web3auth) ───────────────────────────────────────────────
 
 /**
- * Reads the raw key — triggers the OS auth prompt. Returns null on cancel, error,
- * or a key invalidated by a biometric-enrollment change; callers fall back to a
- * Web3Auth restore in every one of those cases.
+ * Reads the raw key together with whether it was auth-gated (see {@link StoredSecretRead}),
+ * in a single keychain round-trip. `value` is null on cancel, error, or a key
+ * invalidated by a biometric-enrollment change; callers fall back to a Web3Auth
+ * restore in every one of those cases. A gated read prompted the OS, so the caller
+ * can treat it as the app-lock's unlock (markFreshLogin) without re-reading the marker.
  */
-export function getStoredKey(): Promise<string | null> {
+export function getStoredKeyWithGate(): Promise<StoredSecretRead> {
   return readSecret(PRIVATE_KEY_KEY, PRESENCE_KEY);
 }
 
@@ -243,17 +261,15 @@ export function hasStoredKey(): Promise<boolean> {
   return hasSecret(PRESENCE_KEY);
 }
 
-export function isStoredKeyGated(): Promise<boolean> {
-  return isSecretGated(PRESENCE_KEY);
-}
-
 // ── BIP39 mnemonic (Restore / New HD wallet) ─────────────────────────────────
 
 /**
- * Reads the stored recovery phrase — triggers the OS auth prompt when gated.
- * Returns null on cancel / error / enrollment change (callers treat as "no cache").
+ * Reads the stored recovery phrase together with whether it was auth-gated (see
+ * {@link StoredSecretRead}), in a single keychain round-trip. `value` is null on
+ * cancel / error / enrollment change (callers treat as "no cache"); a gated read
+ * prompted the OS, so the caller can count it as the app-lock's unlock.
  */
-export function getStoredMnemonic(): Promise<string | null> {
+export function getStoredMnemonicWithGate(): Promise<StoredSecretRead> {
   return readSecret(MNEMONIC_KEY, MNEMONIC_PRESENCE_KEY);
 }
 
@@ -267,8 +283,4 @@ export function clearStoredMnemonic(): Promise<void> {
 
 export function hasStoredMnemonic(): Promise<boolean> {
   return hasSecret(MNEMONIC_PRESENCE_KEY);
-}
-
-export function isStoredMnemonicGated(): Promise<boolean> {
-  return isSecretGated(MNEMONIC_PRESENCE_KEY);
 }
