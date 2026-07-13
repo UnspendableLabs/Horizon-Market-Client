@@ -3,6 +3,10 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    // TS 6 deprecates the explicit `esModuleInterop: false` below (removed in TS
+    // 7). We keep the strict-ESM interop semantics on purpose (paired with
+    // verbatimModuleSyntax), so acknowledge the deprecation instead of flipping it.
+    "ignoreDeprecations": "6.0",
     "lib": ["ES2022", "DOM"],
     "jsx": "react-jsx",
     "strict": true,
