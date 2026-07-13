@@ -166,6 +166,10 @@ export function useAssets(): UseAssetsResult {
   const fetchAll = useCallback(
     async (opts: { force: boolean }) => {
       if (!client || !p2wpkh) {
+        // Invalidate any in-flight fetch: it belongs to a previous wallet and
+        // would clobber this reset when it settles.
+        seqRef.current++;
+        setIsFetching(false);
         setGroups(EMPTY_GROUPS);
         setErrors(NO_ERRORS);
         setLastFetchedAt(null);
@@ -180,6 +184,10 @@ export function useAssets(): UseAssetsResult {
       if (!opts.force) {
         const cached = readBalancesCache<AssetOption[]>(cacheKey, ttlMs);
         if (cached) {
+          // Same invalidation as the reset branch: an in-flight fetch for a
+          // previous wallet must not overwrite this seed when it settles.
+          seqRef.current++;
+          setIsFetching(false);
           setGroups(regroup(cached.data));
           setErrors(NO_ERRORS);
           setLastFetchedAt(cached.fetchedAt);

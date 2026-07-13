@@ -28,7 +28,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run test:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: false
 
   build:
     name: Build
@@ -53,3 +58,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+
+  cli:
+    name: CLI (apps/cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # The CLI consumes the SDK via `file:../..`, so build the SDK's dist first.
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: apps/cli
+      - run: npm run typecheck
+        working-directory: apps/cli
+      - run: npm test
+        working-directory: apps/cli
+      - run: npm run build
+        working-directory: apps/cli

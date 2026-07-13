@@ -38,7 +38,7 @@ async function buyXcp() {
 
 // ─── Buy ordinal (single swap + P2TR receive address) ────────────────────────
 
-async function buyOrdinal() {
+export async function buyOrdinal() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "mainnet",
@@ -55,7 +55,7 @@ async function buyOrdinal() {
 
 // ─── Manual quote → sign → submit ────────────────────────────────────────────
 
-async function buyManual() {
+export async function buyManual() {
   const client = new HorizonMarketClient({
     privateKey: PRIVATE_KEY,
     network: "testnet",

@@ -21,7 +21,6 @@ export interface SellOrderFormClassNames {
   dropdown?: string;
   button?: string;
   buttonSecondary?: string;
-  summary?: string;
   progress?: WorkflowProgressClassNames;
   error?: string;
   success?: string;
@@ -249,7 +248,6 @@ export function SellOrderForm({
           classNames={{
             button: classNames?.button,
             buttonSecondary: classNames?.buttonSecondary,
-            summary: classNames?.summary,
           }}
         />
       </div>

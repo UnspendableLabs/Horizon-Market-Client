@@ -135,8 +135,14 @@ export function SwapList({
         <View style={[{ gap: 24 }, stylesProp?.grid]}>
           {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
             swaps.slice(i * 2, i * 2 + 2),
-          ).map((row, i) => (
-            <View key={i} style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}>
+          ).map((row) => (
+            // Keyed by the row's first swap (not the index): removing a swap
+            // shifts every later item across row boundaries, and index keys
+            // would remount them all (resetting per-item image state).
+            <View
+              key={row[0]!.id}
+              style={{ flexDirection: "row", gap: 16, alignItems: "stretch" }}
+            >
               {row.map((swap) => (
                 <SwapListItem
                   key={swap.id}

@@ -60,13 +60,23 @@ export const sellCommand = defineCommand({
       if (!SELL_TYPES.includes(type)) {
         throw new CliError(`Invalid --type "${type}"`, "BAD_TYPE");
       }
+      // Sats are integral — reject fractions ("0.5" suggests BTC, off by 1e8)
+      // and float-imprecise magnitudes.
       const price = Number(ctx.args.price);
-      if (!Number.isFinite(price) || price <= 0) {
-        throw new CliError("--price must be a positive number of sats", "BAD_PRICE");
+      if (!Number.isInteger(price) || price <= 0 || price > Number.MAX_SAFE_INTEGER) {
+        throw new CliError("--price must be a positive integer number of sats", "BAD_PRICE");
       }
 
       const stored = requireKeystore(cli.homeDir);
       const cfg = getNetworkConfig(cli.networkOverride ?? stored.network);
+
+      // Kontor is signet-only: fail before unlocking/prompting, mirroring `list`.
+      if ((type === "kor" || type === "kontor-nft") && cfg.kontorNetwork !== "signet") {
+        throw new CliError(
+          "Kontor is signet-only — pass --network signet to sell KOR / Kontor NFTs.",
+          "KONTOR_UNAVAILABLE",
+        );
+      }
 
       const password = await resolvePassword(cli);
       const unlocked = await unlockWallet(stored, password, cfg.sdkNetwork, cli.passphrase);
@@ -168,6 +178,9 @@ export const sellCommand = defineCommand({
       } else if (type === "kor") {
         const amount = str(ctx.args.amount);
         if (!amount) throw new CliError("--amount is required for kor", "MISSING_AMOUNT");
+        if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+          throw new CliError("--amount must be a positive decimal number of KOR", "BAD_AMOUNT");
+        }
         params = {
           listingType: "kontor",
           kontorAssetKind: "token",

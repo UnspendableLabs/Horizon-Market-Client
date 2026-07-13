@@ -30,6 +30,11 @@ export type {
 } from "./workflows/sell-kontor.js";
 export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
 export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
+export { KontorPurchaseNotRecordedError } from "./workflows/buy-kontor.js";
+// Thrown by every Kontor operation when the client was not constructed with
+// `kontorNetwork` — exported so consumers can `instanceof` it.
+export { KontorUnavailableError } from "./kontor/runtime.js";
+export type { KontorListingFeePreview } from "./api/kontor.js";
 export type {
   PsbtSellOrderParams,
   SellBroadcastTx,
@@ -126,6 +131,8 @@ export type {
   WalletChallenge,
   WalletSignInParams,
   SessionInfo,
+  CreditBalance,
+  WalletTokenSignIn,
 } from "./api/auth.js";
 
 // Manual sell workflow helper (quote → sign → submit)

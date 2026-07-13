@@ -51,9 +51,15 @@ Add these (build-time, `VITE_`-prefixed, inlined by Vite) for **Production** and
 
 | Key                       | Value (from `.env.local`)                  |
 | ------------------------- | ------------------------------------------ |
-| `VITE_HORIZON_MARKET_URL` | `https://horizon.market/`                  |
+| `VITE_HORIZON_MARKET_URL` | `https://horizon.market`                   |
 | `VITE_WEB3AUTH_CLIENT_ID` | _(your Web3Auth client ID)_                |
 | `VITE_WEB3AUTH_NETWORK`   | `sapphire_mainnet`                         |
+
+Optional overrides (all read in `src/lib/networks.ts`, each with a `_SIGNET`
+twin for the runtime mainnet ⇄ signet switch): `VITE_DEFAULT_NETWORK`,
+`VITE_ORD_API_URL`, `VITE_COUNTERPARTY_API_URL`, `VITE_ZELD_API_URL`,
+`VITE_KONTOR_INDEXER_URL`, `VITE_KONTOR_NFT_CONTRACT`. Defaults target the
+public endpoints, so a plain deploy works without any of them.
 
 ### Web3Auth domain allowlist
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
 import { authenticate, canUseAppLock } from "../lib/app-lock.js";
+import { useSecretClipboard } from "../lib/secret-clipboard.js";
+import { ScreenCaptureGuard } from "./ScreenCaptureGuard.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
 /**
@@ -33,6 +34,7 @@ export function DerivationSettings() {
   // shown addresses: for a phrase wallet always, for a key wallet only in
   // horizon-wallet mode (in single-key mode the encoded phrase's addresses differ).
   const canReveal = isMnemonic || bip39;
+  const copySecret = useSecretClipboard();
   const [revealed, setRevealed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -55,10 +57,9 @@ export function DerivationSettings() {
   const copy = async () => {
     if (!revealed) return;
     try {
-      await Clipboard.setStringAsync(revealed);
+      // Auto-wipes from the clipboard after a minute (see useSecretClipboard).
+      await copySecret(revealed);
       setCopied(true);
-      // Revert the "Copied ✓" label after a moment so it doesn't stick.
-      setTimeout(() => setCopied(false), 1500);
     } catch {
       /* ignore clipboard failures */
     }
@@ -127,6 +128,10 @@ export function DerivationSettings() {
 
               {revealed && (
                 <>
+                  {/* Only mounted while the phrase is on screen → blocks
+                      screenshots / recording / the recents snapshot for exactly
+                      that window, not the rest of Settings. */}
+                  <ScreenCaptureGuard guardKey="reveal-seed" />
                   <View style={styles.wordGrid}>
                     {words.map((w, i) => (
                       <View key={`${i}-${w}`} style={styles.wordChip}>
@@ -144,6 +149,11 @@ export function DerivationSettings() {
                       {copied ? "Copied ✓" : "Copy"}
                     </Text>
                   </Pressable>
+                  {copied && (
+                    <Text style={styles.hint}>
+                      Cleared from the clipboard after a minute.
+                    </Text>
+                  )}
                   <Text style={styles.hint}>
                     Import these 12 words into Horizon Wallet or XVerse to reach
                     the same addresses shown here.

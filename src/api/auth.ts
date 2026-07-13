@@ -174,7 +174,12 @@ export async function getCredits(
   const res = await http.fetchRaw("GET", "/api/auth/credits", {
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) return null;
+  // Only auth-shaped statuses mean "signed out". A transient 5xx must throw —
+  // treating it as null would make callers drop a still-valid session.
+  if (res.status === 401 || res.status === 403 || res.status === 404) return null;
+  if (!res.ok) {
+    throw new HorizonMarketApiError(res.status, "GET /api/auth/credits failed");
+  }
   const body = (await res.json().catch(() => null)) as {
     data?: { credits?: number; free_credits?: number };
   } | null;
@@ -204,7 +209,11 @@ export async function getSession(
   const res = await http.fetchRaw("GET", "/api/auth/session", {
     headers: { Accept: "application/json" },
   });
-  if (!res.ok) return null;
+  // Only auth-shaped statuses mean "signed out" (cf. getCredits).
+  if (res.status === 401 || res.status === 403 || res.status === 404) return null;
+  if (!res.ok) {
+    throw new HorizonMarketApiError(res.status, "GET /api/auth/session failed");
+  }
   const body = (await res.json().catch(() => null)) as {
     user?: { id?: string; address?: string; email?: string | null };
   } | null;

@@ -187,7 +187,7 @@ describe("HorizonMarketClient.requestBuyQuote", () => {
     expect(() =>
       client.requestBuyQuote({
         swapIds: [],
-        buyerAddress: "bc1qbuyer",
+        buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
       }),
     ).toThrow("At least one swapId is required");
   });
@@ -215,7 +215,7 @@ describe("HorizonMarketClient.requestBuyQuote", () => {
     expect(() =>
       client.requestBuyQuote({
         swapIds: ["swap_abc"],
-        buyerAddress: "bc1qbuyer",
+        buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
         fundingUtxoIds: ["tx:0"],
         autoSelect: true,
       }),

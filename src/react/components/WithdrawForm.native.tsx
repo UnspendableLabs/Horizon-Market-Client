@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Linking,
   Pressable,
@@ -125,6 +125,13 @@ export function WithdrawForm({
   const sheet = useMemo(() => createSheet(theme), [theme]);
   const { network, kontorNetwork, baseUrl } = useHorizonMarket();
 
+  // The text fields are UNCONTROLLED (defaultValue, no `value`) — same fix as
+  // SellOrderForm.native: a controlled `value` writes back to the native input
+  // on every re-render, and on iOS/Fabric that write races the keystroke and
+  // wipes just-typed characters. `qtyNonce` remounts the quantity field when the
+  // Max button must push a new defaultValue into it programmatically.
+  const [qtyNonce, setQtyNonce] = useState(0);
+
   // ─── Form step ─────────────────────────────────────────────────────────────
   if (w.step === "form") {
     const submitDisabled = w.submitDisabled;
@@ -142,7 +149,7 @@ export function WithdrawForm({
         <View>
           <Text style={[sheet.fieldLabel, stylesProp?.label]}>{w.destinationLabel}</Text>
           <TextInput
-            value={w.formValues.destination}
+            defaultValue={w.formValues.destination}
             onChangeText={(t) => w.setFormValues({ destination: t.trim() })}
             placeholder={w.destinationPlaceholder}
             placeholderTextColor={theme.colors.textMuted}
@@ -157,7 +164,8 @@ export function WithdrawForm({
           <View>
             <Text style={[sheet.fieldLabel, stylesProp?.label]}>Amount</Text>
             <TextInput
-              value={w.formValues.quantity}
+              key={`qty-${qtyNonce}`}
+              defaultValue={w.formValues.quantity}
               onChangeText={(t) => w.setFormValues({ quantity: t.replace(/[^0-9.]/g, "") })}
               placeholder="0"
               placeholderTextColor={theme.colors.textMuted}
@@ -166,7 +174,11 @@ export function WithdrawForm({
             />
             {w.availableDisplay && w.kind !== "btc" ? (
               <Pressable
-                onPress={() => w.setFormValues({ quantity: w.availableDisplay! })}
+                onPress={() => {
+                  w.setFormValues({ quantity: w.availableDisplay! });
+                  // Remount the uncontrolled input so it shows the pushed value.
+                  setQtyNonce((n) => n + 1);
+                }}
                 style={sheet.maxButton}
               >
                 <Text style={sheet.maxButtonText}>Max ({w.availableDisplay})</Text>

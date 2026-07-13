@@ -52,6 +52,14 @@ export const sendCommand = defineCommand({
       const stored = requireKeystore(cli.homeDir);
       const cfg = getNetworkConfig(cli.networkOverride ?? stored.network);
 
+      // Kontor is signet-only: fail before unlocking/prompting, mirroring `list`.
+      if ((type === "kor" || type === "kontor-nft") && cfg.kontorNetwork !== "signet") {
+        throw new CliError(
+          "Kontor is signet-only — pass --network signet to send KOR / Kontor NFTs.",
+          "KONTOR_UNAVAILABLE",
+        );
+      }
+
       const password = await resolvePassword(cli);
       const unlocked = await unlockWallet(stored, password, cfg.sdkNetwork, cli.passphrase);
       const client = createClient(cfg, {
@@ -114,6 +122,9 @@ export const sendCommand = defineCommand({
       } else if (type === "kor") {
         const amount = str(ctx.args.amount);
         if (!amount) throw new CliError("--amount is required for kor", "MISSING_AMOUNT");
+        if (!/^\d+(\.\d+)?$/.test(amount.trim())) {
+          throw new CliError("--amount must be a positive decimal number of KOR", "BAD_AMOUNT");
+        }
         request = { kind: "kor", toAddress, amount, satsPerVbyte };
         heading = `Send ${amount} KOR to ${toAddress}`;
       } else {

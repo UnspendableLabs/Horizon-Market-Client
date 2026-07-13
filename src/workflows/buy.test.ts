@@ -13,12 +13,12 @@ const WIRE_BUY_QUOTE = {
 };
 
 const WIRE_PENDING_SALES = [
-  { tx_id: "txid_abc", buyer_address: "bc1qbuyer", atomic_swap: { id: "swap_abc" } },
+  { tx_id: "txid_abc", buyer_address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", atomic_swap: { id: "swap_abc" } },
 ];
 
 // buy.test.ts uses a buyer address, override the default signer address
 const buyerSigner = () =>
-  makeSigner({ p2wpkh: "bc1qbuyer", publicKey: "02aabbcc" });
+  makeSigner({ p2wpkh: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", publicKey: "02aabbcc" });
 
 describe("fillSwaps", () => {
   it("requests buy quote, signs PSBT, submits purchase", async () => {
@@ -30,7 +30,7 @@ describe("fillSwaps", () => {
     const signer = makeSigner();
 
     const sales = await fillSwaps(
-      { swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" },
+      { swapIds: ["swap_abc"], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" },
       http,
       signer,
     );
@@ -49,7 +49,7 @@ describe("fillSwaps", () => {
     const body = JSON.parse(purchaseInit.body as string);
     expect(body.psbt_hex).toBe("70736274ff_buy_signed");
     expect(body.swap_ids).toEqual(["swap_abc"]);
-    expect(body.buyer_address).toBe("bc1qbuyer");
+    expect(body.buyer_address).toBe("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
   });
 
   it("auto-fills buyerAddress from signer when omitted", async () => {
@@ -67,7 +67,7 @@ describe("fillSwaps", () => {
       RequestInit,
     ];
     const body = JSON.parse(quoteInit.body as string);
-    expect(body.buyer_address).toBe("bc1qbuyer");
+    expect(body.buyer_address).toBe("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
   });
 
   it("throws when fundingUtxoIds and autoSelect are both set", async () => {
@@ -78,7 +78,7 @@ describe("fillSwaps", () => {
       fillSwaps(
         {
           swapIds: ["swap_abc"],
-          buyerAddress: "bc1qbuyer",
+          buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
           fundingUtxoIds: ["tx:0"],
           autoSelect: true,
         },
@@ -96,7 +96,7 @@ describe("fillSwaps", () => {
     const http = new HttpClient({ baseUrl: "https://example.com", fetch });
     const signer = makeSigner();
 
-    await fillSwaps({ swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" }, http, signer);
+    await fillSwaps({ swapIds: ["swap_abc"], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" }, http, signer);
 
     const [, quoteInit] = (fetch as ReturnType<typeof makeSequentialFetch>).mock.calls[0] as [
       string,
@@ -124,7 +124,7 @@ describe("fillSwaps", () => {
     const signer = makeSigner();
 
     await expect(
-      fillSwaps({ swapIds: [], buyerAddress: "bc1qbuyer" }, http, signer),
+      fillSwaps({ swapIds: [], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" }, http, signer),
     ).rejects.toThrow("At least one swapId is required");
   });
 
@@ -136,7 +136,7 @@ describe("fillSwaps", () => {
       fillSwaps(
         {
           swapIds: ["swap_1", "swap_2"],
-          buyerAddress: "bc1qbuyer",
+          buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
           buyerTaprootAddress: "bc1pinscription",
         },
         http,
@@ -156,7 +156,7 @@ describe("fillSwaps", () => {
     await fillSwaps(
       {
         swapIds: ["swap_ordinal"],
-        buyerAddress: "bc1qbuyer",
+        buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
         buyerTaprootAddress: "bc1pinscription",
       },
       http,
@@ -180,7 +180,7 @@ describe("fillSwaps", () => {
     const events: WorkflowProgressEvent[] = [];
 
     await fillSwaps(
-      { swapIds: ["swap_abc"], buyerAddress: "bc1qbuyer" },
+      { swapIds: ["swap_abc"], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" },
       http,
       makeSigner(),
       { onProgress: (e) => events.push(e) },

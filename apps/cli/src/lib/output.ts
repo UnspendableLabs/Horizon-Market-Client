@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import pc from "picocolors";
 import { resolveContext, type CliContext } from "../context.js";
 
@@ -56,16 +57,13 @@ export async function runCommand(
 function fail(json: boolean, err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
   const code = err instanceof CliError ? err.code : undefined;
-  if (json) {
-    process.stderr.write(
-      JSON.stringify(
-        { error: code ? { message, code } : { message } },
-        bigintReplacer,
-      ) + "\n",
-    );
-  } else {
-    process.stderr.write(pc.red(`✖ ${message}`) + "\n");
-  }
+  const line = json
+    ? JSON.stringify({ error: code ? { message, code } : { message } }, bigintReplacer) + "\n"
+    : pc.red(`✖ ${message}`) + "\n";
+  // `writeSync` (not `process.stderr.write`): stderr pipe writes are async on
+  // macOS/Windows and `process.exit` does not drain them — the error JSON that
+  // scripts rely on (`2>err.json`) would be lost.
+  fs.writeSync(2, line);
   process.exit(1);
 }
 

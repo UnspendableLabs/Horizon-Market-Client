@@ -29,7 +29,13 @@ async function fetchFeeEstimates(
     });
     if (!res.ok) return null;
     const b = (await res.json()) as Partial<FeeEstimates>;
-    const fastest = num(b.fastestFee, 1);
+    // A 200 with no usable fastestFee is as unusable as a network failure —
+    // report "no estimates" rather than silently falling back to 1 sat/vB
+    // (which would produce stuck transactions in a congested mempool).
+    const fastest = b.fastestFee;
+    if (typeof fastest !== "number" || !Number.isFinite(fastest) || fastest <= 0) {
+      return null;
+    }
     return {
       fastestFee: fastest,
       halfHourFee: num(b.halfHourFee, fastest),
@@ -39,6 +45,13 @@ async function fetchFeeEstimates(
     return null;
   }
 }
+
+/**
+ * Sanity ceiling for an explicit numeric `--fee-rate`. Even extreme congestion
+ * has stayed well below this; values above it are almost always a units mistake
+ * (total sats instead of sat/vByte).
+ */
+const MAX_FEE_RATE = 2_000;
 
 /**
  * Resolve a `--fee-rate` argument to a concrete sat/vByte. A numeric value is
@@ -53,7 +66,18 @@ export async function resolveFeeRate(
   const value = (arg ?? "normal").trim();
   if (/^\d+(\.\d+)?$/.test(value)) {
     const n = Number(value);
-    if (n <= 0) throw new CliError("--fee-rate must be greater than 0", "BAD_FEE_RATE");
+    if (n < 1) {
+      throw new CliError(
+        "--fee-rate must be at least 1 sat/vByte (the default relay minimum)",
+        "BAD_FEE_RATE",
+      );
+    }
+    if (n > MAX_FEE_RATE) {
+      throw new CliError(
+        `--fee-rate ${value} sat/vByte looks like a units mistake (max ${MAX_FEE_RATE}) — it is a rate, not a total fee.`,
+        "BAD_FEE_RATE",
+      );
+    }
     return n;
   }
   if (value !== "slow" && value !== "normal" && value !== "fast") {

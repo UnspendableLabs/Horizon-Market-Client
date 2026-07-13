@@ -99,15 +99,16 @@ export function writeKeystore(homeDir: string, data: StoredKeystore): void {
   // `wx` → fail if the unique temp name somehow exists; create it `0600` up front.
   const fd = fs.openSync(tmp, "wx", 0o600);
   try {
-    fs.writeFileSync(fd, body);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-
-  try {
+    try {
+      fs.writeFileSync(fd, body);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, file);
   } catch (err) {
+    // Any failure (disk full on write/fsync, rename) — don't litter the keystore
+    // dir with orphaned temp files.
     fs.rmSync(tmp, { force: true });
     throw err;
   }

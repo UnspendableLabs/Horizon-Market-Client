@@ -125,6 +125,19 @@ export async function decryptKeystore(
     throw new Error(`Unsupported cipher: ${String(ks.cipher)}.`);
   }
 
+  // Bound the (attacker-controllable) KDF parameters: an imported keystore with
+  // a huge N/r/p is a memory/CPU DoS on the importing wallet. 2^22 with r ≤ 32
+  // already far exceeds any legitimate interactive setting (we encrypt with
+  // N=2^15, r=8, p=1).
+  const { N, r, p } = ks.kdf;
+  if (
+    !Number.isInteger(N) || N < 2 || (N & (N - 1)) !== 0 || N > 2 ** 22 ||
+    !Number.isInteger(r) || r < 1 || r > 32 ||
+    !Number.isInteger(p) || p < 1 || p > 4
+  ) {
+    throw new Error("Invalid keystore: scrypt parameters out of bounds.");
+  }
+
   const key = deriveKey(
     password,
     hexToBytes(ks.kdf.salt),

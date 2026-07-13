@@ -78,7 +78,15 @@ export const balancesCommand = defineCommand({
         json: {
           network: cfg.uiNetwork,
           addresses: addrs,
-          btc: { sats: btcSats, usd: btcUsd != null && btcSats != null ? formatUsd(Number(btcSats), btcUsd) : null },
+          // Raw number (not the locale currency string the human table shows) —
+          // machine output should not need de-formatting.
+          btc: {
+            sats: btcSats,
+            usd:
+              btcUsd != null && btcSats != null
+                ? Math.round((Number(btcSats) / 1e8) * btcUsd * 100) / 100
+                : null,
+          },
           counterparty,
           zeld,
           ordinals,
