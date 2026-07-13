@@ -131,7 +131,7 @@ export class LocalSigner implements Signer {
       return {
         p2wpkh: p2wpkhAddress,
         p2tr: p2trAddress ?? undefined,
-        publicKey: keyPair.publicKey.toString("hex"),
+        publicKey: Buffer.from(keyPair.publicKey).toString("hex"),
         xOnlyPubkey: Buffer.from(xOnlyPubkeyBytes).toString("hex"),
       };
     } finally {
@@ -277,7 +277,7 @@ export class HDSigner implements Signer {
       return {
         p2wpkh: p2wpkhAddress,
         p2tr: p2trAddress ?? undefined,
-        publicKey: segwitPair.publicKey.toString("hex"),
+        publicKey: Buffer.from(segwitPair.publicKey).toString("hex"),
         xOnlyPubkey: Buffer.from(xOnlyPubkeyBytes).toString("hex"),
       };
     } finally {

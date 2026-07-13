@@ -59,7 +59,9 @@ const styles = StyleSheet.create({
   // visible or tappable. Extended to the full screen (top: -insets.top, applied by
   // useBrandOverlayStyle) so its centered logo lands exactly where the splash's does.
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    // RN 0.86 merged `absoluteFillObject` into `absoluteFill` (now a plain
+    // frozen object, not a registered style id), so spread `absoluteFill`.
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",

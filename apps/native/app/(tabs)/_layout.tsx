@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
+import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
 import type { AssetOption } from "@unspendablelabs/horizon-market-client/react";
 import { SwipeTabs } from "../../components/SwipeTabs.js";
 import { TabBar } from "../../components/TabBar.js";
@@ -43,7 +44,7 @@ export default function TabsLayout() {
         // keeps the classic bottom-tab look while swiping horizontally between
         // scenes.
         tabBarPosition="bottom"
-        tabBar={(props) => <TabBar {...props} />}
+        tabBar={(props: MaterialTopTabBarProps) => <TabBar {...props} />}
         // The pager paints its container with react-navigation's default (white)
         // background behind each scene; the Buy tab's <SwapList> root is
         // transparent, so without this the market showed through as white. Tint the

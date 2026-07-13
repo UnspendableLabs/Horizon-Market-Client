@@ -23,7 +23,10 @@
     // that in app.json (`expo.experiments.tsconfigPaths: false`); Metro then does
     // its own resolution via metro.config.js (which pins the single React copy),
     // while `tsc` still honours these paths here.
-    "baseUrl": ".",
+    //
+    // No `baseUrl`: it's deprecated in TS 6 (removed in TS 7), and since these
+    // `paths` values are relative (`./…`) they resolve against this tsconfig's
+    // directory without it — same result as `baseUrl: "."`.
     "paths": {
       "react": ["./node_modules/@types/react"],
       "react/*": ["./node_modules/@types/react/*"]

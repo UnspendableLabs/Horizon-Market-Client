@@ -46,7 +46,7 @@ function createTaprootSigner(
   return {
     publicKey: tweakedPubkey,
     sign(hash: Buffer): Buffer {
-      return keyPair.sign(hash);
+      return Buffer.from(keyPair.sign(hash));
     },
     signSchnorr(hash: Buffer): Buffer {
       return Buffer.from(eccLib.signSchnorr(hash, tweakedPrivateKey));

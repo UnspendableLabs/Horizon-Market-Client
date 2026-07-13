@@ -1,9 +1,16 @@
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
-import {
-  createMaterialTopTabNavigator,
-  type MaterialTopTabNavigationEventMap,
-  type MaterialTopTabNavigationOptions,
+import type {
+  MaterialTopTabNavigationEventMap,
+  MaterialTopTabNavigationOptions,
 } from "@react-navigation/material-top-tabs";
+// SDK 56+: Expo Router no longer allows importing the navigator *runtime* from the
+// external `@react-navigation/material-top-tabs` package — Metro fails the bundle
+// (it must use Router's vendored copy to avoid a duplicate React Navigation
+// instance). Take the `createMaterialTopTabNavigator` value from
+// `expo-router/js-top-tabs`; the option/event *types* above are `import type`
+// (erased at bundle time, so they don't trip the check) and keep the real,
+// fully-typed definitions rather than Router's `any`-typed vendored copies.
+import { createMaterialTopTabNavigator } from "expo-router/js-top-tabs";
 import { withLayoutContext } from "expo-router";
 
 /**
