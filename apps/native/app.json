@@ -48,7 +48,10 @@
           "imageWidth": 200
         }
       ],
-      "./plugins/withAndroidSecurity.js"
+      "./plugins/withAndroidSecurity.js",
+      "expo-font",
+      "expo-status-bar",
+      "expo-web-browser"
     ]
   }
 }

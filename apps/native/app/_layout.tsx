@@ -163,7 +163,9 @@ export default function RootLayout() {
           itself), so its background reaches the screen edge instead of floating
           above a safe-area gap. */}
       <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
-        <StatusBar style="light" backgroundColor={colors.background} />
+        {/* expo-status-bar dropped `backgroundColor` in SDK 57 (Android is
+            edge-to-edge; the bar is transparent over the root's background). */}
+        <StatusBar style="light" />
 
         {/* NetworkProvider + AppLockProvider both sit OUTSIDE the
             HorizonMarketProvider so they survive the provider's key={network}

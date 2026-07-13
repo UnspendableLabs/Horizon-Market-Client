@@ -171,7 +171,9 @@ describe("useKontorMinerFee", () => {
 
     rerender({ enabled: true });
     await waitFor(() => expect(listSwaps).toHaveBeenCalledTimes(1));
-    expect(result.current.revealVsize).toBe(FALLBACK_REVEAL_VSIZE.token);
+    await waitFor(() =>
+      expect(result.current.revealVsize).toBe(FALLBACK_REVEAL_VSIZE.token),
+    );
   });
 
   it("ignores a stale response when the kind changes mid-flight", async () => {

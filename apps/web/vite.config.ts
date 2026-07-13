@@ -134,13 +134,5 @@ export default defineConfig({
       "vite-plugin-node-polyfills/shims/process",
       "vite-plugin-node-polyfills/shims/global",
     ],
-    esbuildOptions: {
-      // The dev server pre-bundles deps with esbuild's default target
-      // (es2020/chrome87/...), which lacks top-level await. A WASM-backed
-      // dependency (@kontor/sdk) relies on it, so match the build target.
-      // (Node globals/builtins are polyfilled by vite-plugin-node-polyfills,
-      // which injects itself into the optimizer too.)
-      target: "esnext",
-    },
   },
 });
