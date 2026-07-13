@@ -135,7 +135,7 @@ describe("swapListItemView", () => {
       thumbnail: "full.png",
       title: "0.01 XCP",
       priceLabel: "10,000 sats",
-      pricePerUnit: (1_000_000).toLocaleString(undefined, {
+      pricePerUnit: (1_000_000).toLocaleString("en-US", {
         maximumFractionDigits: 8,
       }),
       showPerUnit: true,
