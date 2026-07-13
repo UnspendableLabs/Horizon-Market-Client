@@ -49,6 +49,7 @@
         }
       ],
       "./plugins/withAndroidSecurity.js",
+      "./plugins/withGradleMemory.js",
       "expo-font",
       "expo-status-bar",
       "expo-web-browser"
