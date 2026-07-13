@@ -1,0 +1,36 @@
+# Codecov configuration.
+#
+# Coverage is uploaded from the SDK's vitest run (coverage/lcov.info, see
+# .github/workflows/ci.yml). What gets *measured* is scoped in vitest.config.ts:
+# the framework-agnostic SDK core plus the React adapter's real logic (hooks,
+# controllers, pure helpers). Pure-presentation .tsx, style/theme tokens, re-export
+# barrels and generated Kontor bindings are excluded there — so they never reach
+# this report and don't need re-excluding here.
+#
+# Policy: alert only on a real coverage *regression* — the project status fails
+# only if a PR drops overall coverage by more than 1% vs its base. No absolute
+# floor: codecov's number blends line + branch coverage (partial branches count
+# against it), and Vitest 4's v8 engine reports far more branch detail than
+# before, so the absolute % shifted once for measurement reasons — `auto` tracks
+# the moving baseline instead of a brittle fixed target.
+#
+# Per-diff ("patch") coverage is kept as an annotation only, so a small change
+# touching an otherwise-untested line never turns the PR red.
+
+coverage:
+  precision: 2
+  round: down
+  range: "85...100"
+
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "reach, diff, files"
+  require_changes: false
