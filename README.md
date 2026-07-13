@@ -2,7 +2,7 @@
 [![codecov](https://codecov.io/gh/UnspendableLabs/Horizon-Market-Client/graph/badge.svg?token=aCoWURQQzj)](https://codecov.io/gh/UnspendableLabs/Horizon-Market-Client)
 [![npm version](https://img.shields.io/npm/v/@unspendablelabs/horizon-market-client.svg)](https://www.npmjs.com/package/@unspendablelabs/horizon-market-client)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-6-blue.svg)
 
 # @unspendablelabs/horizon-market-client
 
