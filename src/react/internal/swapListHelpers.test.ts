@@ -144,9 +144,9 @@ describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
       price: 4000,
       pricePerUnit: 200_000_000_000,
     });
-    expect(swapDisplayQuantity(s)).toBe((2).toLocaleString());
+    expect(swapDisplayQuantity(s)).toBe((2).toLocaleString("en-US"));
     expect(swapDisplayPricePerUnit(s)).toBe(
-      (2000).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+      (2000).toLocaleString("en-US", { maximumFractionDigits: 8 }),
     );
   });
 
@@ -159,9 +159,9 @@ describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
       price: 25000,
       pricePerUnit: 25000,
     });
-    expect(swapDisplayQuantity(s)).toBe((1).toLocaleString());
+    expect(swapDisplayQuantity(s)).toBe((1).toLocaleString("en-US"));
     expect(swapDisplayPricePerUnit(s)).toBe(
-      (25000).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+      (25000).toLocaleString("en-US", { maximumFractionDigits: 8 }),
     );
   });
 
@@ -174,9 +174,9 @@ describe("swapDisplayQuantity / swapDisplayPricePerUnit", () => {
       price: 9000,
       pricePerUnit: 3,
     });
-    expect(swapDisplayQuantity(s)).toBe((3000).toLocaleString());
+    expect(swapDisplayQuantity(s)).toBe((3000).toLocaleString("en-US"));
     expect(swapDisplayPricePerUnit(s)).toBe(
-      (3).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+      (3).toLocaleString("en-US", { maximumFractionDigits: 8 }),
     );
   });
 
@@ -230,14 +230,14 @@ describe("kontor display", () => {
   it('names a token listing "KOR" and uses kontorAmount for quantity', () => {
     const s = korToken();
     expect(swapDisplayName(s)).toBe("KOR");
-    expect(swapDisplayQuantity(s)).toBe((2000).toLocaleString());
+    expect(swapDisplayQuantity(s)).toBe((2000).toLocaleString("en-US"));
   });
 
   it("derives sats-per-KOR from price and kontorAmount", () => {
     // 5000 sats for 2000 KOR => 2.5 sats/KOR.
     const s = korToken({ price: 5000, kontorAmount: "2000" });
     expect(swapDisplayPricePerUnit(s)).toBe(
-      (2.5).toLocaleString(undefined, { maximumFractionDigits: 8 }),
+      (2.5).toLocaleString("en-US", { maximumFractionDigits: 8 }),
     );
   });
 

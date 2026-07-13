@@ -154,7 +154,7 @@ export function SwapConfirmation({
           />
           <SummaryRow
             label="Price"
-            value={`${swap.price.toLocaleString()} sats`}
+            value={`${swap.price.toLocaleString("en-US")} sats`}
             mono
             {...rowClassNames}
           />

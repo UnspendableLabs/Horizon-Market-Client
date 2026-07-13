@@ -46,20 +46,20 @@ export function swapDisplayName(swap: AtomicSwap): string {
 }
 
 export function formatQuantity(quantity: bigint, divisible: boolean): string {
-  if (!divisible) return quantity.toLocaleString();
+  if (!divisible) return quantity.toLocaleString("en-US");
   const SAT = BigInt("100000000");
   const whole = quantity / SAT;
   const remainder = quantity % SAT;
-  if (remainder === 0n) return whole.toLocaleString();
+  if (remainder === 0n) return whole.toLocaleString("en-US");
   const dec = remainder.toString().padStart(8, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}.${dec}`;
+  return `${whole.toLocaleString("en-US")}.${dec}`;
 }
 
 /** Format a Kontor token amount (a decimal string) for display. */
 function formatKontorAmount(amount: string): string {
   const n = Number(amount);
   if (!Number.isFinite(n)) return amount;
-  return n.toLocaleString(undefined, { maximumFractionDigits: 8 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
 export function swapDisplayQuantity(swap: AtomicSwap): string | null {
@@ -110,7 +110,7 @@ export function swapDisplayPricePerUnit(swap: AtomicSwap): string | null {
     if (swap.kontorAssetKind === "nft") return null;
     const amount = Number(swap.kontorAmount ?? 0);
     if (!amount || !Number.isFinite(amount)) return null;
-    return (swap.price / amount).toLocaleString(undefined, {
+    return (swap.price / amount).toLocaleString("en-US", {
       maximumFractionDigits: 8,
     });
   }
@@ -118,7 +118,7 @@ export function swapDisplayPricePerUnit(swap: AtomicSwap): string | null {
   const divisible =
     swap.listingType === "zeld" || swap.assetDivisibility === true;
   const perUnit = divisible ? swap.pricePerUnit : swap.pricePerUnit / 1e8;
-  return perUnit.toLocaleString(undefined, { maximumFractionDigits: 8 });
+  return perUnit.toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
 
 /** Deterministic palette for the Counterparty-asset monogram fallback. */
@@ -185,7 +185,7 @@ export function swapListItemView(
     actionLabel: isMySwap ? "Delist" : "Buy",
     thumbnail: swapImageUrl(swap),
     title: swapDisplayTitle(swap),
-    priceLabel: `${swap.price.toLocaleString()} sats`,
+    priceLabel: `${swap.price.toLocaleString("en-US")} sats`,
     pricePerUnit,
     showPerUnit: swap.listingType !== "ordinal" && pricePerUnit !== null,
   };

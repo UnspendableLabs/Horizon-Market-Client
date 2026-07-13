@@ -269,7 +269,7 @@ export function formatUsd(
 
 /** Group-separated sats amount ("3,450"). */
 export function formatSats(sats: number): string {
-  return Math.round(sats).toLocaleString();
+  return Math.round(sats).toLocaleString("en-US");
 }
 
 /**
