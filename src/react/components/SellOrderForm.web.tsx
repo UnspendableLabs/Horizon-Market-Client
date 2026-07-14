@@ -37,9 +37,16 @@ export interface SellOrderFormProps {
   onError?: (error: Error) => void;
   /**
    * Dismiss handler. When provided, the result screen shows a "Close" button
-   * beside "New order" (e.g. to close the surrounding modal).
+   * beside "New order" (e.g. to close the surrounding modal). Used as the
+   * fallback for the result "Close" when {@link onDone} is not given.
    */
   onClose?: () => void;
+  /**
+   * Dismiss handler for the result screen's "Close" button after an order is
+   * submitted — e.g. to jump to the marketplace to see the new pending order.
+   * Falls back to `onClose`.
+   */
+  onDone?: () => void;
   className?: string;
   classNames?: SellOrderFormClassNames;
   style?: CSSProperties;
@@ -93,6 +100,7 @@ export function SellOrderForm({
   onSuccess,
   onError,
   onClose,
+  onDone,
   className,
   classNames,
   style,
@@ -309,7 +317,7 @@ export function SellOrderForm({
         onRetry={retry}
         onComplete={reset}
         completeLabel="New order"
-        onClose={onClose}
+        onClose={onDone ?? onClose}
         classNames={{
           button: classNames?.button,
           buttonSecondary: classNames?.buttonSecondary,

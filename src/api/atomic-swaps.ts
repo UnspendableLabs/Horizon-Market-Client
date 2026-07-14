@@ -63,6 +63,10 @@ export interface WireAtomicSwap {
   kontor_contract_address?: string | null;
   kontor_nft_id?: string | null;
   kontor_amount?: string | null;
+  /** Only present on the list endpoint when `pending_address` was supplied. */
+  pending_role?: "seller" | "buyer" | null;
+  /** Only present on the list endpoint when `pending_address` was supplied. */
+  pending_txid?: string | null;
 }
 
 interface WirePagination {
@@ -175,6 +179,8 @@ export function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     kontorContractAddress: wire.kontor_contract_address ?? null,
     kontorNftId: wire.kontor_nft_id ?? null,
     kontorAmount: wire.kontor_amount ?? null,
+    pendingRole: wire.pending_role ?? null,
+    pendingTxid: wire.pending_txid ?? null,
   };
 }
 
@@ -192,6 +198,8 @@ export async function listSwaps(
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)
     qs.set("buyer_address", params.buyerAddress);
+  if (params.pendingAddress !== undefined)
+    qs.set("pending_address", params.pendingAddress);
   if (params.listingType !== undefined)
     qs.set("listing_type", params.listingType);
   if (params.funded !== undefined)

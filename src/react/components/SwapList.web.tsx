@@ -15,10 +15,6 @@ import {
   SwapListItem,
   type SwapListItemClassNames,
 } from "../internal/SwapListItem.web.js";
-import {
-  PendingSwapItem,
-  type PendingSwapItemClassNames,
-} from "../internal/PendingSwapItem.web.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
 import type { LoginPanelClassNames } from "./LoginPanel.web.js";
@@ -37,9 +33,6 @@ export interface SwapListClassNames {
   mySwapsToggle?: string;
   grid?: string;
   item?: SwapListItemClassNames;
-  pendingSection?: string;
-  pendingHeading?: string;
-  pendingItem?: PendingSwapItemClassNames;
   pagination?: string;
   error?: string;
   empty?: string;
@@ -129,7 +122,7 @@ export function SwapList({
     refetch,
     removeSwap,
     isItemMySwap,
-    pendingOwnSwaps,
+    pendingOrders,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
@@ -138,13 +131,21 @@ export function SwapList({
     closeLoginModal,
     closeConfirmationModal,
     handleLoginSuccess,
-    // Surface the connected wallet's own awaiting-confirmation listings at the
-    // top of the list (see the pending section below). Consumers can opt out
-    // with `includePendingOwnSwaps={false}`.
-  } = useSwapList({ includePendingOwnSwaps: true, ...hookOptions });
+    // Surface the connected wallet's in-progress orders at the top of the list
+    // (see the pending section below). Consumers can opt out with
+    // `includePendingOrders={false}`.
+  } = useSwapList({ includePendingOrders: true, ...hookOptions });
 
   const isPhone = useIsPhone();
   const root: CSSProperties = { ...rootStyle, ...style };
+
+  // The connected wallet's in-progress orders ride at the very top of the grid
+  // (the API already sorts them first via `pending_address`), rendered as
+  // ordinary tiles with a "Pending" badge and no Buy action. They're a small
+  // personal set pinned to the first page only. Pending sell listings are
+  // `funded:false` and pending buys are `pending:true`, both already excluded
+  // from the main feed, so there's no overlap to dedupe.
+  const gridSwaps = page === 0 ? [...pendingOrders, ...swaps] : swaps;
 
   // Sort + My-swaps controls are identical in both layouts; only the sort
   // select stretches to share the row on phones (flex:1), so build them once.
@@ -236,27 +237,9 @@ export function SwapList({
         </div>
       )}
 
-      {/* Your own listings still confirming on-chain — shown first, above the
-          marketplace grid, only to their creator (queried by seller address).
-          Each carries a spinner + mempool link and re-polls until it's funded. */}
-      {pendingOwnSwaps.length > 0 && (
-        <div
-          className={classNames?.pendingSection}
-          style={{ display: "flex", flexDirection: "column", gap: webTokens.spacingSm }}
-        >
-          <span
-            className={classNames?.pendingHeading}
-            style={{ ...ws.mutedText, fontWeight: 600 }}
-          >
-            Your pending listings
-          </span>
-          {pendingOwnSwaps.map((s) => (
-            <PendingSwapItem key={s.id} swap={s} classNames={classNames?.pendingItem} />
-          ))}
-        </div>
-      )}
-
-      {/* Content */}
+      {/* Content — the connected wallet's in-progress orders (pending listings
+          still settling + purchases still confirming) ride at the top of the
+          grid as ordinary tiles marked "Pending". */}
       {kontorUnavailable ? (
         <div className={classNames?.empty} style={ws.mutedText}>
           Kontor listings are only available on the signet network.
@@ -267,7 +250,7 @@ export function SwapList({
         <div className={classNames?.error} style={ws.errorText}>
           {error.message}
         </div>
-      ) : swaps.length === 0 ? (
+      ) : gridSwaps.length === 0 ? (
         <div className={classNames?.empty} style={ws.mutedText}>
           No swaps found.
         </div>
@@ -276,7 +259,7 @@ export function SwapList({
           className={classNames?.grid}
           style={isPhone ? phoneSwapGrid : ws.swapGrid}
         >
-          {swaps.map((swap) => (
+          {gridSwaps.map((swap) => (
             <SwapListItem
               key={swap.id}
               swap={swap}

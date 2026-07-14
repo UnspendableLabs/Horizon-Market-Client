@@ -53,6 +53,8 @@ function swap(
     kontorContractAddress: null,
     kontorNftId: null,
     kontorAmount: null,
+    pendingRole: null,
+    pendingTxid: null,
     ...overrides,
   };
 }
@@ -278,7 +280,22 @@ describe("swapImageUrl", () => {
 });
 
 describe("pendingSwapTrackingTxid", () => {
-  it("prefers the asset UTXO tx, then swap tx, then fee payment tx", () => {
+  it("prefers the server-provided pendingTxid over any derived txid", () => {
+    // The API's `pending_txid` is authoritative (e.g. a buyer's in-flight buy
+    // tx, which isn't derivable from the listing's own fields).
+    expect(
+      pendingSwapTrackingTxid(
+        swap({
+          id: "api",
+          pendingTxid: "buytx",
+          assetUtxoId: "deadbeef:0",
+          txId: "swaptx",
+        }),
+      ),
+    ).toBe("buytx");
+  });
+
+  it("falls back to the asset UTXO tx, then swap tx, then fee payment tx", () => {
     // Asset UTXO id ("txid:vout") — the tx actually being confirmed.
     expect(
       pendingSwapTrackingTxid(

@@ -13,15 +13,17 @@ export const FILTER_TABS: Array<{ key: SwapListingType | null; label: string }> 
 export const MY_SWAPS_MERGE_FETCH_LIMIT = 500;
 
 /**
- * Max own "awaiting confirmation" (`funded: false`) listings fetched per seller
- * address for the pending section shown at the top of the buy list. Freshly
- * created listings are few, so a small page is plenty.
+ * Rows fetched per `pending_address` query for the "your pending orders" section
+ * at the top of the buy list. `pending_address` decorates (doesn't filter) the
+ * feed — the address's in-progress orders sort to the very top — so this bounds
+ * how far down we scan for them. A wallet's in-flight orders are few, so a small
+ * page always captures them all before the ordinary listings begin.
  */
-export const PENDING_OWN_SWAPS_FETCH_LIMIT = 50;
+export const PENDING_ORDERS_FETCH_LIMIT = 50;
 
 /**
- * How often (ms) to re-poll the connected wallet's own awaiting-confirmation
- * listings while at least one is pending, so the spinner resolves on its own
- * once the funding tx confirms. Polling stops when none remain.
+ * How often (ms) to re-poll the connected wallet's pending orders while at least
+ * one remains, so the spinner resolves on its own once the order's tx confirms.
+ * Polling stops when none remain.
  */
-export const PENDING_OWN_SWAPS_POLL_MS = 20_000;
+export const PENDING_ORDERS_POLL_MS = 20_000;

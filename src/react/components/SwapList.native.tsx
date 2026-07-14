@@ -25,10 +25,6 @@ import {
   SwapListItem,
   type SwapListItemStyles,
 } from "../internal/SwapListItem.native.js";
-import {
-  PendingSwapItem,
-  type PendingSwapItemStyles,
-} from "../internal/PendingSwapItem.native.js";
 import type { LoginPanelStyles } from "./LoginPanel.native.js";
 import { LoginPanel } from "./LoginPanel.native.js";
 import type { SwapConfirmationStyles } from "./SwapConfirmation.native.js";
@@ -44,9 +40,6 @@ export interface SwapListStyles {
   mySwapsToggle?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
-  pendingSection?: StyleProp<ViewStyle>;
-  pendingHeading?: StyleProp<TextStyle>;
-  pendingItem?: PendingSwapItemStyles;
   pagination?: StyleProp<ViewStyle>;
   error?: StyleProp<TextStyle>;
   empty?: StyleProp<TextStyle>;
@@ -115,7 +108,7 @@ export function SwapList({
     refetch,
     removeSwap,
     isItemMySwap,
-    pendingOwnSwaps,
+    pendingOrders,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
@@ -124,28 +117,23 @@ export function SwapList({
     closeLoginModal,
     closeConfirmationModal,
     handleLoginSuccess,
-    // Surface the connected wallet's own awaiting-confirmation listings at the
-    // top of the list (see the pending section below). Consumers can opt out
-    // with `includePendingOwnSwaps={false}`.
-  } = useSwapList({ includePendingOwnSwaps: true, ...hookOptions });
+    // Surface the connected wallet's in-progress orders at the top of the grid.
+    // Consumers can opt out with `includePendingOrders={false}`.
+  } = useSwapList({ includePendingOrders: true, ...hookOptions });
+
+  // The connected wallet's in-progress orders ride at the very top of the grid
+  // (the API already sorts them first via `pending_address`), rendered as
+  // ordinary tiles with a "Pending" badge and no Buy action. They're a small
+  // personal set pinned to the first page only. Pending sell listings are
+  // `funded:false` and pending buys are `pending:true`, both already excluded
+  // from the main feed, so there's no overlap to dedupe.
+  const gridSwaps = page === 0 ? [...pendingOrders, ...swaps] : swaps;
 
   const contentAndPagination = (
     <>
-      {/* Your own listings still confirming on-chain — shown first, above the
-          marketplace grid, only to their creator (queried by seller address).
-          Each carries a spinner + mempool link and re-polls until it's funded. */}
-      {pendingOwnSwaps.length > 0 && (
-        <View style={[{ gap: 8, marginBottom: 8 }, stylesProp?.pendingSection]}>
-          <Text style={[common.muted, { fontWeight: "600" }, stylesProp?.pendingHeading]}>
-            Your pending listings
-          </Text>
-          {pendingOwnSwaps.map((s) => (
-            <PendingSwapItem key={s.id} swap={s} styles={stylesProp?.pendingItem} />
-          ))}
-        </View>
-      )}
-
-      {/* Content */}
+      {/* Content — the connected wallet's in-progress orders (pending listings
+          still settling + purchases still confirming) ride at the top of the
+          grid as ordinary tiles marked "Pending". */}
       {kontorUnavailable ? (
         <Text style={common.muted}>
           Kontor listings are only available on the signet network.
@@ -154,12 +142,12 @@ export function SwapList({
         <Text style={common.muted}>Loading…</Text>
       ) : error ? (
         <Text style={[common.error, stylesProp?.error]}>{error.message}</Text>
-      ) : swaps.length === 0 ? (
+      ) : gridSwaps.length === 0 ? (
         <Text style={[common.muted, stylesProp?.empty]}>No swaps found.</Text>
       ) : (
         <View style={[{ gap: 24 }, stylesProp?.grid]}>
-          {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
-            swaps.slice(i * 2, i * 2 + 2),
+          {Array.from({ length: Math.ceil(gridSwaps.length / 2) }, (_, i) =>
+            gridSwaps.slice(i * 2, i * 2 + 2),
           ).map((row) => (
             // Keyed by the row's first swap (not the index): removing a swap
             // shifts every later item across row boundaries, and index keys
