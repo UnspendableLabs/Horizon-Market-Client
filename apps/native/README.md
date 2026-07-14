@@ -47,6 +47,53 @@ SDK's public default; on any other network the Counterparty/ZELD APIs are called
 only when their URL is set (so balances are never read against the wrong
 network).
 
+## Shipping to TestFlight (iOS)
+
+Cloud builds go through **EAS Build**. `deploy-testflight.sh` wraps build + submit
+into a single command:
+
+```bash
+cd apps/native
+./deploy-testflight.sh                # build (production) + submit to TestFlight
+./deploy-testflight.sh --no-submit    # build only
+./deploy-testflight.sh -m "message"   # attach a build message
+./deploy-testflight.sh --ci           # fully non-interactive (CI)
+```
+
+It runs unattended after the initial setup: the signing credentials and the App
+Store Connect API key live on EAS servers, and export compliance is answered in
+the Info.plist — so no Apple login, 2FA, or per-build prompt. Build numbers
+auto-increment on EAS (`appVersionSource: remote`), so nothing to bump by hand.
+
+Configuration lives in `eas.json`:
+
+- **`production`** — store build for TestFlight/App Store. **`preview`** — internal
+  ad-hoc IPA for direct install on a registered device (never submitted).
+- Test builds default to **signet** (`EXPO_PUBLIC_DEFAULT_NETWORK`); the runtime
+  Settings switch still works.
+- `submit.production.ios.ascAppId` points at the existing App Store Connect app, so
+  `eas submit` never tries to re-create it (creation fails on a fresh org account
+  with a `companyName` error).
+- `EXPO_PUBLIC_WEB3AUTH_CLIENT_ID` is **not** committed — it's an EAS environment
+  variable (production + preview). Only non-secret toggles live in `eas.json`.
+
+Two build-specific details also matter:
+
+- `app.json` raises `ios.deploymentTarget` to `16.4` via `expo-build-properties`
+  (the Expo core pods require it; the RN default of 15.1 breaks `pod install`).
+- `package.json` has an `eas-build-post-install` hook that rebuilds the workspace
+  SDK's `dist/` in the cloud (the app consumes the symlinked `file:../..` SDK,
+  whose `dist/` is gitignored).
+
+> `ios.infoPlist.ITSAppUsesNonExemptEncryption` is set to `false` to skip the
+> per-build US export-compliance question. This is **provisional** — a
+> legal/compliance call given the wallet's keystore encryption. Confirm it before
+> the public App Store release.
+
+First-time setup (once per machine/account): `npm install -g eas-cli`, then
+`eas login`. Testers are managed in App Store Connect → TestFlight (internal
+group; each tester must first exist under Users and Access).
+
 ## Kontor (KOR / NFTs) runs natively
 
 Web/Node back `@kontor/sdk` with a **WebAssembly** component, which **Hermes** —
