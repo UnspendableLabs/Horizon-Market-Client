@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eas-build-post-install": "cd ../.. && npm install --include=dev && npm run build"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",
@@ -26,6 +27,7 @@
     "expo": "^57.0.4",
     "expo-asset": "~57.0.3",
     "expo-auth-session": "~57.0.2",
+    "expo-build-properties": "~57.0.3",
     "expo-clipboard": "~57.0.0",
     "expo-constants": "~57.0.3",
     "expo-crypto": "~57.0.0",

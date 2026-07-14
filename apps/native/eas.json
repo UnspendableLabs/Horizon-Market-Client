@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DEFAULT_NETWORK": "signet",
+        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_devnet"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_DEFAULT_NETWORK": "signet",
+        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_devnet"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6790781424"
+      }
+    }
+  }
+}
