@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket, type Addresses } from "../context.js";
 import type { AtomicSwap, ListingType } from "../../types/index.js";
-import { MY_SWAPS_MERGE_FETCH_LIMIT } from "../internal/swapListConstants.js";
+import {
+  MY_SWAPS_MERGE_FETCH_LIMIT,
+  PENDING_OWN_SWAPS_FETCH_LIMIT,
+  PENDING_OWN_SWAPS_POLL_MS,
+} from "../internal/swapListConstants.js";
 import {
   checkIsMySwap,
   clampPage,
@@ -47,6 +51,15 @@ export interface UseSwapListOptions {
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
   limit?: number;
+  /**
+   * Also fetch the connected wallet's own listings that are still awaiting
+   * on-chain confirmation (`funded: false`) and expose them as
+   * {@link UseSwapListResult.pendingOwnSwaps}, so the UI can surface them at the
+   * top of the buy list. Off by default; the {@link SwapList} components enable
+   * it. While any remain pending the set re-polls on its own (every
+   * {@link PENDING_OWN_SWAPS_POLL_MS}) so the item drops out once it confirms.
+   */
+  includePendingOwnSwaps?: boolean;
 }
 
 export interface UseSwapListResult {
@@ -82,6 +95,14 @@ export interface UseSwapListResult {
    */
   removeSwap: (swapId: string) => void;
   isItemMySwap: (swap: AtomicSwap) => boolean;
+  /**
+   * The connected wallet's own listings still awaiting on-chain confirmation
+   * (`funded: false`), newest first. Empty unless {@link
+   * UseSwapListOptions.includePendingOwnSwaps} is set and a wallet is connected.
+   * These never overlap the main `swaps` feed (which is `funded: true`); once a
+   * listing's funding tx confirms it drops from here and can be browsed normally.
+   */
+  pendingOwnSwaps: AtomicSwap[];
   pendingSwap: AtomicSwap | null;
   loginModalOpen: boolean;
   confirmationModalOpen: boolean;
@@ -101,6 +122,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
     limit = DEFAULT_LIMIT,
+    includePendingOwnSwaps = false,
   } = options;
 
   const [listingType, setListingTypeState] = useState<SwapListingType | null>(
@@ -119,6 +141,17 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [error, setError] = useState<Error | null>(null);
   // When the current list was last (re-)fetched, for an "Updated …" label.
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+
+  // The connected wallet's own awaiting-confirmation (funded:false) listings,
+  // fetched separately from the main feed. `pendingRefreshKey` drives the
+  // while-pending poll (below) that lets the spinner resolve without a manual
+  // Refresh.
+  const [pendingOwnSwaps, setPendingOwnSwaps] = useState<AtomicSwap[]>([]);
+  const [pendingRefreshKey, setPendingRefreshKey] = useState(0);
+  const pendingFetchSeqRef = useRef(0);
+  // Ids in the previous awaiting-confirmation set, so a poll can tell when one
+  // has left it (i.e. its funding tx confirmed) and auto-refresh the main feed.
+  const prevPendingIdsRef = useRef<Set<string>>(new Set());
 
   const [pendingSwap, setPendingSwap] = useState<AtomicSwap | null>(null);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -288,6 +321,109 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     kontorUnavailable,
   ]);
 
+  // Fetch the connected wallet's own listings still awaiting on-chain
+  // confirmation (funded:false). Kept out of the main feed (funded:true) so a
+  // just-created listing is visible to its creator before it's purchasable.
+  // Independent of the listingType filter / page / sort — this is a personal
+  // "your listings are confirming" status area, not part of the browse.
+  useEffect(() => {
+    if (!includePendingOwnSwaps || !addresses) {
+      // eslint-disable-next-line no-console -- TEMP DEBUG (remove after diagnosis)
+      console.log("[pending-swaps] skip", { includePendingOwnSwaps, addresses });
+      setPendingOwnSwaps([]);
+      prevPendingIdsRef.current = new Set();
+      return;
+    }
+    const seq = ++pendingFetchSeqRef.current;
+    const sellerAddresses = getSellerAddresses(addresses);
+    // eslint-disable-next-line no-console -- TEMP DEBUG (remove after diagnosis)
+    console.log("[pending-swaps] fetch", { sellerAddresses });
+
+    void Promise.all(
+      sellerAddresses.map((sellerAddress) =>
+        client.listSwaps({
+          sellerAddress,
+          funded: false,
+          filled: false,
+          delisted: false,
+          orderBy: "created_at",
+          order: "desc",
+          offset: 0,
+          limit: PENDING_OWN_SWAPS_FETCH_LIMIT,
+        }),
+      ),
+    )
+      .then((results) => {
+        if (seq !== pendingFetchSeqRef.current) return;
+        // eslint-disable-next-line no-console -- TEMP DEBUG (remove after diagnosis)
+        console.log(
+          "[pending-swaps] raw",
+          results.flatMap((r) =>
+            r.atomicSwaps.map((s) => ({
+              id: s.id,
+              seller: s.sellerAddress,
+              funded: s.funded,
+              filled: s.filled,
+              delisted: s.delisted,
+              expired: s.expired,
+              anomalous: s.anomalous,
+              type: s.listingType,
+            })),
+          ),
+        );
+        const dismissed = dismissedIdsRef.current;
+        const merged = sortSwaps(
+          mergeSwapsById(results.map((r) => r.atomicSwaps)),
+          "created_at",
+          "desc",
+        ).filter(
+          (s) =>
+            !s.funded &&
+            !s.filled &&
+            !s.delisted &&
+            !s.expired &&
+            !s.anomalous &&
+            !dismissed.has(s.id),
+        );
+        // eslint-disable-next-line no-console -- TEMP DEBUG (remove after diagnosis)
+        console.log("[pending-swaps] shown", merged.map((s) => s.id));
+
+        // Detect listings that left the awaiting set since the last fetch: their
+        // funding tx confirmed (or they were delisted/expired), so refresh the
+        // main feed once to surface the now-live listing. Ignore ids the user
+        // explicitly dismissed (delist) so those don't force a needless refetch.
+        const newIds = new Set(merged.map((s) => s.id));
+        const resolved = [...prevPendingIdsRef.current].some(
+          (id) => !newIds.has(id) && !dismissed.has(id),
+        );
+        prevPendingIdsRef.current = newIds;
+
+        setPendingOwnSwaps(merged);
+        if (resolved) setRefreshKey((k) => k + 1);
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console -- TEMP DEBUG (remove after diagnosis)
+        console.log("[pending-swaps] error", err);
+        // A failed pending-listings fetch must not surface the main list's error
+        // banner or clear the last-known set — just leave it and retry on the
+        // next poll / refetch.
+      });
+  }, [client, addresses, includePendingOwnSwaps, refreshKey, pendingRefreshKey]);
+
+  // While any own listing is still confirming, re-poll so it drops out of the
+  // pending section on its own once funded — at which point the fetch above
+  // refreshes the main feed so the newly-live listing appears there. The
+  // interval clears as soon as the set empties.
+  useEffect(() => {
+    if (!includePendingOwnSwaps || !addresses) return;
+    if (pendingOwnSwaps.length === 0) return;
+    const id = setInterval(
+      () => setPendingRefreshKey((k) => k + 1),
+      PENDING_OWN_SWAPS_POLL_MS,
+    );
+    return () => clearInterval(id);
+  }, [includePendingOwnSwaps, addresses, pendingOwnSwaps.length]);
+
   const isItemMySwap = useCallback(
     (swap: AtomicSwap) => checkIsMySwap(swap, addresses),
     [addresses],
@@ -355,6 +491,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     refetch,
     removeSwap,
     isItemMySwap,
+    pendingOwnSwaps,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,

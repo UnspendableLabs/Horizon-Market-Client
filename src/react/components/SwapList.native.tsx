@@ -25,6 +25,10 @@ import {
   SwapListItem,
   type SwapListItemStyles,
 } from "../internal/SwapListItem.native.js";
+import {
+  PendingSwapItem,
+  type PendingSwapItemStyles,
+} from "../internal/PendingSwapItem.native.js";
 import type { LoginPanelStyles } from "./LoginPanel.native.js";
 import { LoginPanel } from "./LoginPanel.native.js";
 import type { SwapConfirmationStyles } from "./SwapConfirmation.native.js";
@@ -40,6 +44,9 @@ export interface SwapListStyles {
   mySwapsToggle?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
+  pendingSection?: StyleProp<ViewStyle>;
+  pendingHeading?: StyleProp<TextStyle>;
+  pendingItem?: PendingSwapItemStyles;
   pagination?: StyleProp<ViewStyle>;
   error?: StyleProp<TextStyle>;
   empty?: StyleProp<TextStyle>;
@@ -108,6 +115,7 @@ export function SwapList({
     refetch,
     removeSwap,
     isItemMySwap,
+    pendingOwnSwaps,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
@@ -116,10 +124,27 @@ export function SwapList({
     closeLoginModal,
     closeConfirmationModal,
     handleLoginSuccess,
-  } = useSwapList(hookOptions);
+    // Surface the connected wallet's own awaiting-confirmation listings at the
+    // top of the list (see the pending section below). Consumers can opt out
+    // with `includePendingOwnSwaps={false}`.
+  } = useSwapList({ includePendingOwnSwaps: true, ...hookOptions });
 
   const contentAndPagination = (
     <>
+      {/* Your own listings still confirming on-chain — shown first, above the
+          marketplace grid, only to their creator (queried by seller address).
+          Each carries a spinner + mempool link and re-polls until it's funded. */}
+      {pendingOwnSwaps.length > 0 && (
+        <View style={[{ gap: 8, marginBottom: 8 }, stylesProp?.pendingSection]}>
+          <Text style={[common.muted, { fontWeight: "600" }, stylesProp?.pendingHeading]}>
+            Your pending listings
+          </Text>
+          {pendingOwnSwaps.map((s) => (
+            <PendingSwapItem key={s.id} swap={s} styles={stylesProp?.pendingItem} />
+          ))}
+        </View>
+      )}
+
       {/* Content */}
       {kontorUnavailable ? (
         <Text style={common.muted}>

@@ -6,6 +6,7 @@ import {
   getSellerAddresses,
   mergeSwapsById,
   paginateSwaps,
+  pendingSwapTrackingTxid,
   sortSwaps,
   swapDisplayName,
   swapDisplayPricePerUnit,
@@ -273,5 +274,37 @@ describe("swapImageUrl", () => {
     expect(
       swapImageUrl(swap({ id: "b", thumbnailUrl: "thumb.png", imageUrl: null })),
     ).toBe("thumb.png");
+  });
+});
+
+describe("pendingSwapTrackingTxid", () => {
+  it("prefers the asset UTXO tx, then swap tx, then fee payment tx", () => {
+    // Asset UTXO id ("txid:vout") — the tx actually being confirmed.
+    expect(
+      pendingSwapTrackingTxid(
+        swap({ id: "a", assetUtxoId: "deadbeef:0", txId: "swaptx" }),
+      ),
+    ).toBe("deadbeef");
+    // No asset UTXO → fall back to the swap tx id.
+    expect(
+      pendingSwapTrackingTxid(swap({ id: "b", assetUtxoId: null, txId: "swaptx" })),
+    ).toBe("swaptx");
+    // Neither → fall back to the platform-fee payment tx.
+    expect(
+      pendingSwapTrackingTxid(
+        swap({
+          id: "c",
+          assetUtxoId: null,
+          txId: null,
+          onChainPayment: { id: "pay", confirmed: false, txid: "feetx" },
+        }),
+      ),
+    ).toBe("feetx");
+    // Nothing known yet (e.g. a Kontor listing with no asset UTXO).
+    expect(
+      pendingSwapTrackingTxid(
+        swap({ id: "d", assetUtxoId: null, txId: null, onChainPayment: null }),
+      ),
+    ).toBeNull();
   });
 });

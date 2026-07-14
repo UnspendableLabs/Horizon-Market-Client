@@ -15,6 +15,10 @@ import {
   SwapListItem,
   type SwapListItemClassNames,
 } from "../internal/SwapListItem.web.js";
+import {
+  PendingSwapItem,
+  type PendingSwapItemClassNames,
+} from "../internal/PendingSwapItem.web.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
 import type { LoginPanelClassNames } from "./LoginPanel.web.js";
@@ -33,6 +37,9 @@ export interface SwapListClassNames {
   mySwapsToggle?: string;
   grid?: string;
   item?: SwapListItemClassNames;
+  pendingSection?: string;
+  pendingHeading?: string;
+  pendingItem?: PendingSwapItemClassNames;
   pagination?: string;
   error?: string;
   empty?: string;
@@ -122,6 +129,7 @@ export function SwapList({
     refetch,
     removeSwap,
     isItemMySwap,
+    pendingOwnSwaps,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
@@ -130,7 +138,10 @@ export function SwapList({
     closeLoginModal,
     closeConfirmationModal,
     handleLoginSuccess,
-  } = useSwapList(hookOptions);
+    // Surface the connected wallet's own awaiting-confirmation listings at the
+    // top of the list (see the pending section below). Consumers can opt out
+    // with `includePendingOwnSwaps={false}`.
+  } = useSwapList({ includePendingOwnSwaps: true, ...hookOptions });
 
   const isPhone = useIsPhone();
   const root: CSSProperties = { ...rootStyle, ...style };
@@ -222,6 +233,26 @@ export function SwapList({
             {sortSelect}
             {mySwapsToggle}
           </div>
+        </div>
+      )}
+
+      {/* Your own listings still confirming on-chain — shown first, above the
+          marketplace grid, only to their creator (queried by seller address).
+          Each carries a spinner + mempool link and re-polls until it's funded. */}
+      {pendingOwnSwaps.length > 0 && (
+        <div
+          className={classNames?.pendingSection}
+          style={{ display: "flex", flexDirection: "column", gap: webTokens.spacingSm }}
+        >
+          <span
+            className={classNames?.pendingHeading}
+            style={{ ...ws.mutedText, fontWeight: 600 }}
+          >
+            Your pending listings
+          </span>
+          {pendingOwnSwaps.map((s) => (
+            <PendingSwapItem key={s.id} swap={s} classNames={classNames?.pendingItem} />
+          ))}
         </div>
       )}
 

@@ -191,6 +191,18 @@ export function swapListItemView(
   };
 }
 
+/**
+ * Best on-chain txid to link for an awaiting-confirmation (`funded: false`)
+ * listing: the asset UTXO tx being confirmed (`assetUtxoId` is `"{txid}:{vout}"`,
+ * e.g. a counterparty attach/reveal or a zeld transfer), falling back to the
+ * swap tx id, then the platform-fee payment tx. Returns null when none is known
+ * yet (e.g. a Kontor listing with no asset UTXO), so callers can hide the link.
+ */
+export function pendingSwapTrackingTxid(swap: AtomicSwap): string | null {
+  const assetTxid = swap.assetUtxoId?.split(":")[0];
+  return assetTxid || swap.txId || swap.onChainPayment?.txid || null;
+}
+
 export function mergeSwapsById(lists: AtomicSwap[][]): AtomicSwap[] {
   const seen = new Set<string>();
   const merged: AtomicSwap[] = [];
