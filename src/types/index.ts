@@ -313,8 +313,12 @@ export interface ListSwapsParams {
    * and {@link AtomicSwap.pendingTxid} set; every other row has both `null`. This
    * re-orders/includes only — it never removes rows a plain call returns, and the
    * prioritized block is not narrowed by the other filters.
+   *
+   * Accepts several addresses (all of a wallet's addresses) in one request — an
+   * order matching **any** of them is prioritized — so the pending set can be
+   * fetched with a single call instead of one per address.
    */
-  pendingAddress?: string;
+  pendingAddress?: string | string[];
   order?: "asc" | "desc";
   orderBy?: "created_at" | "updated_at" | "price" | "price_per_unit";
   offset?: number;

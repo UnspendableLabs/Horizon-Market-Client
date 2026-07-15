@@ -34,6 +34,7 @@ vi.mock("./kontor/contracts.js", () => ({
 }));
 vi.mock("./kontor/holders.js", () => ({
   holderCandidates: vi.fn(() => ["holderA", "holderB"]),
+  resolveSignerId: vi.fn(async () => null),
 }));
 
 import { HorizonMarketClient } from "./client.js";
@@ -574,6 +575,45 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
     const res = await client.getKontorHoldings();
     expect(res.kor).toEqual({ amount: "5", address: "bc1ptaproot" });
     expect(res.nfts).toEqual([]);
+  });
+
+  it("resolves the wallet's registered signer-id and queries it as a holder", async () => {
+    const holders = await import("./kontor/holders.js");
+    vi.mocked(holders.resolveSignerId).mockResolvedValueOnce(4);
+    const client = new HorizonMarketClient({
+      signer: makeSigner({ p2tr: "bc1ptaproot", xOnlyPubkey: "deadbeef" }),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    await client.getKontorHoldings();
+
+    // Resolved from the session's internal x-only key, against the indexer.
+    expect(holders.resolveSignerId).toHaveBeenCalledWith(
+      expect.any(String),
+      "sessionXOnly",
+      expect.any(Function),
+    );
+    // The resolved id is threaded into the holder candidates (so KOR/NFTs held
+    // under `signer-id(N)` are queried, not only x-only holders).
+    expect(holders.holderCandidates).toHaveBeenCalledWith(
+      "sessionXOnly",
+      "bc1ptaproot",
+      4,
+    );
+  });
+
+  it("memoizes the resolved signer-id across balance reads", async () => {
+    const holders = await import("./kontor/holders.js");
+    vi.mocked(holders.resolveSignerId).mockClear();
+    const client = new HorizonMarketClient({
+      signer: makeSigner({ p2tr: "bc1ptaproot", xOnlyPubkey: "deadbeef" }),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    await client.getKontorHoldings();
+    await client.getKontorHoldings();
+    // Two reads, one `/signers` lookup — the id is stable and cached per x-only.
+    expect(holders.resolveSignerId).toHaveBeenCalledTimes(1);
   });
 });
 

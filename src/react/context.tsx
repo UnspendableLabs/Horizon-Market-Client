@@ -134,6 +134,14 @@ export interface HorizonMarketContextValue {
   ordApiBaseUrl: string | undefined;
   /** TTL (ms) for the persistent owned-balances cache. Defaults to 1h. */
   balancesCacheTtlMs: number | undefined;
+  /**
+   * Monotonic counter bumped by {@link refreshBalances}. `useAssets` /
+   * `useBtcBalance` force-refetch (bypassing the balances cache) when it changes,
+   * so one call refreshes every balance view at once (e.g. after a buy settles).
+   */
+  balancesRefreshKey: number;
+  /** Force-refresh owned balances across all views (bypasses the balances cache). */
+  refreshBalances: () => void;
   fetch: typeof globalThis.fetch;
   theme: ResolvedTheme;
 }
@@ -507,6 +515,11 @@ export function HorizonMarketProvider({
     }
   }, [authState, authedClient, anonClient]);
 
+  const [balancesRefreshKey, setBalancesRefreshKey] = useState(0);
+  const refreshBalances = useCallback(() => {
+    setBalancesRefreshKey((k) => k + 1);
+  }, []);
+
   const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
   const resolvedFetch = useMemo(() => resolveFetch(fetchImpl), [fetchImpl]);
 
@@ -533,10 +546,12 @@ export function HorizonMarketProvider({
       baseUrl: baseUrl ?? DEFAULT_BASE_URL,
       ordApiBaseUrl,
       balancesCacheTtlMs,
+      balancesRefreshKey,
+      refreshBalances,
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
   );
 
   return (

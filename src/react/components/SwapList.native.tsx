@@ -107,6 +107,7 @@ export function SwapList({
     totalPages,
     refetch,
     removeSwap,
+    trackPendingBuy,
     isItemMySwap,
     pendingOrders,
     pendingSwap,
@@ -308,7 +309,13 @@ export function SwapList({
           <SwapConfirmation
             swap={pendingSwap}
             mode={confirmationMode}
-            onBuySuccess={() => {
+            onBuySuccess={(sales) => {
+              // A Kontor buy settles on-chain async and the server's pending
+              // decoration can lag; track it locally so it shows as pending
+              // immediately and refreshes balances once it settles.
+              if (pendingSwap.listingType === "kontor") {
+                trackPendingBuy(pendingSwap, sales[0]?.txId ?? null);
+              }
               removeSwap(pendingSwap.id);
               refetch();
             }}
