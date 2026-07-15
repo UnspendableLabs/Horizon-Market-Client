@@ -500,7 +500,7 @@ describe("useSwapList — pending orders", () => {
   // the hook keeps (the API marks an address's in-progress orders and returns
   // ordinary browse rows with `pendingRole: null`).
   function splitListSwaps(pending: AtomicSwap[], feed: AtomicSwap[] = []) {
-    return vi.fn((params: { pendingAddress?: string }) =>
+    return vi.fn((params: { pendingAddress?: string | string[] }) =>
       Promise.resolve(
         params.pendingAddress !== undefined
           ? listResult(pending)
@@ -525,7 +525,7 @@ describe("useSwapList — pending orders", () => {
     ).toBe(false);
   });
 
-  it("fetches in-progress orders per wallet address, newest first", async () => {
+  it("fetches in-progress orders for all wallet addresses in one query, newest first", async () => {
     const listSwaps = splitListSwaps([
       pendingSeller("p-old", { createdAt: "2024-01-01T00:00:00.000Z" }),
       pendingSeller("p-new", { createdAt: "2024-03-01T00:00:00.000Z" }),
@@ -539,21 +539,23 @@ describe("useSwapList — pending orders", () => {
       expect(result.current.pendingOrders.length).toBeGreaterThan(0),
     );
 
-    // Two distinct wallet addresses → deduped by id, sorted newest first.
+    // Deduped by id, sorted newest first.
     expect(result.current.pendingOrders.map((s) => s.id)).toEqual([
       "p-new",
       "p-old",
     ]);
+    // Both wallet addresses go out in a single pending query (not one per address).
     expect(listSwaps).toHaveBeenCalledWith(
       expect.objectContaining({
-        pendingAddress: "bc1qwallet",
+        pendingAddress: ["bc1qwallet", "bc1pwallet"],
         orderBy: "created_at",
         order: "desc",
       }),
     );
-    expect(listSwaps).toHaveBeenCalledWith(
-      expect.objectContaining({ pendingAddress: "bc1pwallet" }),
+    const pendingCalls = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress !== undefined,
     );
+    expect(pendingCalls).toHaveLength(1);
   });
 
   it("surfaces both pending sell orders and pending purchases", async () => {
@@ -576,6 +578,69 @@ describe("useSwapList — pending orders", () => {
       "buyer",
       "seller",
     ]);
+  });
+
+  it("optimistically surfaces a tracked Kontor buy before the server marks it pending", async () => {
+    const listSwaps = splitListSwaps([]); // server has no pending_sale for it yet
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.pendingOrders).toEqual([]);
+
+    act(() => {
+      result.current.trackPendingBuy(
+        swap({ id: "kbuy", listingType: "kontor" }),
+        "txabc",
+      );
+    });
+
+    await waitFor(() =>
+      expect(result.current.pendingOrders.map((s) => s.id)).toContain("kbuy"),
+    );
+    const row = result.current.pendingOrders.find((s) => s.id === "kbuy")!;
+    expect(row.pendingRole).toBe("buyer");
+    expect(row.pendingTxid).toBe("txabc");
+  });
+
+  it("reconciles a tracked buy away once it settles, and refreshes balances", async () => {
+    let serverPending: AtomicSwap[] = [
+      swap({ id: "kbuy", pendingRole: "buyer", pendingTxid: "txabc" }),
+    ];
+    const listSwaps = vi.fn(
+      (params: { pendingAddress?: string | string[] }) =>
+        Promise.resolve(
+          listResult(params.pendingAddress !== undefined ? serverPending : []),
+        ),
+    );
+    const refreshBalances = vi.fn();
+    ctxRef.current = ctxWith(listSwaps, { refreshBalances });
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.trackPendingBuy(swap({ id: "kbuy" }), "txabc");
+    });
+    // The server tracks it (pending_role: buyer) → shown.
+    await waitFor(() =>
+      expect(result.current.pendingOrders.map((s) => s.id)).toContain("kbuy"),
+    );
+
+    // The buy confirms: the server drops it from the pending set.
+    serverPending = [];
+    act(() => result.current.refetch());
+
+    await waitFor(() =>
+      expect(result.current.pendingOrders.map((s) => s.id)).not.toContain(
+        "kbuy",
+      ),
+    );
+    expect(refreshBalances).toHaveBeenCalled();
   });
 
   it("keeps the main feed and pending sets disjoint and unaffected", async () => {

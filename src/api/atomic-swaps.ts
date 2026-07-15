@@ -198,8 +198,16 @@ export async function listSwaps(
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)
     qs.set("buyer_address", params.buyerAddress);
-  if (params.pendingAddress !== undefined)
-    qs.set("pending_address", params.pendingAddress);
+  if (params.pendingAddress !== undefined) {
+    // The API accepts a comma-separated list; an order matching any address is
+    // prioritized. Sending all of a wallet's addresses in one query avoids the
+    // per-address fan-out.
+    const pendingAddresses = Array.isArray(params.pendingAddress)
+      ? params.pendingAddress
+      : [params.pendingAddress];
+    if (pendingAddresses.length > 0)
+      qs.set("pending_address", pendingAddresses.join(","));
+  }
   if (params.listingType !== undefined)
     qs.set("listing_type", params.listingType);
   if (params.funded !== undefined)

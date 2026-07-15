@@ -27,3 +27,12 @@ export const PENDING_ORDERS_FETCH_LIMIT = 50;
  * Polling stops when none remain.
  */
 export const PENDING_ORDERS_POLL_MS = 20_000;
+
+/**
+ * Safety cap (ms) for how long an optimistically-tracked Kontor buy stays in the
+ * pending section when the server never picks it up as pending (e.g. the record
+ * POST failed). Set well above a typical on-chain confirmation so a genuinely
+ * in-flight purchase never disappears early; once it elapses the row is dropped
+ * and balances are force-refreshed (the KOR has settled by then either way).
+ */
+export const OPTIMISTIC_PENDING_MAX_MS = 15 * 60_000;

@@ -164,6 +164,12 @@ export class HorizonMarketClient {
   private readonly counterpartyApiBaseUrl: string | undefined;
   private readonly zeldApiBaseUrl: string | undefined;
   private readonly fetch: typeof globalThis.fetch;
+  /**
+   * Resolved Kontor `signer-id` per wallet x-only pubkey (`null` = unregistered).
+   * A signer-id is stable once assigned, so this avoids re-hitting `/signers`
+   * on every balance read.
+   */
+  private readonly kontorSignerIdCache = new Map<string, number | null>();
 
   constructor(options: HorizonMarketClientOptions = {}) {
     this.network = options.network ?? "mainnet";
@@ -335,7 +341,7 @@ export class HorizonMarketClient {
       { resolveKontorChain },
       { makeKontorReadSession },
       { bindKontorToken, bindKontorNft },
-      { holderCandidates },
+      { holderCandidates, resolveSignerId },
     ] = kontorMods;
 
     const chain = resolveKontorChain(this.kontorNetwork);
@@ -354,25 +360,37 @@ export class HorizonMarketClient {
     });
 
     try {
-      // KOR balance. Like NFT ownership, a wallet's KOR may be held against the
-      // session's internal signing key OR the bech32m-tweaked taproot output key
-      // (they differ by the BIP341 tweak), so query every plausible holder ref
-      // and take the first non-zero — matching `holderCandidates` below.
+      // A wallet's KOR/NFTs may be credited to its registered `signer-id` (once
+      // it has sponsored a Kontor tx — every buy/sell/mint does), or to an
+      // `x-only-pubkey` holder: the internal signing key OR the bech32m-tweaked
+      // taproot output key (they differ by the BIP341 tweak). Resolve the
+      // signer-id and query every plausible holder, summing balances across them.
+      const internalXOnly = session.identity.xOnlyPubKey;
+      let signerId = this.kontorSignerIdCache.get(internalXOnly);
+      if (signerId === undefined) {
+        signerId = await resolveSignerId(
+          this.kontorIndexerUrl,
+          internalXOnly,
+          this.fetch,
+        );
+        this.kontorSignerIdCache.set(internalXOnly, signerId);
+      }
       const candidates = holderCandidates(
-        session.identity.xOnlyPubKey,
+        internalXOnly,
         taprootAddress,
+        signerId,
       );
-      let kor: KontorBalance | null = null;
       const token = bindKontorToken(session);
+      let korSum: Awaited<ReturnType<typeof token.balance>> = null;
       for (const holder of candidates) {
         const raw = await token.balance(holder);
         if (!raw) continue;
-        const amount = raw.toString();
-        if (amount !== "0") {
-          kor = { amount, address: taprootAddress };
-          break;
-        }
+        korSum = korSum === null ? raw : korSum.add(raw);
       }
+      const kor: KontorBalance | null =
+        korSum !== null && korSum.toString() !== "0"
+          ? { amount: korSum.toString(), address: taprootAddress }
+          : null;
 
       // NFTs — only when a contract address is configured.
       const nfts: KontorNftHolding[] = [];

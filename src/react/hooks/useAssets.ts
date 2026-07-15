@@ -149,6 +149,7 @@ export function useAssets(): UseAssetsResult {
     ordApiBaseUrl,
     fetch,
     balancesCacheTtlMs,
+    balancesRefreshKey,
   } = useHorizonMarket();
 
   const [groups, setGroups] = useState<AssetGroups>(EMPTY_GROUPS);
@@ -335,6 +336,16 @@ export function useAssets(): UseAssetsResult {
   useEffect(() => {
     void fetchAll({ force: false });
   }, [fetchAll]);
+
+  // Force-refresh (bypassing the cache) when the shared balances-refresh signal is
+  // bumped — e.g. after a buy settles. Only fires on an actual key change, not on
+  // mount or when `fetchAll` alone changes (the effect above already handles those).
+  const prevRefreshKeyRef = useRef(balancesRefreshKey);
+  useEffect(() => {
+    if (prevRefreshKeyRef.current === balancesRefreshKey) return;
+    prevRefreshKeyRef.current = balancesRefreshKey;
+    void fetchAll({ force: true });
+  }, [balancesRefreshKey, fetchAll]);
 
   const refresh = useCallback(() => {
     void fetchAll({ force: true });

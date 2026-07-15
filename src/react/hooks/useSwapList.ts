@@ -3,6 +3,7 @@ import { useHorizonMarket, type Addresses } from "../context.js";
 import type { AtomicSwap, ListingType } from "../../types/index.js";
 import {
   MY_SWAPS_MERGE_FETCH_LIMIT,
+  OPTIMISTIC_PENDING_MAX_MS,
   PENDING_ORDERS_FETCH_LIMIT,
   PENDING_ORDERS_POLL_MS,
 } from "../internal/swapListConstants.js";
@@ -95,6 +96,15 @@ export interface UseSwapListResult {
    * fetch result too, so a lagging indexer can't make it reappear.
    */
   removeSwap: (swapId: string) => void;
+  /**
+   * Optimistically surface a just-made Kontor buy in {@link pendingOrders} right
+   * away, independent of the server's `pending_address` decoration (which may lag
+   * or, if the record POST failed, never mark it). Call from a buy-success handler
+   * with the bought swap and its broadcast txid; the row is reconciled away once
+   * the purchase settles (or after a safety timeout), at which point balances
+   * force-refresh so the KOR appears.
+   */
+  trackPendingBuy: (swap: AtomicSwap, txid: string | null) => void;
   isItemMySwap: (swap: AtomicSwap) => boolean;
   /**
    * The connected wallet's in-progress orders, newest first — its pending sell
@@ -118,7 +128,8 @@ export interface UseSwapListResult {
 const DEFAULT_LIMIT = 24;
 
 export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult {
-  const { client, addresses, kontorNetwork } = useHorizonMarket();
+  const { client, addresses, kontorNetwork, refreshBalances } =
+    useHorizonMarket();
   const {
     defaultListingType = null,
     defaultSortOption = "latest",
@@ -154,6 +165,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   // Ids in the previous pending set, so a poll can tell when one has left it
   // (its tx confirmed) and auto-refresh the main feed.
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
+  // Kontor buys the client just made, tracked so they show as pending immediately
+  // — independent of whether the server's `pending_address` decoration has picked
+  // them up yet (write lag, or a failed record POST). Each is kept until the
+  // server tracks-then-drops it (settled) or it ages out (see the pending effect).
+  const optimisticBuysRef = useRef<
+    Map<string, { swap: AtomicSwap; addedAt: number; seenByServer: boolean }>
+  >(new Map());
 
   const [pendingSwap, setPendingSwap] = useState<AtomicSwap | null>(null);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -202,6 +220,28 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       return next;
     });
   }, []);
+
+  const trackPendingBuy = useCallback(
+    (swap: AtomicSwap, txid: string | null) => {
+      const row: AtomicSwap = {
+        ...swap,
+        pendingRole: "buyer",
+        pendingTxid: txid,
+      };
+      optimisticBuysRef.current.set(swap.id, {
+        swap: row,
+        addedAt: Date.now(),
+        seenByServer: false,
+      });
+      // Surface it now (don't wait for the next poll) and kick the poll on — the
+      // while-pending interval only runs while `pendingOrders` is non-empty.
+      setPendingOrders((prev) =>
+        prev.some((s) => s.id === swap.id) ? prev : [row, ...prev],
+      );
+      setPendingRefreshKey((k) => k + 1);
+    },
+    [],
+  );
 
   // Drop "My swaps" filter when the user logs out.
   useEffect(() => {
@@ -336,39 +376,73 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     if (!includePendingOrders || !addresses) {
       setPendingOrders([]);
       prevPendingIdsRef.current = new Set();
+      optimisticBuysRef.current.clear();
       return;
     }
     const seq = ++pendingFetchSeqRef.current;
+    // A pending order is keyed to whichever wallet address is on it (a buy to the
+    // funding address, a listing to the asset holder). One query decorates the
+    // feed for ALL of the wallet's addresses at once — the API sorts their
+    // in-progress orders to the top, each marked with `pendingRole`/`pendingTxid`.
     const pendingAddresses = getSellerAddresses(addresses);
 
-    void Promise.all(
-      pendingAddresses.map((pendingAddress) =>
-        client.listSwaps({
-          pendingAddress,
-          orderBy: "created_at",
-          order: "desc",
-          offset: 0,
-          limit: PENDING_ORDERS_FETCH_LIMIT,
-        }),
-      ),
-    )
-      .then((results) => {
+    void client
+      .listSwaps({
+        pendingAddress: pendingAddresses,
+        orderBy: "created_at",
+        order: "desc",
+        offset: 0,
+        limit: PENDING_ORDERS_FETCH_LIMIT,
+      })
+      .then((result) => {
         if (seq !== pendingFetchSeqRef.current) return;
         const dismissed = dismissedIdsRef.current;
-        // The API marks each address's in-progress orders with a non-null
-        // `pendingRole`; every other (ordinary browse) row it returns is
-        // `null`. Keep only the marked rows — that's the pending set.
-        const merged = sortSwaps(
-          mergeSwapsById(results.map((r) => r.atomicSwaps)),
+        // Keep only the API-marked rows (non-null `pendingRole`). A dismissed id
+        // is normally hidden, but a just-bought Kontor order we're optimistically
+        // tracking stays in the pending section even though it's dismissed from
+        // the browse feed.
+        const serverPending = sortSwaps(
+          result.atomicSwaps,
           "created_at",
           "desc",
-        ).filter((s) => s.pendingRole !== null && !dismissed.has(s.id));
+        ).filter(
+          (s) =>
+            s.pendingRole !== null &&
+            (!dismissed.has(s.id) || optimisticBuysRef.current.has(s.id)),
+        );
+        const serverIds = new Set(serverPending.map((s) => s.id));
+
+        // Reconcile optimistically-tracked buys: keep surfacing each until the
+        // server has picked it up as pending and then dropped it (settled), or it
+        // ages out (the record POST never landed but the buy has since settled).
+        const now = Date.now();
+        let settled = false;
+        const optimisticRows: AtomicSwap[] = [];
+        for (const [id, entry] of optimisticBuysRef.current) {
+          if (serverIds.has(id)) {
+            entry.seenByServer = true;
+            continue;
+          }
+          if (
+            entry.seenByServer ||
+            now - entry.addedAt >= OPTIMISTIC_PENDING_MAX_MS
+          ) {
+            optimisticBuysRef.current.delete(id);
+            settled = true;
+            continue;
+          }
+          optimisticRows.push(entry.swap);
+        }
+
+        const merged = sortSwaps(
+          mergeSwapsById([optimisticRows, serverPending]),
+          "created_at",
+          "desc",
+        );
 
         // Detect orders that left the pending set since the last fetch: their tx
         // confirmed (a listing funded, a purchase filled), so refresh the main
-        // feed once to reflect it (surface the now-live listing / drop the
-        // now-sold swap). Ignore ids the user explicitly dismissed (delist) so
-        // those don't force a needless refetch.
+        // feed once to reflect it. Ignore ids the user explicitly dismissed.
         const newIds = new Set(merged.map((s) => s.id));
         const resolved = [...prevPendingIdsRef.current].some(
           (id) => !newIds.has(id) && !dismissed.has(id),
@@ -376,14 +450,24 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
         prevPendingIdsRef.current = newIds;
 
         setPendingOrders(merged);
-        if (resolved) setRefreshKey((k) => k + 1);
+        if (resolved || settled) setRefreshKey((k) => k + 1);
+        // A settled purchase is the moment KOR credits — refresh balances so it
+        // appears without waiting for the 1h cache.
+        if (settled) refreshBalances();
       })
       .catch(() => {
         // A failed pending fetch must not surface the main list's error banner
         // or clear the last-known set — just leave it and retry on the next
         // poll / refetch.
       });
-  }, [client, addresses, includePendingOrders, refreshKey, pendingRefreshKey]);
+  }, [
+    client,
+    addresses,
+    includePendingOrders,
+    refreshKey,
+    pendingRefreshKey,
+    refreshBalances,
+  ]);
 
   // While any order is still confirming, re-poll so it drops out of the pending
   // section on its own once its tx confirms — at which point the fetch above
@@ -464,6 +548,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     totalPages,
     refetch,
     removeSwap,
+    trackPendingBuy,
     isItemMySwap,
     pendingOrders,
     pendingSwap,
