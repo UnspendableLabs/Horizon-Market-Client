@@ -6,7 +6,7 @@ import type {
   WorkflowStepFor,
 } from "../types/progress.js";
 
-interface StepMessages {
+export interface StepMessages {
   start: string;
   complete: string;
   error: string;
@@ -124,6 +124,18 @@ const STEP_MESSAGES: AllStepMessages = {
     },
   },
 };
+
+/**
+ * The `{ start, complete, error }` labels for one step of a workflow. Exposed so
+ * a caller replaying a single step outside a {@link WorkflowProgressReporter}
+ * (e.g. the record-only retry of a Kontor purchase) emits identical text.
+ */
+export function stepMessages<W extends WorkflowName>(
+  workflow: W,
+  step: WorkflowStepFor<W>,
+): StepMessages {
+  return STEP_MESSAGES[workflow][step];
+}
 
 /**
  * Emits step-level progress events for a workflow.

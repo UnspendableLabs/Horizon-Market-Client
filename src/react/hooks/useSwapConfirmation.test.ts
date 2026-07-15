@@ -34,6 +34,29 @@ function fillEvent(
   } as WorkflowProgressEvent;
 }
 
+/**
+ * A duck-typed KontorPurchaseNotRecordedError (name + carried fields), matching
+ * what the hook detects without importing the heavy Kontor workflow chunk.
+ */
+function notRecordedError(
+  swapId: string,
+  txId: string,
+  buyerAddress: string,
+): Error {
+  const e = new Error(
+    "Kontor offer was accepted on-chain (swap reveal broadcast) but the " +
+      "purchase could not be recorded server-side.",
+  );
+  e.name = "KontorPurchaseNotRecordedError";
+  Object.assign(e, {
+    swapId,
+    txId,
+    buyerAddress,
+    cause: new Error("HTTP 400: A purchase is already pending for this listing"),
+  });
+  return e;
+}
+
 function delistEvent(totalSteps: number | null): WorkflowProgressEvent {
   return {
     workflow: "delistSwap",
@@ -363,6 +386,78 @@ describe("useSwapConfirmation — retry / reset / swapId change", () => {
       autoSelect: true,
       satsPerVbyte: 9,
     });
+  });
+
+  it("retry after KontorPurchaseNotRecordedError replays only the recording POST (no re-broadcast)", async () => {
+    const fillSwaps = vi
+      .fn()
+      .mockRejectedValue(notRecordedError("swap-nr-1", "tx-reveal", "bc1qbuyer"));
+    const recordKontorPurchase = vi
+      .fn()
+      .mockResolvedValue(sale("swap-nr-1", "tx-reveal"));
+    const onBuySuccess = vi.fn();
+    ctxRef.current = ctxWith({ fillSwaps, recordKontorPurchase });
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({ swapId: "swap-nr-1", mode: "buy", onBuySuccess }),
+    );
+    await act(async () => {
+      await result.current.confirmPurchase();
+    });
+    expect(result.current.buyStatus).toBe("error");
+
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.buyStatus).toBe("success"));
+
+    // The offer is consumed — retry must NOT re-run fillSwaps (which would
+    // broadcast a fresh swap); it replays ONLY the recording POST with the txid.
+    expect(fillSwaps).toHaveBeenCalledTimes(1);
+    expect(recordKontorPurchase).toHaveBeenCalledTimes(1);
+    expect(recordKontorPurchase).toHaveBeenCalledWith("swap-nr-1", {
+      buyerAddress: "bc1qbuyer",
+      txId: "tx-reveal",
+    });
+    expect(result.current.sales).toEqual([sale("swap-nr-1", "tx-reveal")]);
+    expect(result.current.trackUrl).toBe("https://mempool.space/tx/tx-reveal");
+    expect(onBuySuccess).toHaveBeenCalledWith([sale("swap-nr-1", "tx-reveal")]);
+  });
+
+  it("keeps the record-only retry armed when the recording POST fails again", async () => {
+    const fillSwaps = vi
+      .fn()
+      .mockRejectedValue(notRecordedError("swap-nr-2", "tx-reveal-2", "bc1qb2"));
+    const recordKontorPurchase = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("HTTP 500: boom"))
+      .mockResolvedValueOnce(sale("swap-nr-2", "tx-reveal-2"));
+    ctxRef.current = ctxWith({ fillSwaps, recordKontorPurchase });
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({ swapId: "swap-nr-2", mode: "buy" }),
+    );
+    await act(async () => {
+      await result.current.confirmPurchase();
+    });
+
+    // First retry: recording fails → still an error, still record-only path.
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() =>
+      expect(recordKontorPurchase).toHaveBeenCalledTimes(1),
+    );
+    expect(result.current.buyStatus).toBe("error");
+
+    // Second retry: the arm survived a failed recording, so it records again
+    // (never falls back to fillSwaps).
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.buyStatus).toBe("success"));
+    expect(recordKontorPurchase).toHaveBeenCalledTimes(2);
+    expect(fillSwaps).toHaveBeenCalledTimes(1);
   });
 
   it("retry replays the last delist action", async () => {

@@ -3,7 +3,12 @@ import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
 import { useSwapConfirmation } from "../hooks/useSwapConfirmation.js";
 import { useHorizonMarket } from "../context.js";
-import { cx, formatAssetLabel, truncate } from "../internal/format.js";
+import {
+  cx,
+  errorDisplayMessage,
+  formatAssetLabel,
+  truncate,
+} from "../internal/format.js";
 import { BuyReview } from "../internal/BuyReview.web.js";
 import { useBuyReview } from "../internal/useBuyReview.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
@@ -206,7 +211,7 @@ export function SwapConfirmation({
         totalSteps={totalSteps}
         status={status}
         successMessage={successMessage}
-        errorMessage={error?.message}
+        errorMessage={error ? errorDisplayMessage(error) : undefined}
         classNames={classNames?.progress}
       />
       {trackUrl && (
