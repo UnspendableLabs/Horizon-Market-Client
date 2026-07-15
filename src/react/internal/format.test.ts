@@ -112,6 +112,8 @@ function swap(over: Partial<AtomicSwap> = {}): AtomicSwap {
     kontorContractAddress: null,
     kontorNftId: null,
     kontorAmount: null,
+    pendingRole: null,
+    pendingTxid: null,
     ...over,
   };
 }

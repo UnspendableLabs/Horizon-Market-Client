@@ -4,6 +4,7 @@ import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-uti
 import type { HorizonMarketContextValue } from "../context.js";
 import type { AtomicSwap } from "../../types/index.js";
 import { useSwapList } from "./useSwapList.js";
+import { PENDING_ORDERS_POLL_MS } from "../internal/swapListConstants.js";
 
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
@@ -48,6 +49,8 @@ function swap(
     kontorContractAddress: null,
     kontorNftId: null,
     kontorAmount: null,
+    pendingRole: null,
+    pendingTxid: null,
     ...overrides,
   };
 }
@@ -72,6 +75,7 @@ function ctxWith(
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
 describe("useSwapList — fetch / filter / empty / error", () => {
@@ -486,5 +490,278 @@ describe("useSwapList — item action + modals", () => {
     );
     expect(result.current.loginModalOpen).toBe(false);
     expect(result.current.confirmationModalOpen).toBe(false);
+  });
+});
+
+describe("useSwapList — pending orders", () => {
+  // The pending-orders fetch is the one that passes `pendingAddress`; the main
+  // buy feed never does. Route the two to distinct result sets so a single mock
+  // serves both. Pending rows must carry a non-null `pendingRole` — that's what
+  // the hook keeps (the API marks an address's in-progress orders and returns
+  // ordinary browse rows with `pendingRole: null`).
+  function splitListSwaps(pending: AtomicSwap[], feed: AtomicSwap[] = []) {
+    return vi.fn((params: { pendingAddress?: string }) =>
+      Promise.resolve(
+        params.pendingAddress !== undefined
+          ? listResult(pending)
+          : listResult(feed),
+      ),
+    );
+  }
+
+  const pendingSeller = (id: string, overrides: Partial<AtomicSwap> = {}) =>
+    swap({ id, funded: false, pendingRole: "seller", ...overrides });
+
+  it("is off by default: no pending_address query, empty pendingOrders", async () => {
+    const listSwaps = splitListSwaps([pendingSeller("p1")]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.pendingOrders).toEqual([]);
+    expect(
+      listSwaps.mock.calls.some((c) => c[0]?.pendingAddress !== undefined),
+    ).toBe(false);
+  });
+
+  it("fetches in-progress orders per wallet address, newest first", async () => {
+    const listSwaps = splitListSwaps([
+      pendingSeller("p-old", { createdAt: "2024-01-01T00:00:00.000Z" }),
+      pendingSeller("p-new", { createdAt: "2024-03-01T00:00:00.000Z" }),
+    ]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() =>
+      expect(result.current.pendingOrders.length).toBeGreaterThan(0),
+    );
+
+    // Two distinct wallet addresses → deduped by id, sorted newest first.
+    expect(result.current.pendingOrders.map((s) => s.id)).toEqual([
+      "p-new",
+      "p-old",
+    ]);
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pendingAddress: "bc1qwallet",
+        orderBy: "created_at",
+        order: "desc",
+      }),
+    );
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ pendingAddress: "bc1pwallet" }),
+    );
+  });
+
+  it("surfaces both pending sell orders and pending purchases", async () => {
+    const listSwaps = splitListSwaps([
+      pendingSeller("sell", { createdAt: "2024-01-01T00:00:00.000Z" }),
+      swap({
+        id: "buy",
+        pendingRole: "buyer",
+        createdAt: "2024-02-01T00:00:00.000Z",
+      }),
+    ]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() => expect(result.current.pendingOrders.length).toBe(2));
+    // Sorted newest first: the buy (Feb) precedes the listing (Jan).
+    expect(result.current.pendingOrders.map((s) => s.pendingRole)).toEqual([
+      "buyer",
+      "seller",
+    ]);
+  });
+
+  it("keeps the main feed and pending sets disjoint and unaffected", async () => {
+    const listSwaps = splitListSwaps([pendingSeller("p1")], [swap({ id: "m1" })]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() =>
+      expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["p1"]),
+    );
+    expect(result.current.swaps.map((s) => s.id)).toEqual(["m1"]);
+  });
+
+  it("keeps only the rows the API marked pending (pendingRole set)", async () => {
+    // `pending_address` decorates the feed: the address's in-progress orders come
+    // back marked, ordinary browse rows come back with `pendingRole: null`. Only
+    // the marked rows belong in the pending section.
+    const listSwaps = splitListSwaps([
+      pendingSeller("keep"),
+      swap({ id: "browse-a", pendingRole: null }),
+      swap({ id: "browse-b", pendingRole: null }),
+    ]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() =>
+      expect(result.current.pendingOrders.length).toBeGreaterThan(0),
+    );
+    expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["keep"]);
+  });
+
+  it("clears pending orders when the wallet logs out", async () => {
+    const listSwaps = splitListSwaps([pendingSeller("p1")]);
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result, rerender } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await waitFor(() =>
+      expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["p1"]),
+    );
+
+    ctxRef.current = ctxWith(listSwaps, { addresses: null });
+    rerender();
+    await waitFor(() => expect(result.current.pendingOrders).toEqual([]));
+  });
+
+  it("re-polls pending orders while any remain", async () => {
+    vi.useFakeTimers();
+    // Single deduped wallet address → one query per fetch, simpler call counts.
+    const listSwaps = splitListSwaps([pendingSeller("p1")]);
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+
+    // Flush the initial fetches without firing the poll interval.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["p1"]);
+
+    const pendingCallsBefore = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress !== undefined,
+    ).length;
+
+    // One poll tick re-queries the pending set.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_ORDERS_POLL_MS);
+    });
+    const pendingCallsAfter = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress !== undefined,
+    ).length;
+    expect(pendingCallsAfter).toBeGreaterThan(pendingCallsBefore);
+  });
+
+  it("auto-refreshes the main feed when a pending order confirms", async () => {
+    vi.useFakeTimers();
+    // The pending query returns the order on the first poll, then empty (its tx
+    // confirmed). The main feed query is counted to prove it re-fetches on the
+    // transition.
+    let pendingCalls = 0;
+    const listSwaps = vi.fn((params: { pendingAddress?: string }) => {
+      if (params.pendingAddress !== undefined) {
+        pendingCalls += 1;
+        return Promise.resolve(
+          listResult(pendingCalls <= 1 ? [pendingSeller("p1")] : []),
+        );
+      }
+      return Promise.resolve(listResult([]));
+    });
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["p1"]);
+    const feedCallsBefore = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress === undefined,
+    ).length;
+
+    // Poll: the order is no longer pending → main feed refetches once.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_ORDERS_POLL_MS);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(result.current.pendingOrders).toEqual([]);
+    const feedCallsAfter = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress === undefined,
+    ).length;
+    expect(feedCallsAfter).toBeGreaterThan(feedCallsBefore);
+  });
+
+  it("does not refresh the main feed when the pending set is unchanged", async () => {
+    vi.useFakeTimers();
+    // The same order stays pending across polls — no transition, no refetch.
+    const listSwaps = vi.fn((params: { pendingAddress?: string }) =>
+      Promise.resolve(
+        params.pendingAddress !== undefined
+          ? listResult([pendingSeller("p1")])
+          : listResult([]),
+      ),
+    );
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result } = renderHook(() =>
+      useSwapList({ includePendingOrders: true }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const feedCallsBefore = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress === undefined,
+    ).length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_ORDERS_POLL_MS);
+    });
+    // Still pending, unchanged → the feed query count is untouched by the poll.
+    expect(result.current.pendingOrders.map((s) => s.id)).toEqual(["p1"]);
+    const feedCallsAfter = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress === undefined,
+    ).length;
+    expect(feedCallsAfter).toBe(feedCallsBefore);
+  });
+
+  it("stops polling once no pending orders remain", async () => {
+    vi.useFakeTimers();
+    const listSwaps = splitListSwaps([]); // nothing pending
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    renderHook(() => useSwapList({ includePendingOrders: true }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const before = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress !== undefined,
+    ).length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PENDING_ORDERS_POLL_MS * 3);
+    });
+    const after = listSwaps.mock.calls.filter(
+      (c) => c[0]?.pendingAddress !== undefined,
+    ).length;
+    // No poll scheduled when the pending set is empty.
+    expect(after).toBe(before);
   });
 });

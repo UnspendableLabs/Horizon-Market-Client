@@ -47,6 +47,8 @@ function swap(
     kontorContractAddress: null,
     kontorNftId: null,
     kontorAmount: null,
+    pendingRole: null,
+    pendingTxid: null,
     ...overrides,
   };
 }

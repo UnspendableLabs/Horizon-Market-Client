@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket, type Addresses } from "../context.js";
 import type { AtomicSwap, ListingType } from "../../types/index.js";
-import { MY_SWAPS_MERGE_FETCH_LIMIT } from "../internal/swapListConstants.js";
+import {
+  MY_SWAPS_MERGE_FETCH_LIMIT,
+  PENDING_ORDERS_FETCH_LIMIT,
+  PENDING_ORDERS_POLL_MS,
+} from "../internal/swapListConstants.js";
 import {
   checkIsMySwap,
   clampPage,
@@ -47,6 +51,16 @@ export interface UseSwapListOptions {
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
   limit?: number;
+  /**
+   * Also fetch the connected wallet's in-progress orders (pending sell listings
+   * still settling on-chain and pending purchases whose buy tx is unconfirmed)
+   * via the API's `pending_address` and expose them as
+   * {@link UseSwapListResult.pendingOrders}, so the UI can surface them at the
+   * top of the buy list. Off by default; the {@link SwapList} components enable
+   * it. While any remain pending the set re-polls on its own (every
+   * {@link PENDING_ORDERS_POLL_MS}) so an item drops out once its tx confirms.
+   */
+  includePendingOrders?: boolean;
 }
 
 export interface UseSwapListResult {
@@ -82,6 +96,15 @@ export interface UseSwapListResult {
    */
   removeSwap: (swapId: string) => void;
   isItemMySwap: (swap: AtomicSwap) => boolean;
+  /**
+   * The connected wallet's in-progress orders, newest first — its pending sell
+   * listings (still settling on-chain) and pending purchases (buy tx broadcast
+   * but unconfirmed), each carrying `pendingRole` / `pendingTxid`. Empty unless
+   * {@link UseSwapListOptions.includePendingOrders} is set and a wallet is
+   * connected. Once an order's tx confirms it drops from here; a resolved listing
+   * then appears in the main `swaps` feed and a resolved purchase leaves it.
+   */
+  pendingOrders: AtomicSwap[];
   pendingSwap: AtomicSwap | null;
   loginModalOpen: boolean;
   confirmationModalOpen: boolean;
@@ -101,6 +124,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
     limit = DEFAULT_LIMIT,
+    includePendingOrders = false,
   } = options;
 
   const [listingType, setListingTypeState] = useState<SwapListingType | null>(
@@ -119,6 +143,17 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [error, setError] = useState<Error | null>(null);
   // When the current list was last (re-)fetched, for an "Updated …" label.
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+
+  // The connected wallet's in-progress orders (pending listings + pending
+  // purchases), fetched separately from the main feed via `pending_address`.
+  // `pendingRefreshKey` drives the while-pending poll (below) that lets the
+  // spinner resolve without a manual Refresh.
+  const [pendingOrders, setPendingOrders] = useState<AtomicSwap[]>([]);
+  const [pendingRefreshKey, setPendingRefreshKey] = useState(0);
+  const pendingFetchSeqRef = useRef(0);
+  // Ids in the previous pending set, so a poll can tell when one has left it
+  // (its tx confirmed) and auto-refresh the main feed.
+  const prevPendingIdsRef = useRef<Set<string>>(new Set());
 
   const [pendingSwap, setPendingSwap] = useState<AtomicSwap | null>(null);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -288,6 +323,81 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     kontorUnavailable,
   ]);
 
+  // Fetch the connected wallet's in-progress orders via the API's
+  // `pending_address`: its pending sell listings (still settling on-chain) and
+  // pending purchases (buy tx broadcast but unconfirmed). `pending_address`
+  // decorates the feed rather than filtering it — the address's orders sort to
+  // the very top, each marked with `pendingRole`/`pendingTxid` — so we query
+  // once per wallet address (a buy is keyed to the P2WPKH funding address, a
+  // listing to whichever address holds the asset), merge, and keep only the
+  // marked rows. Independent of the listingType filter / page / sort: this is a
+  // personal "your orders are confirming" status area, not part of the browse.
+  useEffect(() => {
+    if (!includePendingOrders || !addresses) {
+      setPendingOrders([]);
+      prevPendingIdsRef.current = new Set();
+      return;
+    }
+    const seq = ++pendingFetchSeqRef.current;
+    const pendingAddresses = getSellerAddresses(addresses);
+
+    void Promise.all(
+      pendingAddresses.map((pendingAddress) =>
+        client.listSwaps({
+          pendingAddress,
+          orderBy: "created_at",
+          order: "desc",
+          offset: 0,
+          limit: PENDING_ORDERS_FETCH_LIMIT,
+        }),
+      ),
+    )
+      .then((results) => {
+        if (seq !== pendingFetchSeqRef.current) return;
+        const dismissed = dismissedIdsRef.current;
+        // The API marks each address's in-progress orders with a non-null
+        // `pendingRole`; every other (ordinary browse) row it returns is
+        // `null`. Keep only the marked rows — that's the pending set.
+        const merged = sortSwaps(
+          mergeSwapsById(results.map((r) => r.atomicSwaps)),
+          "created_at",
+          "desc",
+        ).filter((s) => s.pendingRole !== null && !dismissed.has(s.id));
+
+        // Detect orders that left the pending set since the last fetch: their tx
+        // confirmed (a listing funded, a purchase filled), so refresh the main
+        // feed once to reflect it (surface the now-live listing / drop the
+        // now-sold swap). Ignore ids the user explicitly dismissed (delist) so
+        // those don't force a needless refetch.
+        const newIds = new Set(merged.map((s) => s.id));
+        const resolved = [...prevPendingIdsRef.current].some(
+          (id) => !newIds.has(id) && !dismissed.has(id),
+        );
+        prevPendingIdsRef.current = newIds;
+
+        setPendingOrders(merged);
+        if (resolved) setRefreshKey((k) => k + 1);
+      })
+      .catch(() => {
+        // A failed pending fetch must not surface the main list's error banner
+        // or clear the last-known set — just leave it and retry on the next
+        // poll / refetch.
+      });
+  }, [client, addresses, includePendingOrders, refreshKey, pendingRefreshKey]);
+
+  // While any order is still confirming, re-poll so it drops out of the pending
+  // section on its own once its tx confirms — at which point the fetch above
+  // refreshes the main feed. The interval clears as soon as the set empties.
+  useEffect(() => {
+    if (!includePendingOrders || !addresses) return;
+    if (pendingOrders.length === 0) return;
+    const id = setInterval(
+      () => setPendingRefreshKey((k) => k + 1),
+      PENDING_ORDERS_POLL_MS,
+    );
+    return () => clearInterval(id);
+  }, [includePendingOrders, addresses, pendingOrders.length]);
+
   const isItemMySwap = useCallback(
     (swap: AtomicSwap) => checkIsMySwap(swap, addresses),
     [addresses],
@@ -355,6 +465,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     refetch,
     removeSwap,
     isItemMySwap,
+    pendingOrders,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
