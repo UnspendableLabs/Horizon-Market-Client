@@ -10,6 +10,7 @@ import {
   counterpartyXcpFirst,
   cx,
   describeAsset,
+  errorDisplayMessage,
   formatAmount,
   formatAssetLabel,
   formatRelativeTime,
@@ -472,6 +473,48 @@ describe("truncate", () => {
 
   it("honours custom head and tail lengths", () => {
     expect(truncate("abcdefghijkl", 2, 2)).toBe("ab…kl");
+  });
+});
+
+// ─── errorDisplayMessage ──────────────────────────────────────────────────────
+
+describe("errorDisplayMessage", () => {
+  it("returns a plain error's message", () => {
+    expect(errorDisplayMessage(new Error("boom"))).toBe("boom");
+  });
+
+  it("appends the underlying cause so a wrapped error surfaces the real reason", () => {
+    const wrapper = new Error("Purchase could not be recorded. Retry recording.");
+    wrapper.cause = new Error(
+      "HTTP 400: A purchase is already pending for this listing",
+    );
+    expect(errorDisplayMessage(wrapper)).toBe(
+      "Purchase could not be recorded. Retry recording. — " +
+        "HTTP 400: A purchase is already pending for this listing",
+    );
+  });
+
+  it("walks a multi-level cause chain and dedupes repeats", () => {
+    const inner = new Error("root");
+    const mid = new Error("middle");
+    mid.cause = inner;
+    const outer = new Error("middle"); // duplicate of mid's message
+    outer.cause = mid;
+    expect(errorDisplayMessage(outer)).toBe("middle — root");
+  });
+
+  it("does not loop on a cyclic cause chain", () => {
+    const a = new Error("a");
+    const b = new Error("b");
+    a.cause = b;
+    b.cause = a;
+    expect(errorDisplayMessage(a)).toBe("a — b");
+  });
+
+  it("stringifies non-Error values and falls back for empty ones", () => {
+    expect(errorDisplayMessage("kaboom")).toBe("kaboom");
+    expect(errorDisplayMessage(null)).toBe("Unknown error");
+    expect(errorDisplayMessage(new Error(""))).toBe("Unknown error");
   });
 });
 

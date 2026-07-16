@@ -12,6 +12,7 @@ import {
 import { requestSellQuote as apiRequestSellQuote } from "./api/sell-quotes.js";
 import {
   previewKontorListingFee as apiPreviewKontorListingFee,
+  kontorBuy as apiKontorBuy,
   type KontorListingFeePreview,
 } from "./api/kontor.js";
 import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
@@ -843,6 +844,24 @@ export class HorizonMarketClient {
       }
     }
     return workflowFillSwaps(params, this.http, this.assertSigner(), options);
+  }
+
+  /**
+   * Record a Kontor purchase whose swap reveal is already broadcast on-chain.
+   *
+   * When {@link fillSwaps} accepts a Kontor offer (broadcasting the swap reveal)
+   * but the recording POST fails, it throws a `KontorPurchaseNotRecordedError`
+   * carrying the swap-reveal `txId`: the offer is CONSUMED, so retrying
+   * `fillSwaps` would compose and broadcast a fresh, wasted swap. This replays
+   * ONLY the recording request with the carried `txId` — it never touches the
+   * chain — so it is the safe recovery path (mirrors the error's own guidance).
+   */
+  async recordKontorPurchase(
+    swapId: string,
+    params: { buyerAddress: string; txId: string },
+    options?: RequestOptions,
+  ): Promise<PendingSale> {
+    return apiKontorBuy(this.http, swapId, params, options);
   }
 
   /**

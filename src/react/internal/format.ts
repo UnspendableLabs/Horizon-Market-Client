@@ -290,6 +290,28 @@ export function mempoolApiBase(
 export const CLIENT_NOT_INITIALIZED =
   "Client not initialized — please log in first";
 
+/**
+ * Flatten an error and its `cause` chain into one human-readable line.
+ *
+ * Wrapped workflow errors (e.g. `KontorPurchaseNotRecordedError`) carry the real
+ * underlying reason on `.cause` — a `HorizonMarketApiError` like "HTTP 400: A
+ * purchase is already pending for this listing". The result screen used to show
+ * only the wrapper's own message, hiding *why* the step failed; joining the
+ * chain surfaces both the guidance and the root cause.
+ */
+export function errorDisplayMessage(err: unknown): string {
+  if (!(err instanceof Error)) return err ? String(err) : "Unknown error";
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = err;
+  while (cur instanceof Error && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur.message && !parts.includes(cur.message)) parts.push(cur.message);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return parts.length ? parts.join(" — ") : "Unknown error";
+}
+
 export function cx(
   ...parts: (string | undefined | false | null)[]
 ): string | undefined {
