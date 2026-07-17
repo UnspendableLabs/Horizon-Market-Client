@@ -24,7 +24,14 @@ Usage:
   ./deploy-testflight.sh --profile preview   Build an internal ad-hoc IPA (no submit)
   ./deploy-testflight.sh -m "message"        Attach a message to the build
   ./deploy-testflight.sh -y                  Skip the confirmation prompt
+  ./deploy-testflight.sh --clear-cache       Rebuild with EAS's build cache cleared (fresh pod install)
   ./deploy-testflight.sh --ci                Fully non-interactive (fails instead of prompting)
+
+Note on --clear-cache:
+  Use it when a build that runs fine locally crashes on TestFlight — a stale EAS
+  CocoaPods cache can leave a dynamic framework (e.g. RNWorklets.framework) linked
+  but NOT embedded in the IPA, so dyld fails at launch. Clearing the cache forces a
+  clean pod install, matching a local `expo prebuild --clean` build.
 EOF
 }
 
@@ -32,6 +39,7 @@ PROFILE="production"
 SUBMIT=1
 ASSUME_YES=0
 NON_INTERACTIVE=0
+CLEAR_CACHE=0
 MESSAGE=""
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --no-submit)  SUBMIT=0; shift ;;
     -m|--message) MESSAGE="${2:?--message needs a value}"; shift 2 ;;
     -y|--yes)     ASSUME_YES=1; shift ;;
+    --clear-cache) CLEAR_CACHE=1; shift ;;
     --ci)         NON_INTERACTIVE=1; ASSUME_YES=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     *) echo "Unknown option: $1 (try --help)" >&2; exit 1 ;;
@@ -60,6 +69,7 @@ eas whoami      >/dev/null 2>&1 || { echo "❌ Not logged in to Expo. Run:  eas 
 echo "👤 Expo:    $(eas whoami)"
 echo "📦 Profile: $PROFILE"
 echo "🚀 Submit:  $([[ $SUBMIT -eq 1 ]] && echo 'TestFlight' || echo 'no (build only)')"
+echo "🧹 Cache:   $([[ $CLEAR_CACHE -eq 1 ]] && echo 'cleared (fresh pod install)' || echo 'reused')"
 
 if [[ $ASSUME_YES -ne 1 ]]; then
   read -r -p "Start iOS cloud build? [y/N] " reply
@@ -69,6 +79,7 @@ fi
 # --- Build (+ auto-submit) ---------------------------------------------------
 args=(build --platform ios --profile "$PROFILE")
 [[ $NON_INTERACTIVE -eq 1 ]] && args+=(--non-interactive)
+[[ $CLEAR_CACHE -eq 1 ]]     && args+=(--clear-cache)
 [[ -n "$MESSAGE" ]]          && args+=(--message "$MESSAGE")
 [[ $SUBMIT -eq 1 ]]          && args+=(--auto-submit)
 
