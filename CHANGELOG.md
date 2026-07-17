@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-17
+
+### Added
+
+- Pending-order surfacing on `listSwaps`: new `ListSwapsParams.pendingAddress` (a single address, or an array — one query prioritizes a wallet's in-progress orders across all its addresses) plus two new `AtomicSwap` fields, `pendingRole` (`"seller" | "buyer" | null`) and `pendingTxid` (`string | null`), populated only for that address's pending rows and `null` everywhere else
+- `useSwapList` / `SwapList` — opt-in `includePendingOrders` surfaces the connected wallet's in-progress orders (pending sell listings still settling on-chain + pending purchases whose buy tx is unconfirmed) as `pendingOrders`, self-polling until each tx confirms; `trackPendingBuy(swap, txid)` optimistically shows a just-made Kontor buy immediately, independent of the server's `pending_address` decoration
+- "Sold" feed on `useSwapList` / `SwapList` — `defaultShowSold` option and `showSold` / `setShowSold` / `canShowSold`: browse completed sales (the whole marketplace's, or narrowed to the wallet's own when combined with "My swaps"), as an independent dimension from the "My swaps" filter
+- `HorizonMarketClient.recordKontorPurchase(swapId, { buyerAddress, txId })` — safe recovery that replays only the recording POST for a Kontor purchase whose swap reveal is already broadcast on-chain, never re-accepting (and re-broadcasting) the consumed offer
+- `kontorPurchaseRecovery(err)` helper and the `KontorPurchaseRecovery` type — extract `{ swapId, txId, buyerAddress }` from a caught `KontorPurchaseNotRecordedError` without pulling the heavy `@kontor/sdk` backend into the main bundle
+
+### Fixed
+
+- Kontor KOR / NFT balance reads now resolve the wallet's registered Kontor `signer-id` (cached per x-only pubkey) and sum balances across every plausible holder ref (signer-id + both x-only-pubkey forms) — a wallet whose assets were credited to its signer-id previously read as a zero balance
+- Kontor purchase recording failures now surface the real underlying cause instead of a generic error, and support a safe record-only retry
+
 ## [0.1.0] - 2026-07-13
 
 Initial public release.
@@ -38,4 +53,5 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.1.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/releases/tag/v0.1.0
