@@ -349,7 +349,8 @@ only unlock fee waivers:
 
 All REST helpers accept an optional second argument `{ signal?: AbortSignal }` for request cancellation.
 
-- `listSwaps(params?, options?)`
+- `listSwaps(params?, options?)` — filter by `listingType`, `collection`, price range (`priceMin` / `priceMax`, sats), and more
+- `getSwapFacets(params?, options?)` — reactive facet counts (type / price bucket / collection) for a filter set
 - `getSwap(id, options?)`
 - `getLockedAssetUtxoIds(params?, options?)`
 - `searchAssetNames(params?, options?)`

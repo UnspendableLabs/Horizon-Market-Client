@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { HttpClient, HorizonMarketApiError } from "./http.js";
 import {
   listSwaps,
+  getSwapFacets,
   getSwap,
   createSwap,
   purchaseSwaps,
@@ -275,6 +276,18 @@ describe("listSwaps", () => {
     expect(url).toContain("pending_address=bc1qme");
   });
 
+  it("sends price_min / price_max / collection query params", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await listSwaps(http, { priceMin: 1000, priceMax: 54200, collection: "rare-pepes" });
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("price_min=1000");
+    expect(url).toContain("price_max=54200");
+    expect(url).toContain("collection=rare-pepes");
+  });
+
   it("omits unset params", async () => {
     const fetchFn = makeFetch(200, {
       data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
@@ -297,6 +310,55 @@ describe("listSwaps", () => {
       RequestInit,
     ];
     expect(init.signal).toBe(controller.signal);
+  });
+});
+
+describe("getSwapFacets", () => {
+  const WIRE_FACETS = {
+    type: { counterparty: 1034, ordinal: 250, zeld: 0, kontor: 0 },
+    price: [
+      { id: "any", label: "Any", min_sats: null, max_sats: null, count: 1284 },
+      { id: "under_50", label: "Under $50", min_sats: null, max_sats: 54200, count: 412 },
+    ],
+    collection: [{ slug: "rare-pepes", name: "Rare Pepes", count: 1774 }],
+  };
+
+  it("maps wire facets (snake_case) to domain (camelCase)", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: WIRE_FACETS }),
+    });
+    const facets = await getSwapFacets(http, {});
+    expect(facets.type).toEqual({ counterparty: 1034, ordinal: 250, zeld: 0, kontor: 0 });
+    expect(facets.price[1]).toEqual({
+      id: "under_50",
+      label: "Under $50",
+      minSats: null,
+      maxSats: 54200,
+      count: 412,
+    });
+    expect(facets.collection).toEqual([{ slug: "rare-pepes", name: "Rare Pepes", count: 1774 }]);
+  });
+
+  it("sends the filter params and omits pagination/sort", async () => {
+    const fetchFn = makeFetch(200, { data: WIRE_FACETS });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await getSwapFacets(http, { listingType: "ordinal", priceMax: 54200, funded: true });
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/atomic-swaps/facets?");
+    expect(url).toContain("listing_type=ordinal");
+    expect(url).toContain("price_max=54200");
+    expect(url).toContain("funded=true");
+    expect(url).not.toContain("offset");
+    expect(url).not.toContain("order_by");
+  });
+
+  it("hits the bare facets path when no filters are set", async () => {
+    const fetchFn = makeFetch(200, { data: WIRE_FACETS });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await getSwapFacets(http, {});
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://example.com/api/atomic-swaps/facets");
   });
 });
 
