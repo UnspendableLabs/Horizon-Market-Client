@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-17
+
+### Added
+
+- Price-range and collection filters on `listSwaps`: new `ListSwapsParams.priceMin` / `priceMax` (inclusive bounds in sats) and `collection` (a collection slug the server expands to its asset names, so only Counterparty listings match) — combinable with every existing filter
+- `HorizonMarketClient.getSwapFacets(params?, options?)` — one request returns reactive facet counts for a filter set (`SwapFacets`: listings per `type`, per price bucket, and per `collection`); each dimension is counted excluding its own active selection so sibling options keep clickable, non-zero counts. Takes the same filter shape as `listSwaps` minus pagination/sort (`SwapFacetsParams`); new types `SwapFacets`, `SwapFacetsParams`, `PriceBucketFacet` (USD presets resolved to sat-bounds server-side), and `CollectionFacet`
+
 ## [0.1.1] - 2026-07-17
 
 ### Added
