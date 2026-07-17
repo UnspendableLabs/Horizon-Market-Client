@@ -73,11 +73,19 @@ export interface SellOrderFormProps {
   onSuccess?: (swap: AtomicSwap, created: boolean) => void;
   onError?: (error: Error) => void;
   /**
-   * Dismiss handler. Used both for the detail-step back button when the form was
-   * launched for a specific `initialAsset` (returns to wherever it opened from,
-   * e.g. the wallet) and for the "Close" button on the result screen.
+   * Back/cancel handler for the detail-step back button when the form was
+   * launched for a specific `initialAsset` — returns to wherever it opened from
+   * (e.g. the wallet). Also the fallback dismiss for the result screen's "Close"
+   * button when {@link onDone} is not given.
    */
   onClose?: () => void;
+  /**
+   * Dismiss handler for the result screen's "Close" button after an order is
+   * submitted — e.g. to jump to the marketplace to see the new pending order.
+   * Separate from {@link onClose} so a wallet-launched form can send the result
+   * "Close" somewhere different from its back button. Falls back to `onClose`.
+   */
+  onDone?: () => void;
   style?: StyleProp<ViewStyle>;
   styles?: SellOrderFormStyles;
 }
@@ -259,6 +267,7 @@ export function SellOrderForm({
   onSuccess,
   onError,
   onClose,
+  onDone,
   style,
   styles: stylesProp,
 }: SellOrderFormProps) {
@@ -442,7 +451,9 @@ export function SellOrderForm({
           onRetry={retry}
           onComplete={newOrder}
           completeLabel="New order"
-          onClose={onClose}
+          // The result "Close" can go somewhere different from the back button
+          // (e.g. the marketplace), falling back to `onClose` when unset.
+          onClose={onDone ?? onClose}
           sheet={common}
           styles={reviewStyles}
         />

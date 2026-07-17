@@ -31,6 +31,12 @@ export type {
 export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
 export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
 export { KontorPurchaseNotRecordedError } from "./workflows/buy-kontor.js";
+// Safe recovery for a KontorPurchaseNotRecordedError: replay only the recording
+// POST (client.recordKontorPurchase) with the carried txid — never re-accept.
+export {
+  kontorPurchaseRecovery,
+  type KontorPurchaseRecovery,
+} from "./kontor/purchase-recovery.js";
 // Thrown by every Kontor operation when the client was not constructed with
 // `kontorNetwork` — exported so consumers can `instanceof` it.
 export { KontorUnavailableError } from "./kontor/runtime.js";

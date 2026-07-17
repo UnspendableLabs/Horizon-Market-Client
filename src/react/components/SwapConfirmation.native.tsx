@@ -13,7 +13,11 @@ import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
 import { useSwapConfirmation } from "../hooks/useSwapConfirmation.js";
 import { useHorizonMarket } from "../context.js";
-import { formatAssetLabel, truncate } from "../internal/format.js";
+import {
+  errorDisplayMessage,
+  formatAssetLabel,
+  truncate,
+} from "../internal/format.js";
 import { BuyReview } from "../internal/BuyReview.native.js";
 import { useBuyReview } from "../internal/useBuyReview.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
@@ -229,7 +233,7 @@ export function SwapConfirmation({
         totalSteps={totalSteps}
         status={status}
         successMessage={successMessage}
-        errorMessage={error?.message}
+        errorMessage={error ? errorDisplayMessage(error) : undefined}
         styles={stylesProp?.progress}
       />
       {trackUrl && (

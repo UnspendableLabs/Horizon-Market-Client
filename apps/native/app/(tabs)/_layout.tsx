@@ -6,6 +6,7 @@ import { SwipeTabs } from "../../components/SwipeTabs.js";
 import { TabBar } from "../../components/TabBar.js";
 import { colors } from "../../lib/theme.js";
 import { SellIntentProvider, type SellIntentValue } from "../../lib/sell-intent.js";
+import { BuyRefreshProvider, type BuyRefreshValue } from "../../lib/buy-refresh.js";
 
 /**
  * The app's main tab group: Buy · Sell · Wallet · Settings.
@@ -37,8 +38,21 @@ export default function TabsLayout() {
     [pendingAsset, nonce, requestSell, clear],
   );
 
+  // "Refresh the Buy list" signal — bumped when a sell order is created so the
+  // Buy tab re-fetches and shows the new pending order at the top.
+  const [buyRefreshNonce, setBuyRefreshNonce] = useState(0);
+  const requestBuyRefresh = useCallback(
+    () => setBuyRefreshNonce((n) => n + 1),
+    [],
+  );
+  const buyRefresh = useMemo<BuyRefreshValue>(
+    () => ({ nonce: buyRefreshNonce, requestBuyRefresh }),
+    [buyRefreshNonce, requestBuyRefresh],
+  );
+
   return (
     <SellIntentProvider value={sellIntent}>
+      <BuyRefreshProvider value={buyRefresh}>
       <SwipeTabs
         // Pin the tab bar to the bottom and render our custom one, so the pager
         // keeps the classic bottom-tab look while swiping horizontally between
@@ -78,6 +92,7 @@ export default function TabsLayout() {
         <SwipeTabs.Screen name="wallet" options={{ title: "Wallet" }} />
         <SwipeTabs.Screen name="settings" options={{ title: "Settings" }} />
       </SwipeTabs>
+      </BuyRefreshProvider>
     </SellIntentProvider>
   );
 }

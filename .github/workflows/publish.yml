@@ -1,0 +1,42 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write # Required for npm Trusted Publishing (OIDC) — no token needed
+  contents: read
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Trusted Publishing requires Node >= 22.14 and npm >= 11.5.1.
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          # Avoid the npm cache in release builds (recommended by npm for OIDC).
+          package-manager-cache: false
+      # Node 22 still ships npm 10.x; OIDC publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+      - run: npm ci
+      # Fail fast if the GitHub release tag doesn't match package.json's version.
+      # (npm publish uses package.json's version, not the tag — this catches the
+      # common footgun of tagging a release without bumping the package.)
+      - name: Verify tag matches package.json version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${TAG#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Release tag ($TAG → $TAG_VERSION) does not match package.json version ($PKG_VERSION). Bump the version before releasing."
+            exit 1
+          fi
+          echo "Version OK: $PKG_VERSION"
+      # `prepublishOnly` runs typecheck + lint + test + build before packing.
+      - run: npm publish

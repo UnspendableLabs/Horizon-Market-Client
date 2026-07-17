@@ -191,6 +191,20 @@ export function swapListItemView(
   };
 }
 
+/**
+ * Best on-chain txid to link (e.g. mempool.space) for a pending order. Prefers
+ * the server-provided {@link AtomicSwap.pendingTxid} — authoritative for both a
+ * pending sale (the buyer's in-flight buy tx) and a pending listing (whichever of
+ * the seller's own txs is still unconfirmed). Falls back to deriving it from the
+ * listing itself (asset UTXO tx → swap tx → platform-fee tx) for items that carry
+ * no `pendingTxid` (e.g. a `getSwap` detail). Null when none is known yet.
+ */
+export function pendingSwapTrackingTxid(swap: AtomicSwap): string | null {
+  if (swap.pendingTxid) return swap.pendingTxid;
+  const assetTxid = swap.assetUtxoId?.split(":")[0];
+  return assetTxid || swap.txId || swap.onChainPayment?.txid || null;
+}
+
 export function mergeSwapsById(lists: AtomicSwap[][]): AtomicSwap[] {
   const seen = new Set<string>();
   const merged: AtomicSwap[] = [];

@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as btc from "bitcoinjs-lib";
 import { HolderRef } from "@kontor/sdk";
-import { xOnlyFromTaprootAddress, holderCandidates } from "./holders.js";
+import {
+  xOnlyFromTaprootAddress,
+  holderCandidates,
+  resolveSignerId,
+} from "./holders.js";
 import {
   TEST_P2TR_ADDRESS,
   TEST_P2WPKH_ADDRESS,
@@ -93,5 +97,82 @@ describe("holderCandidates", () => {
 
   it("returns an empty union when every candidate is empty/undefined", () => {
     expect(holderCandidates("", undefined)).toEqual([]);
+  });
+
+  it("prepends the registered signer-id ref before the x-only candidates", () => {
+    const candidates = holderCandidates(SESSION_XONLY, TEST_P2TR_ADDRESS, 4);
+    // signer-id + session key + tweaked key.
+    expect(candidates).toHaveLength(3);
+    expect(candidates[0].toRaw()).toEqual({ kind: "signer-id", value: "4" });
+    for (const c of candidates) expect(c).toBeInstanceOf(HolderRef);
+  });
+
+  it("omits the signer-id ref when the wallet is unregistered", () => {
+    expect(holderCandidates(SESSION_XONLY, TEST_P2TR_ADDRESS, null)).toHaveLength(
+      2,
+    );
+    expect(holderCandidates(SESSION_XONLY, TEST_P2TR_ADDRESS)).toHaveLength(2);
+  });
+});
+
+describe("resolveSignerId", () => {
+  const XONLY = "aa".repeat(32);
+  const jsonFetch = (body: unknown, ok = true) =>
+    vi.fn(async () => ({ ok, json: async () => body }));
+
+  it("returns the numeric signer_id from the indexer reverse lookup", async () => {
+    const fetchMock = jsonFetch({ result: { signer_id: 4 } });
+    await expect(
+      resolveSignerId(
+        "https://indexer/api",
+        XONLY,
+        fetchMock as unknown as typeof fetch,
+      ),
+    ).resolves.toBe(4);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://indexer/api/signers/${XONLY}`,
+    );
+  });
+
+  it("normalizes the URL (trailing slash) and key (0x prefix, case)", async () => {
+    const fetchMock = jsonFetch({ result: { signer_id: 7 } });
+    await resolveSignerId(
+      "https://indexer/api/",
+      `0x${XONLY.toUpperCase()}`,
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://indexer/api/signers/${XONLY}`,
+    );
+  });
+
+  it("returns null for an unregistered signer (not-found body or non-ok)", async () => {
+    await expect(
+      resolveSignerId(
+        "https://indexer/api",
+        XONLY,
+        jsonFetch({ error: "not found" }) as unknown as typeof fetch,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      resolveSignerId(
+        "https://indexer/api",
+        XONLY,
+        jsonFetch({}, false) as unknown as typeof fetch,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null on a network / parse error", async () => {
+    const throwing = vi.fn(async () => {
+      throw new Error("network down");
+    });
+    await expect(
+      resolveSignerId(
+        "https://indexer/api",
+        XONLY,
+        throwing as unknown as typeof fetch,
+      ),
+    ).resolves.toBeNull();
   });
 });

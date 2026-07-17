@@ -15,6 +15,11 @@
  *
  * New attach-prep or zeld transfer-prep listings may stay `funded: false` until
  * the prep tx confirms — poll {@link AtomicSwap} via `getSwap` before `fillSwaps`.
+ *
+ * **Pending-order fields (`pendingRole` / `pendingTxid`):** populated only by
+ * `listSwaps` when a {@link ListSwapsParams.pendingAddress} is supplied, and only
+ * for that address's in-progress orders; `null` everywhere else. See those field
+ * docs on {@link AtomicSwap}.
  */
 export type ListingType = "counterparty" | "ordinal" | "zeld" | "kontor";
 
@@ -126,6 +131,22 @@ export interface AtomicSwap {
   kontorNftId: string | null;
   /** KOR token amount as a positive decimal string. Only set for `listingType === "kontor"` token listings. */
   kontorAmount: string | null;
+  /**
+   * This swap's role for the queried {@link ListSwapsParams.pendingAddress}: when
+   * the swap is one of that address's pending orders, `"seller"` (its own listing
+   * still settling on-chain) or `"buyer"` (an in-flight, broadcast-but-unconfirmed
+   * purchase). `null` for every other item, and always `null` unless `listSwaps`
+   * was called with `pendingAddress`.
+   */
+  pendingRole: "seller" | "buyer" | null;
+  /**
+   * The still-unconfirmed Bitcoin txid for this pending order — e.g. to build a
+   * `mempool.space/tx/{txid}` link. For a `"seller"` item, the listing's own
+   * unconfirmed tx (the attach / asset-UTXO tx while `confirmed` is false,
+   * otherwise the fee tx); for a `"buyer"` item, the in-flight buy tx. `null`
+   * when {@link pendingRole} is `null`.
+   */
+  pendingTxid: string | null;
 }
 
 /** Result of `listSwaps`. `count` mirrors `pagination.total`. */
@@ -283,6 +304,21 @@ export interface ListSwapsParams {
   delisted?: boolean;
   unattached?: boolean;
   sales?: boolean;
+  /**
+   * Prioritize this address's in-progress orders: they sort to the top of the
+   * result and are included even when the `delisted`/`funded` filters would hide
+   * them — its **pending sell orders** (own listings still settling on-chain) and
+   * **pending purchases** (swaps it is buying whose buy tx is broadcast but not
+   * yet confirmed). Each such row comes back with {@link AtomicSwap.pendingRole}
+   * and {@link AtomicSwap.pendingTxid} set; every other row has both `null`. This
+   * re-orders/includes only — it never removes rows a plain call returns, and the
+   * prioritized block is not narrowed by the other filters.
+   *
+   * Accepts several addresses (all of a wallet's addresses) in one request — an
+   * order matching **any** of them is prioritized — so the pending set can be
+   * fetched with a single call instead of one per address.
+   */
+  pendingAddress?: string | string[];
   order?: "asc" | "desc";
   orderBy?: "created_at" | "updated_at" | "price" | "price_per_unit";
   offset?: number;

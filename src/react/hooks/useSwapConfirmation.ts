@@ -5,6 +5,11 @@ import type {
   WorkflowProgressEvent,
 } from "../../types/index.js";
 import type { FillSwapsParams } from "../../workflows/buy.js";
+import { stepMessages } from "../../workflows/progress.js";
+import {
+  kontorPurchaseRecovery,
+  type KontorPurchaseRecovery,
+} from "../../kontor/purchase-recovery.js";
 import { CLIENT_NOT_INITIALIZED, mempoolTxUrl } from "../internal/format.js";
 
 export type SwapConfirmationStep = "confirm" | "progress" | "result";
@@ -73,6 +78,7 @@ const idleSwapState = {
   sales: null as PendingSale[] | null,
   error: null as Error | null,
   lastAction: null as Action | null,
+  recordRetry: null as KontorPurchaseRecovery | null,
 };
 
 export function useSwapConfirmation(
@@ -108,6 +114,13 @@ export function useSwapConfirmation(
   const [lastAction, setLastAction] = useState<Action | null>(
     idleSwapState.lastAction,
   );
+  // Set when a Kontor buy accepted the offer on-chain but failed to record it
+  // (KontorPurchaseNotRecordedError). Carries the swap-reveal txid so `retry`
+  // replays only the recording POST — re-running fillSwaps would broadcast a
+  // fresh, wasted swap against the already-consumed offer.
+  const [recordRetry, setRecordRetry] = useState<KontorPurchaseRecovery | null>(
+    idleSwapState.recordRetry,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const submittingRef = useRef(false);
@@ -125,6 +138,7 @@ export function useSwapConfirmation(
     setSales(idleSwapState.sales);
     setError(idleSwapState.error);
     setLastAction(idleSwapState.lastAction);
+    setRecordRetry(idleSwapState.recordRetry);
     setIsSubmitting(false);
     submittingRef.current = false;
   }, []);
@@ -154,6 +168,7 @@ export function useSwapConfirmation(
         setTotalBuySteps(null);
         setError(null);
         setSales(null);
+        setRecordRetry(null);
         setBuyStatus("loading");
         setStep("progress");
 
@@ -181,6 +196,9 @@ export function useSwapConfirmation(
           setError(e);
           setBuyStatus("error");
           setStep("result");
+          // If the offer was accepted on-chain but recording failed, arm the
+          // safe record-only retry with the carried txid (see `recordPurchase`).
+          setRecordRetry(kontorPurchaseRecovery(e));
           optsRef.current.onError?.(e);
         }
       } finally {
@@ -189,6 +207,80 @@ export function useSwapConfirmation(
       }
     },
     [client, swapId, defaultSatsPerVbyte],
+  );
+
+  // Safe recovery for a KontorPurchaseNotRecordedError: the swap reveal is
+  // already on-chain, so replay ONLY the recording POST with the carried txid
+  // (never re-accept). Keeps the failed run's steps and flips step 4 to running.
+  const recordPurchase = useCallback(
+    async (recovery: KontorPurchaseRecovery) => {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setIsSubmitting(true);
+
+      try {
+        if (!client) {
+          const err = new Error(CLIENT_NOT_INITIALIZED);
+          setError(err);
+          setBuyStatus("error");
+          setStep("result");
+          optsRef.current.onError?.(err);
+          return;
+        }
+
+        const submit = stepMessages("fillSwaps", "submitPurchase");
+        const total = totalBuySteps ?? 4;
+        const emit = (phase: "start" | "complete" | "error") =>
+          setBuySteps((prev) => [
+            ...prev,
+            {
+              workflow: "fillSwaps",
+              step: "submitPurchase",
+              message:
+                phase === "complete"
+                  ? submit.complete
+                  : phase === "error"
+                    ? submit.error
+                    : submit.start,
+              stepIndex: total,
+              totalSteps: total,
+              phase,
+            },
+          ]);
+
+        setError(null);
+        setBuyStatus("loading");
+        setStep("progress");
+        emit("start");
+
+        try {
+          const sale = await client.recordKontorPurchase(recovery.swapId, {
+            buyerAddress: recovery.buyerAddress,
+            txId: recovery.txId,
+          });
+          emit("complete");
+          setSales([sale]);
+          setBuyStatus("success");
+          setStep("result");
+          setRecordRetry(null);
+          optsRef.current.onBuySuccess?.([sale]);
+        } catch (err) {
+          emit("error");
+          const e = err instanceof Error ? err : new Error(String(err));
+          setError(e);
+          setBuyStatus("error");
+          setStep("result");
+          // Keep `recordRetry` (the carried txid) so recording can be retried
+          // again — the on-chain swap stays consumed. A plain API error from the
+          // record POST carries no txid, so we must NOT re-derive it from `e`.
+          optsRef.current.onError?.(e);
+        }
+      } finally {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }
+    },
+    [client, totalBuySteps],
   );
 
   const delist = useCallback(async () => {
@@ -236,10 +328,16 @@ export function useSwapConfirmation(
   }, [client, swapId]);
 
   const retry = useCallback(() => {
+    // The offer was consumed on-chain but not recorded — replay only the
+    // recording POST, never a fresh fillSwaps (which would re-broadcast).
+    if (recordRetry) {
+      void recordPurchase(recordRetry);
+      return;
+    }
     if (!lastAction) return;
     if (lastAction.type === "buy") void confirmPurchase(lastAction.params);
     else void delist();
-  }, [lastAction, confirmPurchase, delist]);
+  }, [recordRetry, recordPurchase, lastAction, confirmPurchase, delist]);
 
   // Unified view of the active flow so both renderers read one status/steps/
   // message instead of each re-selecting buy-vs-delist and rebuilding the label.

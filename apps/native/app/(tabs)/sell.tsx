@@ -7,6 +7,7 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
 import { useSellIntent } from "../../lib/sell-intent.js";
+import { useBuyRefresh } from "../../lib/buy-refresh.js";
 import { colors, fonts, spacing } from "../../lib/theme.js";
 
 /**
@@ -24,6 +25,7 @@ export default function SellScreen() {
   const { addresses } = useHorizonMarket();
   const router = useRouter();
   const { pendingAsset, nonce, clear } = useSellIntent();
+  const { requestBuyRefresh } = useBuyRefresh();
 
   // Drop any pending "sell this asset" request when the tab loses focus, so
   // re-opening Sell from the tab bar always starts on the asset list (browse)
@@ -48,10 +50,21 @@ export default function SellScreen() {
             key={`asset-${nonce}`}
             title={<Text style={styles.title}>Sell</Text>}
             initialAsset={pendingAsset}
+            // Refresh the Buy list when the order is created; the detail Back
+            // button returns to the wallet it came from, but closing the result
+            // screen jumps to the Buy tab to see the new order at the top.
+            onSuccess={() => requestBuyRefresh()}
             onClose={() => router.navigate("/wallet")}
+            onDone={() => router.navigate("/")}
           />
         ) : (
-          <SellOrderForm title={<Text style={styles.title}>Sell</Text>} />
+          <SellOrderForm
+            title={<Text style={styles.title}>Sell</Text>}
+            // Once the order is created, refresh the Buy list; closing the result
+            // screen jumps to the Buy tab to see it at the top.
+            onSuccess={() => requestBuyRefresh()}
+            onDone={() => router.navigate("/")}
+          />
         )
       ) : (
         <>

@@ -1,8 +1,9 @@
 import { useState, type ReactNode, type CSSProperties } from "react";
 import type { AtomicSwap } from "../../types/index.js";
-import { cx } from "./format.js";
+import { useHorizonMarket } from "../context.js";
+import { cx, mempoolTxUrl } from "./format.js";
 import { KontorIcon, NoImageIcon } from "./icons.web.js";
-import { swapListItemView } from "./swapListHelpers.js";
+import { pendingSwapTrackingTxid, swapListItemView } from "./swapListHelpers.js";
 import * as ws from "./styles.web.js";
 import { webTokens } from "../theme.js";
 
@@ -14,7 +15,29 @@ export interface SwapListItemClassNames {
   price?: string;
   meta?: string;
   button?: string;
+  /** The role-aware status line ("Awaiting confirmation" / "Purchase pending"). */
+  pendingStatus?: string;
 }
+
+const pendingStatusStyle: CSSProperties = {
+  fontSize: webTokens.fontSizeSm,
+  color: webTokens.pending,
+  fontWeight: 600,
+};
+
+// The mempool "Track" link matches the outlined (secondary) "Delist" button so
+// the pending tile's footer lines up with its neighbours.
+const trackLinkStyle: CSSProperties = {
+  ...ws.secondaryButton,
+  marginTop: "auto",
+  padding: `${webTokens.spacingSm} ${webTokens.spacingSm}`,
+  fontSize: webTokens.fontSizeBase,
+  lineHeight: "20px",
+  borderRadius: webTokens.radiusLg,
+  textAlign: "center",
+  textDecoration: "none",
+  display: "block",
+};
 
 export interface SwapListItemProps {
   swap: AtomicSwap;
@@ -98,12 +121,25 @@ export function SwapListItem({
   classNames,
   style,
 }: SwapListItemProps) {
+  const { network, kontorNetwork } = useHorizonMarket();
+
   // Quantity rides beside the asset name ("0.01 XCP"); the meta line carries
   // only the per-unit price, matching how horizon.market lays these out.
   const { actionLabel, thumbnail, title, priceLabel, pricePerUnit, showPerUnit } =
     swapListItemView(swap, isMySwap);
   const actionStyle = isMySwap ? ws.secondaryButton : ws.primaryButton;
   const itemStyle = { ...ws.swapItemGrid, ...style };
+
+  // An in-progress order the API surfaced (via `pending_address`): a listing
+  // still settling on-chain or an in-flight purchase. It isn't purchasable, so
+  // the tile shows an "Awaiting confirmation" / "Purchase pending" status and a
+  // mempool link instead of a Buy/Delist action.
+  const isPending = swap.pendingRole !== null;
+  const pendingStatus =
+    swap.pendingRole === "buyer" ? "Purchase pending" : "Awaiting confirmation";
+  const trackUrl = isPending
+    ? mempoolTxUrl(network, kontorNetwork, pendingSwapTrackingTxid(swap))
+    : null;
 
   // KOR token listings carry no artwork of their own — show the Kontor brand
   // mark instead of the generic "no image" placeholder.
@@ -130,32 +166,56 @@ export function SwapListItem({
         <span className={classNames?.price} style={priceStyle}>
           {priceLabel}
         </span>
-        {showPerUnit && (
-          <span className={classNames?.meta} style={ws.mutedText}>
-            {pricePerUnit} sats/unit
+        {isPending ? (
+          <span className={classNames?.pendingStatus} style={pendingStatusStyle}>
+            {pendingStatus}
           </span>
+        ) : (
+          showPerUnit && (
+            <span className={classNames?.meta} style={ws.mutedText}>
+              {pricePerUnit} sats/unit
+            </span>
+          )
         )}
       </div>
-      <button
-        type="button"
-        className={classNames?.button}
-        onClick={onAction}
-        style={{
-          ...actionStyle,
-          // Pin to the bottom of the equal-height tile so buttons align
-          // across the whole grid row.
-          marginTop: "auto",
-          // Match the header "Sell" button: same font size (14px), height
-          // (8px vertical padding + 20px line-height = 36px) and corner
-          // radius (lg, the header uses Tailwind's rounded-lg).
-          padding: `${webTokens.spacingSm} ${webTokens.spacingSm}`,
-          fontSize: webTokens.fontSizeBase,
-          lineHeight: "20px",
-          borderRadius: webTokens.radiusLg,
-        }}
-      >
-        {actionLabel}
-      </button>
+      {isPending ? (
+        trackUrl ? (
+          <a
+            className={classNames?.button}
+            href={trackUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={trackLinkStyle}
+          >
+            Track ↗
+          </a>
+        ) : (
+          <span style={{ ...pendingStatusStyle, marginTop: "auto" }}>
+            Confirming…
+          </span>
+        )
+      ) : (
+        <button
+          type="button"
+          className={classNames?.button}
+          onClick={onAction}
+          style={{
+            ...actionStyle,
+            // Pin to the bottom of the equal-height tile so buttons align
+            // across the whole grid row.
+            marginTop: "auto",
+            // Match the header "Sell" button: same font size (14px), height
+            // (8px vertical padding + 20px line-height = 36px) and corner
+            // radius (lg, the header uses Tailwind's rounded-lg).
+            padding: `${webTokens.spacingSm} ${webTokens.spacingSm}`,
+            fontSize: webTokens.fontSizeBase,
+            lineHeight: "20px",
+            borderRadius: webTokens.radiusLg,
+          }}
+        >
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }

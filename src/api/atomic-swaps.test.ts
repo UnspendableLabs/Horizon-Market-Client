@@ -76,6 +76,8 @@ const DOMAIN_SWAP = {
   kontorContractAddress: null,
   kontorNftId: null,
   kontorAmount: null,
+  pendingRole: null,
+  pendingTxid: null,
 };
 
 describe("getSwap", () => {
@@ -233,6 +235,23 @@ describe("listSwaps", () => {
     expect(result.pagination).toEqual({ total: 1, offset: 0, limit: null });
   });
 
+  it("maps pending_role / pending_txid when present", async () => {
+    const wire = {
+      count: 1,
+      atomic_swaps: [
+        { ...WIRE_SWAP, pending_role: "buyer", pending_txid: "deadbeef" },
+      ],
+      pagination: { total: 1, offset: 0, limit: null },
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const result = await listSwaps(http, { pendingAddress: "bc1qme" });
+    expect(result.atomicSwaps[0].pendingRole).toBe("buyer");
+    expect(result.atomicSwaps[0].pendingTxid).toBe("deadbeef");
+  });
+
   it("sends correct query params for boolean filters", async () => {
     const fetchFn = makeFetch(200, {
       data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: 10 } },
@@ -244,6 +263,16 @@ describe("listSwaps", () => {
     expect(url).toContain("delisted=false");
     expect(url).toContain("limit=10");
     expect(url).toContain("offset=5");
+  });
+
+  it("sends the pending_address query param", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await listSwaps(http, { pendingAddress: "bc1qme" });
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("pending_address=bc1qme");
   });
 
   it("omits unset params", async () => {

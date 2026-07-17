@@ -38,6 +38,7 @@ export interface SwapListStyles {
   filterTabs?: StyleProp<ViewStyle>;
   sortSelect?: StyleProp<ViewStyle>;
   mySwapsToggle?: StyleProp<ViewStyle>;
+  soldToggle?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
   pagination?: StyleProp<ViewStyle>;
@@ -101,13 +102,18 @@ export function SwapList({
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
+    showSold,
+    setShowSold,
+    canShowSold,
     kontorUnavailable,
     page,
     setPage,
     totalPages,
     refetch,
     removeSwap,
+    trackPendingBuy,
     isItemMySwap,
+    pendingOrders,
     pendingSwap,
     loginModalOpen,
     confirmationModalOpen,
@@ -116,11 +122,24 @@ export function SwapList({
     closeLoginModal,
     closeConfirmationModal,
     handleLoginSuccess,
-  } = useSwapList(hookOptions);
+    // Surface the connected wallet's in-progress orders at the top of the grid.
+    // Consumers can opt out with `includePendingOrders={false}`.
+  } = useSwapList({ includePendingOrders: true, ...hookOptions });
+
+  // The connected wallet's in-progress orders ride at the very top of the grid
+  // (the API already sorts them first via `pending_address`), rendered as
+  // ordinary tiles with a "Pending" badge and no Buy action. They're a small
+  // personal set pinned to the first page only. Pending sell listings are
+  // `funded:false` and pending buys are `pending:true`, both already excluded
+  // from the main feed, so there's no overlap to dedupe.
+  const gridSwaps =
+    page === 0 && !showSold ? [...pendingOrders, ...swaps] : swaps;
 
   const contentAndPagination = (
     <>
-      {/* Content */}
+      {/* Content — the connected wallet's in-progress orders (pending listings
+          still settling + purchases still confirming) ride at the top of the
+          grid as ordinary tiles marked "Pending". */}
       {kontorUnavailable ? (
         <Text style={common.muted}>
           Kontor listings are only available on the signet network.
@@ -129,12 +148,12 @@ export function SwapList({
         <Text style={common.muted}>Loading…</Text>
       ) : error ? (
         <Text style={[common.error, stylesProp?.error]}>{error.message}</Text>
-      ) : swaps.length === 0 ? (
+      ) : gridSwaps.length === 0 ? (
         <Text style={[common.muted, stylesProp?.empty]}>No swaps found.</Text>
       ) : (
         <View style={[{ gap: 24 }, stylesProp?.grid]}>
-          {Array.from({ length: Math.ceil(swaps.length / 2) }, (_, i) =>
-            swaps.slice(i * 2, i * 2 + 2),
+          {Array.from({ length: Math.ceil(gridSwaps.length / 2) }, (_, i) =>
+            gridSwaps.slice(i * 2, i * 2 + 2),
           ).map((row) => (
             // Keyed by the row's first swap (not the index): removing a swap
             // shifts every later item across row boundaries, and index keys
@@ -255,6 +274,25 @@ export function SwapList({
             </Text>
           </TouchableOpacity>
         )}
+        {canShowSold && (
+          <TouchableOpacity
+            onPress={() => setShowSold(!showSold)}
+            style={[
+              common.toolbarToggle,
+              showSold && common.toolbarToggleActive,
+              stylesProp?.soldToggle,
+            ]}
+          >
+            <Text
+              style={[
+                common.toolbarToggleText,
+                showSold && common.toolbarToggleTextActive,
+              ]}
+            >
+              {showSold ? "For Sale" : "Sold"}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Content + Pagination. The footer slot rides at the end of the scroll so
@@ -295,7 +333,13 @@ export function SwapList({
           <SwapConfirmation
             swap={pendingSwap}
             mode={confirmationMode}
-            onBuySuccess={() => {
+            onBuySuccess={(sales) => {
+              // A Kontor buy settles on-chain async and the server's pending
+              // decoration can lag; track it locally so it shows as pending
+              // immediately and refreshes balances once it settles.
+              if (pendingSwap.listingType === "kontor") {
+                trackPendingBuy(pendingSwap, sales[0]?.txId ?? null);
+              }
               removeSwap(pendingSwap.id);
               refetch();
             }}

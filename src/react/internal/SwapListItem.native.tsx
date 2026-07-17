@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Image,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -12,9 +13,11 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
+import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
-import { swapListItemView } from "./swapListHelpers.js";
+import { formatRelativeTime, mempoolTxUrl } from "./format.js";
+import { pendingSwapTrackingTxid, swapListItemView } from "./swapListHelpers.js";
 import { KontorIcon, NoImageIcon } from "./icons.native.js";
 import type { ResolvedTheme } from "../theme.js";
 
@@ -27,6 +30,8 @@ export interface SwapListItemStyles {
   meta?: StyleProp<TextStyle>;
   button?: StyleProp<ViewStyle>;
   buttonText?: StyleProp<TextStyle>;
+  /** The role-aware status line ("Awaiting confirmation" / "Purchase pending"). */
+  pendingStatus?: StyleProp<TextStyle>;
 }
 
 export interface SwapListItemProps {
@@ -121,6 +126,11 @@ function createSheet(theme: ResolvedTheme) {
       // spacing.md (12px) vertical padding, the header uses 8px.
       paddingVertical: theme.spacing.sm,
     },
+    pendingStatus: {
+      color: theme.colors.pending,
+      fontSize: theme.typography.fontSizeSm,
+      fontWeight: "600",
+    },
   });
 }
 
@@ -132,6 +142,7 @@ export function SwapListItem({
   styles: stylesProp,
 }: SwapListItemProps) {
   const theme = useTheme();
+  const { network, kontorNetwork } = useHorizonMarket();
   const common = useCommonSheet();
   const sheet = useMemo(() => createSheet(theme), [theme]);
 
@@ -139,6 +150,26 @@ export function SwapListItem({
   // only the per-unit price, matching how horizon.market lays these out.
   const { actionLabel, thumbnail, title, priceLabel, pricePerUnit, showPerUnit } =
     swapListItemView(swap, isMySwap);
+
+  // An in-progress order the API surfaced (via `pending_address`): a listing
+  // still settling on-chain or an in-flight purchase. It isn't purchasable, so
+  // the tile shows an "Awaiting confirmation" / "Purchase pending" status and a
+  // mempool link instead of a Buy/Delist action.
+  const isPending = swap.pendingRole !== null;
+  const pendingStatus =
+    swap.pendingRole === "buyer" ? "Purchase pending" : "Awaiting confirmation";
+  const trackUrl = isPending
+    ? mempoolTxUrl(network, kontorNetwork, pendingSwapTrackingTxid(swap))
+    : null;
+
+  // A completed sale (only reachable via the "Sold" filter, which is the only
+  // query path that ever returns `filled: true` — every other feed filters it
+  // out). Already settled, so no Buy/Delist action applies; show when it sold
+  // instead of a Buy/Delist action. `updatedAt` moves to the fill time when a
+  // swap is filled, so it's the closest proxy for "bought at".
+  const isSold = swap.filled === true;
+  const soldAt = Date.parse(swap.updatedAt);
+  const soldAgo = Number.isFinite(soldAt) ? formatRelativeTime(soldAt) : null;
 
   // KOR token listings carry no artwork of their own — show the Kontor brand
   // mark instead of the generic "no image" placeholder.
@@ -173,28 +204,56 @@ export function SwapListItem({
       <Text style={[common.muted, stylesProp?.price]}>
         {priceLabel}
       </Text>
-      {showPerUnit && (
-        <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
-          {pricePerUnit} sats/unit
+      {isPending ? (
+        <Text style={[sheet.pendingStatus, stylesProp?.pendingStatus]}>
+          {pendingStatus}
         </Text>
+      ) : (
+        !isSold &&
+        showPerUnit && (
+          <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
+            {pricePerUnit} sats/unit
+          </Text>
+        )
       )}
-      <Pressable
-        onPress={onAction}
-        style={[
-          isMySwap ? common.buttonSecondary : common.button,
-          sheet.actionButton,
-          stylesProp?.button,
-        ]}
-      >
-        <Text
+      {isPending ? (
+        trackUrl ? (
+          // Outlined like the "Delist" (secondary) button so the pending tile's
+          // footer lines up with its neighbours.
+          <Pressable
+            onPress={() => void Linking.openURL(trackUrl)}
+            style={[common.buttonSecondary, sheet.actionButton, stylesProp?.button]}
+          >
+            <Text style={common.buttonSecondaryText}>Track ↗</Text>
+          </Pressable>
+        ) : (
+          <Text style={[sheet.pendingStatus, sheet.actionButton]}>
+            Confirming…
+          </Text>
+        )
+      ) : isSold ? (
+        <Text style={[common.muted, sheet.actionButton]}>
+          {soldAgo ?? "Sold"}
+        </Text>
+      ) : (
+        <Pressable
+          onPress={onAction}
           style={[
-            isMySwap ? common.buttonSecondaryText : common.buttonText,
-            stylesProp?.buttonText,
+            isMySwap ? common.buttonSecondary : common.button,
+            sheet.actionButton,
+            stylesProp?.button,
           ]}
         >
-          {actionLabel}
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              isMySwap ? common.buttonSecondaryText : common.buttonText,
+              stylesProp?.buttonText,
+            ]}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }

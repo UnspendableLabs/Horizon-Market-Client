@@ -12,14 +12,21 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unspendablelabs.horizonmarket"
+      "bundleIdentifier": "com.unspendablelabs.horizonmarket",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0b0b15"
       },
-      "package": "com.unspendablelabs.horizonmarket"
+      "package": "com.unspendablelabs.horizonmarket",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -49,9 +56,25 @@
         }
       ],
       "./plugins/withAndroidSecurity.js",
+      "./plugins/withGradleMemory.js",
       "expo-font",
       "expo-status-bar",
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "aa5bd861-640b-4ab2-b298-c23b64b5d02a"
+      }
+    },
+    "owner": "unspendablelabs"
   }
 }

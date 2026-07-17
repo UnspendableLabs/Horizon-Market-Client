@@ -62,6 +62,8 @@ export function makeCtx(
     baseUrl: "https://horizon.market",
     ordApiBaseUrl: undefined,
     balancesCacheTtlMs: undefined,
+    balancesRefreshKey: 0,
+    refreshBalances: vi.fn(),
     fetch: vi.fn(),
     theme: defaultTheme,
     ...(overrides as Partial<HorizonMarketContextValue>),
