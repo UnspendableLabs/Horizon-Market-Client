@@ -2,6 +2,7 @@ import * as btc from "bitcoinjs-lib";
 import { HttpClient } from "./api/http.js";
 import {
   listSwaps as apiListSwaps,
+  getSwapFacets as apiGetSwapFacets,
   getSwap as apiGetSwap,
   getLockedAssetUtxoIds as apiGetLockedAssetUtxoIds,
   searchAssetNames as apiSearchAssetNames,
@@ -92,6 +93,8 @@ import type {
   FeeQuoteZeldTransferPrep,
   ListSwapsParams,
   ListSwapsResult,
+  SwapFacets,
+  SwapFacetsParams,
   LockedAssetUtxoIds,
   PendingSale,
   RequestOptions,
@@ -601,6 +604,18 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<ListSwapsResult> {
     return apiListSwaps(this.http, params ?? {}, options);
+  }
+
+  /**
+   * Reactive facet counts (type / price bucket / collection) for a filter set.
+   * Each dimension excludes its own active selection so sibling options keep
+   * clickable counts. One request returns every count.
+   */
+  getSwapFacets(
+    params?: SwapFacetsParams,
+    options?: RequestOptions,
+  ): Promise<SwapFacets> {
+    return apiGetSwapFacets(this.http, params ?? {}, options);
   }
 
   /** Get a single atomic swap by id. */

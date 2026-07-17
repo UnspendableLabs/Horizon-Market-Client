@@ -13,6 +13,10 @@ import type {
   ListingType,
   KontorAssetKind,
   RequestOptions,
+  SwapFacets,
+  SwapFacetsParams,
+  PriceBucketFacet,
+  CollectionFacet,
 } from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
 
@@ -79,6 +83,26 @@ interface WireListSwapsResult {
   count: number;
   atomic_swaps: WireAtomicSwap[];
   pagination: WirePagination;
+}
+
+interface WirePriceBucketFacet {
+  id: string;
+  label: string;
+  min_sats: number | null;
+  max_sats: number | null;
+  count: number;
+}
+
+interface WireCollectionFacet {
+  slug: string;
+  name: string;
+  count: number;
+}
+
+interface WireSwapFacets {
+  type: Record<ListingType, number>;
+  price: WirePriceBucketFacet[];
+  collection: WireCollectionFacet[];
 }
 
 interface WireAssetNameSearchResult {
@@ -186,6 +210,49 @@ export function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
 
 // ─── API functions ────────────────────────────────────────────────────────────
 
+function mapPriceBucketFacet(wire: WirePriceBucketFacet): PriceBucketFacet {
+  return {
+    id: wire.id,
+    label: wire.label,
+    minSats: wire.min_sats,
+    maxSats: wire.max_sats,
+    count: wire.count,
+  };
+}
+
+function mapCollectionFacet(wire: WireCollectionFacet): CollectionFacet {
+  return { slug: wire.slug, name: wire.name, count: wire.count };
+}
+
+/**
+ * Append the filter params shared by `listSwaps` and `getSwapFacets` to a query
+ * string (everything that narrows the result set — not pagination, sort, or the
+ * address-scoping params that only `listSwaps` understands).
+ */
+function appendSwapFilterParams(
+  qs: URLSearchParams,
+  params: ListSwapsParams | SwapFacetsParams,
+): void {
+  if (params.search !== undefined) qs.set("search", params.search);
+  if (params.listingType !== undefined)
+    qs.set("listing_type", params.listingType);
+  if (params.priceMin !== undefined)
+    qs.set("price_min", params.priceMin.toString());
+  if (params.priceMax !== undefined)
+    qs.set("price_max", params.priceMax.toString());
+  if (params.collection !== undefined) qs.set("collection", params.collection);
+  if (params.funded !== undefined)
+    qs.set("funded", params.funded ? "true" : "false");
+  if (params.filled !== undefined)
+    qs.set("filled", params.filled ? "true" : "false");
+  if (params.delisted !== undefined)
+    qs.set("delisted", params.delisted ? "true" : "false");
+  if (params.unattached !== undefined)
+    qs.set("unattached", params.unattached ? "true" : "false");
+  if (params.sales !== undefined)
+    qs.set("sales", params.sales ? "true" : "false");
+}
+
 export async function listSwaps(
   http: HttpClient,
   params: ListSwapsParams = {},
@@ -193,7 +260,6 @@ export async function listSwaps(
 ): Promise<ListSwapsResult> {
   const qs = new URLSearchParams();
   if (params.assetName !== undefined) qs.set("asset_name", params.assetName);
-  if (params.search !== undefined) qs.set("search", params.search);
   if (params.sellerAddress !== undefined)
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)
@@ -208,18 +274,7 @@ export async function listSwaps(
     if (pendingAddresses.length > 0)
       qs.set("pending_address", pendingAddresses.join(","));
   }
-  if (params.listingType !== undefined)
-    qs.set("listing_type", params.listingType);
-  if (params.funded !== undefined)
-    qs.set("funded", params.funded ? "true" : "false");
-  if (params.filled !== undefined)
-    qs.set("filled", params.filled ? "true" : "false");
-  if (params.delisted !== undefined)
-    qs.set("delisted", params.delisted ? "true" : "false");
-  if (params.unattached !== undefined)
-    qs.set("unattached", params.unattached ? "true" : "false");
-  if (params.sales !== undefined)
-    qs.set("sales", params.sales ? "true" : "false");
+  appendSwapFilterParams(qs, params);
   if (params.order !== undefined) qs.set("order", params.order);
   if (params.orderBy !== undefined) qs.set("order_by", params.orderBy);
   if (params.offset !== undefined)
@@ -242,6 +297,33 @@ export async function listSwaps(
     count: wire.count,
     atomicSwaps: wire.atomic_swaps.map(mapAtomicSwap),
     pagination: mapPagination(wire.pagination),
+  };
+}
+
+export async function getSwapFacets(
+  http: HttpClient,
+  params: SwapFacetsParams = {},
+  options?: RequestOptions,
+): Promise<SwapFacets> {
+  const qs = new URLSearchParams();
+  appendSwapFilterParams(qs, params);
+
+  const query = qs.toString();
+  const path = query
+    ? `/api/atomic-swaps/facets?${query}`
+    : "/api/atomic-swaps/facets";
+
+  const wire = await http.request<WireSwapFacets>(
+    "GET",
+    path,
+    undefined,
+    options?.signal,
+  );
+
+  return {
+    type: wire.type,
+    price: wire.price.map(mapPriceBucketFacet),
+    collection: wire.collection.map(mapCollectionFacet),
   };
 }
 

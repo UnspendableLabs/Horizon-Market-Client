@@ -156,6 +156,62 @@ export interface ListSwapsResult {
   pagination: Pagination;
 }
 
+/**
+ * A single price bucket in {@link SwapFacets.price}. The USD presets are resolved
+ * to sat-bounds server-side (against the live BTC/USD rate); apply `minSats` /
+ * `maxSats` directly as `priceMin` / `priceMax` so the filter matches the count.
+ */
+export interface PriceBucketFacet {
+  /** Stable bucket id, e.g. `"under_50"`. */
+  id: string;
+  /** Human label, e.g. `"Under $50"`. */
+  label: string;
+  /** Inclusive lower bound in sats, or `null` for an open lower bound. */
+  minSats: number | null;
+  /** Inclusive upper bound in sats, or `null` for an open upper bound. */
+  maxSats: number | null;
+  count: number;
+}
+
+/** A single collection entry in {@link SwapFacets.collection}. */
+export interface CollectionFacet {
+  slug: string;
+  name: string;
+  count: number;
+}
+
+/**
+ * Reactive facet counts for the current filter set (from `getSwapFacets`). Each
+ * dimension is counted excluding its *own* active selection — so sibling options
+ * keep clickable, non-zero counts — while the other active filters still apply.
+ */
+export interface SwapFacets {
+  /** Count of matching listings per listing type. */
+  type: Record<ListingType, number>;
+  /** Price buckets (USD presets resolved to sat-bounds), each with its count. */
+  price: PriceBucketFacet[];
+  /** Collections with at least one matching open listing, with counts. */
+  collection: CollectionFacet[];
+}
+
+/**
+ * Params for `getSwapFacets` — the same filter shape as `listSwaps`, minus
+ * pagination and sort (which don't affect counts).
+ */
+export type SwapFacetsParams = Pick<
+  ListSwapsParams,
+  | "listingType"
+  | "priceMin"
+  | "priceMax"
+  | "collection"
+  | "search"
+  | "sales"
+  | "funded"
+  | "filled"
+  | "delisted"
+  | "unattached"
+>;
+
 /** Locked asset UTXO ids for seller address(es). Keys are `{txid}:{vout}` strings. */
 export type LockedAssetUtxoIds = Record<string, true>;
 
@@ -299,6 +355,15 @@ export interface ListSwapsParams {
   sellerAddress?: string;
   buyerAddress?: string;
   listingType?: ListingType;
+  /** Minimum listing price in sats (inclusive). */
+  priceMin?: number;
+  /** Maximum listing price in sats (inclusive). */
+  priceMax?: number;
+  /**
+   * Collection slug. The server expands it to the collection's asset names, so
+   * only Counterparty listings can match. Combine with the other filters freely.
+   */
+  collection?: string;
   funded?: boolean;
   filled?: boolean;
   delisted?: boolean;
