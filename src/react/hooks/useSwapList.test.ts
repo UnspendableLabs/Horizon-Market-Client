@@ -294,6 +294,154 @@ describe("useSwapList — my swaps", () => {
   });
 });
 
+describe("useSwapList — sold", () => {
+  it("keeps sold swaps that carry a stale pending/anomalous flag (unlike the browse feed)", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(
+      listResult(
+        [
+          swap({ id: "a", filled: true }),
+          // A lagging pending_sale cleanup or a later reconciliation flag must
+          // not erase a real historical sale from "Sold" the way it hides a
+          // just-bought listing from the live browse feed.
+          swap({ id: "b", filled: true, pending: true }),
+          swap({ id: "c", filled: true, anomalous: true }),
+        ],
+        3,
+      ),
+    );
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultShowSold: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.swaps.map((s) => s.id).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(result.current.total).toBe(3);
+    // "Sold" on its own is the whole marketplace's sales — NOT filtered by the
+    // connected wallet's seller address.
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ sales: true, sellerAddress: undefined }),
+    );
+  });
+
+  it("Sold + My swaps merges across two seller addresses with sales:true, dedupes by id", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValueOnce(
+        listResult([
+          swap({ id: "1", filled: true, createdAt: "2024-03-01T00:00:00.000Z" }),
+          swap({ id: "2", filled: true, createdAt: "2024-02-01T00:00:00.000Z" }),
+        ]),
+      )
+      .mockResolvedValueOnce(
+        listResult([
+          swap({ id: "2", filled: true, createdAt: "2024-02-01T00:00:00.000Z" }),
+          swap({ id: "3", filled: true, createdAt: "2024-01-01T00:00:00.000Z" }),
+        ]),
+      );
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultShowSold: true, defaultShowMySwaps: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(listSwaps).toHaveBeenCalledTimes(2);
+    expect(result.current.swaps.map((s) => s.id).sort()).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(result.current.total).toBe(3);
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sellerAddress: "bc1qwallet",
+        sales: true,
+        offset: 0,
+        limit: 500,
+      }),
+    );
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sellerAddress: "bc1pwallet",
+        sales: true,
+        offset: 0,
+        limit: 500,
+      }),
+    );
+    expect(result.current.canShowSold).toBe(true);
+  });
+
+  it("Sold and My swaps are independent: combine to 'my sales', Sold alone is everyone's", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(
+        listResult([swap({ id: "sold1", filled: true })], 1),
+      );
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.showSold).toBe(false);
+
+    // "My swaps" alone → my OPEN listings (seller filter, no sales).
+    await act(async () => result.current.setShowMySwaps(true));
+    await waitFor(() => expect(result.current.showMySwaps).toBe(true));
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sellerAddress: "bc1qsame", filled: false }),
+    );
+
+    // + "Sold" → MY sales (seller filter AND sales:true). "My swaps" stays on —
+    // the two are not mutually exclusive.
+    await act(async () => result.current.setShowSold(true));
+    await waitFor(() => expect(result.current.showSold).toBe(true));
+    expect(result.current.showMySwaps).toBe(true);
+    expect(result.current.page).toBe(0);
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sellerAddress: "bc1qsame", sales: true }),
+    );
+
+    // Turn "My swaps" off → EVERYONE's sales (sales:true, no seller filter).
+    await act(async () => result.current.setShowMySwaps(false));
+    await waitFor(() => expect(result.current.showMySwaps).toBe(false));
+    expect(result.current.showSold).toBe(true);
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sales: true, sellerAddress: undefined }),
+    );
+  });
+
+  it("keeps 'Sold' (public feed) but drops 'My swaps' when the wallet logs out", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    ctxRef.current = ctxWith(listSwaps, {
+      addresses: { p2wpkh: "bc1qsame", p2tr: "bc1qsame", publicKey: "02aa" },
+    });
+
+    const { result, rerender } = renderHook(() =>
+      useSwapList({ defaultShowSold: true, defaultShowMySwaps: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.showSold).toBe(true);
+    expect(result.current.showMySwaps).toBe(true);
+
+    ctxRef.current = ctxWith(listSwaps, { addresses: null });
+    rerender();
+    // "My swaps" needs the wallet's addresses, so it drops; "Sold" is public and
+    // survives — logging out just degrades "my sales" to "all sales".
+    await waitFor(() => expect(result.current.showMySwaps).toBe(false));
+    expect(result.current.showSold).toBe(true);
+    expect(result.current.canShowSold).toBe(true);
+  });
+});
+
 describe("useSwapList — kontor availability", () => {
   it("skips the query and shows nothing when kontor is unavailable", async () => {
     const listSwaps = vi.fn();

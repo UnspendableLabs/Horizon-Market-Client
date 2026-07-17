@@ -38,6 +38,7 @@ export interface SwapListStyles {
   filterTabs?: StyleProp<ViewStyle>;
   sortSelect?: StyleProp<ViewStyle>;
   mySwapsToggle?: StyleProp<ViewStyle>;
+  soldToggle?: StyleProp<ViewStyle>;
   grid?: StyleProp<ViewStyle>;
   item?: SwapListItemStyles;
   pagination?: StyleProp<ViewStyle>;
@@ -101,6 +102,9 @@ export function SwapList({
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps,
+    showSold,
+    setShowSold,
+    canShowSold,
     kontorUnavailable,
     page,
     setPage,
@@ -128,7 +132,8 @@ export function SwapList({
   // personal set pinned to the first page only. Pending sell listings are
   // `funded:false` and pending buys are `pending:true`, both already excluded
   // from the main feed, so there's no overlap to dedupe.
-  const gridSwaps = page === 0 ? [...pendingOrders, ...swaps] : swaps;
+  const gridSwaps =
+    page === 0 && !showSold ? [...pendingOrders, ...swaps] : swaps;
 
   const contentAndPagination = (
     <>
@@ -266,6 +271,25 @@ export function SwapList({
               ]}
             >
               {showMySwaps ? "All swaps" : "My swaps"}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {canShowSold && (
+          <TouchableOpacity
+            onPress={() => setShowSold(!showSold)}
+            style={[
+              common.toolbarToggle,
+              showSold && common.toolbarToggleActive,
+              stylesProp?.soldToggle,
+            ]}
+          >
+            <Text
+              style={[
+                common.toolbarToggleText,
+                showSold && common.toolbarToggleTextActive,
+              ]}
+            >
+              {showSold ? "For Sale" : "Sold"}
             </Text>
           </TouchableOpacity>
         )}

@@ -16,7 +16,7 @@ import type { AtomicSwap } from "../../types/index.js";
 import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
-import { mempoolTxUrl } from "./format.js";
+import { formatRelativeTime, mempoolTxUrl } from "./format.js";
 import { pendingSwapTrackingTxid, swapListItemView } from "./swapListHelpers.js";
 import { KontorIcon, NoImageIcon } from "./icons.native.js";
 import type { ResolvedTheme } from "../theme.js";
@@ -162,6 +162,15 @@ export function SwapListItem({
     ? mempoolTxUrl(network, kontorNetwork, pendingSwapTrackingTxid(swap))
     : null;
 
+  // A completed sale (only reachable via the "Sold" filter, which is the only
+  // query path that ever returns `filled: true` — every other feed filters it
+  // out). Already settled, so no Buy/Delist action applies; show when it sold
+  // instead of a Buy/Delist action. `updatedAt` moves to the fill time when a
+  // swap is filled, so it's the closest proxy for "bought at".
+  const isSold = swap.filled === true;
+  const soldAt = Date.parse(swap.updatedAt);
+  const soldAgo = Number.isFinite(soldAt) ? formatRelativeTime(soldAt) : null;
+
   // KOR token listings carry no artwork of their own — show the Kontor brand
   // mark instead of the generic "no image" placeholder.
   const isKontorToken =
@@ -200,6 +209,7 @@ export function SwapListItem({
           {pendingStatus}
         </Text>
       ) : (
+        !isSold &&
         showPerUnit && (
           <Text style={[common.muted, stylesProp?.meta]} numberOfLines={1}>
             {pricePerUnit} sats/unit
@@ -221,6 +231,10 @@ export function SwapListItem({
             Confirming…
           </Text>
         )
+      ) : isSold ? (
+        <Text style={[common.muted, sheet.actionButton]}>
+          {soldAgo ?? "Sold"}
+        </Text>
       ) : (
         <Pressable
           onPress={onAction}
