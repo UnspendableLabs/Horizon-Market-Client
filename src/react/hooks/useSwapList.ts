@@ -51,6 +51,12 @@ export interface UseSwapListOptions {
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
+  /**
+   * Start on the "Sold" feed (completed sales). Independent of
+   * {@link defaultShowMySwaps}: on its own it shows the whole marketplace's
+   * sales; combined with "My swaps" it shows only the wallet's own sales.
+   */
+  defaultShowSold?: boolean;
   limit?: number;
   /**
    * Also fetch the connected wallet's in-progress orders (pending sell listings
@@ -78,6 +84,16 @@ export interface UseSwapListResult {
   showMySwaps: boolean;
   setShowMySwaps: (v: boolean) => void;
   canShowMySwaps: boolean;
+  /**
+   * Show completed sales (filled swaps) instead of open listings, newest first.
+   * Independent of {@link showMySwaps}: on its own it shows the whole
+   * marketplace's sales; combined with "My swaps" it narrows to the connected
+   * wallet's own sales. Always available (a public feed), so `canShowSold` is
+   * always `true`, even logged out.
+   */
+  showSold: boolean;
+  setShowSold: (v: boolean) => void;
+  canShowSold: boolean;
   /**
    * True when the Kontor filter is selected but Kontor is not enabled
    * (no `kontorNetwork="signet"` on the provider). Kontor is signet-only, so
@@ -134,6 +150,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
+    defaultShowSold = false,
     limit = DEFAULT_LIMIT,
     includePendingOrders = false,
   } = options;
@@ -145,6 +162,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultSortOption,
   );
   const [showMySwaps, setShowMySwapsState] = useState(defaultShowMySwaps);
+  const [showSold, setShowSoldState] = useState(defaultShowSold);
   const [page, setPageState] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -201,8 +219,17 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     setPageState(0);
   }, []);
 
+  // "My swaps" and "Sold" are independent dimensions, not mutually exclusive:
+  // "Sold" switches the feed from open listings to completed sales, and
+  // "My swaps" narrows whichever feed to the connected wallet's own orders. So
+  // "Sold" alone is everyone's sales, and "Sold" + "My swaps" is just mine.
   const setShowMySwaps = useCallback((v: boolean) => {
     setShowMySwapsState(v);
+    setPageState(0);
+  }, []);
+
+  const setShowSold = useCallback((v: boolean) => {
+    setShowSoldState(v);
     setPageState(0);
   }, []);
 
@@ -243,7 +270,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     [],
   );
 
-  // Drop "My swaps" filter when the user logs out.
+  // Drop "My swaps" when the user logs out (it needs the wallet's addresses).
+  // "Sold" stays: it's a public feed of everyone's sales, so logging out just
+  // degrades "my sales" to "all sales" rather than clearing the filter.
   useEffect(() => {
     if (addresses) return;
     setShowMySwapsState(false);
@@ -271,15 +300,25 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     setError(null);
 
     const sort = SORT_MAP[sortOption];
-    const baseParams = {
-      listingType: listingType ?? undefined,
-      orderBy: sort.orderBy,
-      order: sort.order,
-      filled: false,
-      delisted: false,
-      funded: true,
-    };
+    const baseParams = showSold
+      ? {
+          listingType: listingType ?? undefined,
+          orderBy: sort.orderBy,
+          order: sort.order,
+          sales: true,
+        }
+      : {
+          listingType: listingType ?? undefined,
+          orderBy: sort.orderBy,
+          order: sort.order,
+          filled: false,
+          delisted: false,
+          funded: true,
+        };
 
+    // The seller filter is driven by "My swaps" ONLY — never by "Sold". "Sold"
+    // shows the whole marketplace's completed sales; adding "My swaps" narrows
+    // them to the connected wallet's own sales.
     const sellerAddresses =
       showMySwaps && addresses ? getSellerAddresses(addresses) : [];
 
@@ -291,9 +330,14 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       // server-side — `listSwaps` has no `pending` filter — so once the indexer
       // flags a just-bought swap `pending`, it keeps coming back in the feed. This
       // guard hides it and, unlike the in-memory `removeSwap`, survives a reload.
-      const filtered = items.filter(
-        (s) => !s.pending && !s.anomalous && !dismissed.has(s.id),
-      );
+      // Skip this in Sold mode: every row there is already `filled`, and a lagging
+      // cleanup of its (now historical) `pending_sale` row or a later `anomalous`
+      // flag must not erase it from the seller's own sale history.
+      const filtered = showSold
+        ? items.filter((s) => !dismissed.has(s.id))
+        : items.filter(
+            (s) => !s.pending && !s.anomalous && !dismissed.has(s.id),
+          );
       setSwaps(filtered);
       setTotal(count - (items.length - filtered.length));
       // Stamp freshness on SUCCESS only (not in finish()/finally), so a failed
@@ -356,6 +400,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     listingType,
     sortOption,
     showMySwaps,
+    showSold,
     addresses,
     page,
     limit,
@@ -542,6 +587,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     showMySwaps,
     setShowMySwaps,
     canShowMySwaps: addresses !== null,
+    showSold,
+    setShowSold,
+    canShowSold: true,
     kontorUnavailable,
     page,
     setPage,
