@@ -39,13 +39,30 @@ export interface Signer {
     publicKey: string;
     xOnlyPubkey?: string;
   };
-  signPsbtHex(psbtHex: string, inputIndices: number[]): string;
-  signMessage(address: string, message: string): string;
+  /**
+   * Sign the given input indices of a PSBT (hex in, signed hex out).
+   *
+   * May return synchronously (in-process key signers like {@link LocalSigner})
+   * or a promise — external wallets (browser extensions, mobile wallets) sign
+   * asynchronously through a popup/native prompt and never expose their key. All
+   * SDK call sites `await` the result, so both forms work.
+   */
+  signPsbtHex(
+    psbtHex: string,
+    inputIndices: number[],
+  ): string | Promise<string>;
+  /** Sign a message (BIP322). Sync for key signers, async for external wallets. */
+  signMessage(address: string, message: string): string | Promise<string>;
   /**
    * Optional: produce a Kontor SDK `Signing` for the given `@kontor/sdk` Chain.
-   * Implemented by {@link LocalSigner} (reuses its in-memory private key via
-   * `LocalKey.fromPrivateKey` — the key never leaves the client). Custom signers
-   * that don't implement this cannot perform Kontor operations.
+   * Implemented by {@link LocalSigner} / {@link HDSigner} (reuse their in-memory
+   * key via `LocalKey.fromPrivateKey` — the key never leaves the client).
+   *
+   * External wallet signers (browser extension / mobile wallet) do NOT implement
+   * this — they hold no key. Kontor still works for them: as long as
+   * `getAddresses()` returns a Taproot address and its x-only public key, the SDK
+   * builds a wallet-backed `Signing` that delegates to `signPsbtHex` /
+   * `signMessage` (see `getKontorSigning` in `kontor/signing.ts`).
    *
    * Typed `unknown` so this interface stays free of a hard `@kontor/sdk` import;
    * the Kontor modules cast to the real `Chain`/`Signing` types at the boundary.

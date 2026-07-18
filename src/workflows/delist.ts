@@ -30,10 +30,13 @@ export async function delistSwap(
     startDelist(http, swapId),
   );
 
-  const signature = progress.runSync("signDelistMessage", () =>
-    signer.signMessage(
-      delistRequest.atomicSwap.sellerAddress,
-      delistRequest.id,
+  // `runAsync`: external-wallet signers prompt asynchronously (popup).
+  const signature = await progress.runAsync("signDelistMessage", () =>
+    Promise.resolve(
+      signer.signMessage(
+        delistRequest.atomicSwap.sellerAddress,
+        delistRequest.id,
+      ),
     ),
   );
 

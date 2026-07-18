@@ -529,7 +529,7 @@ export class HorizonMarketClient {
       this.http,
       address,
     );
-    const signature = signer.signMessage(address, message);
+    const signature = await signer.signMessage(address, message);
 
     const result = await apiWalletSignInToken(this.http, {
       address,
@@ -561,7 +561,7 @@ export class HorizonMarketClient {
       this.http,
       address,
     );
-    const signature = signer.signMessage(address, message);
+    const signature = await signer.signMessage(address, message);
 
     await apiCompleteWalletSignIn(this.http, {
       address,

@@ -158,23 +158,27 @@ export async function openSellOrder(
 
   let prep: SignedSellPrepResult | undefined;
   if (quote.prepPsbt) {
-    const signedPrepHex = progress.runSync("signPrepPsbt", () =>
-      signer.signPsbtHex(quote.prepPsbt!, quote.prepInputsToSign),
+    // `runAsync` (not `runSync`): the signer may sign asynchronously — an
+    // external wallet prompts through a popup — so its result is awaited.
+    const signedPrepHex = await progress.runAsync("signPrepPsbt", () =>
+      Promise.resolve(
+        signer.signPsbtHex(quote.prepPsbt!, quote.prepInputsToSign),
+      ),
     );
     prep = progress.runSync("finalizePrepPsbt", () =>
       buildSellPrepResult(quote, signedPrepHex, btcNetwork),
     );
   }
 
-  const signedSwapPsbt = progress.runSync("signSwapPsbt", () =>
-    signer.signPsbtHex(quote.swapPsbt, quote.swapInputsToSign),
+  const signedSwapPsbt = await progress.runAsync("signSwapPsbt", () =>
+    Promise.resolve(signer.signPsbtHex(quote.swapPsbt, quote.swapInputsToSign)),
   );
 
   let feePayment: FeePayment | undefined;
   if (quote.feePsbt && quote.feePaymentId) {
     // Separate platform-fee PSBT (existing-UTXO counterparty/ordinal, zeld existing UTXO).
-    const signedFeePsbt = progress.runSync("signFeePsbt", () =>
-      signer.signPsbtHex(quote.feePsbt!, quote.feeInputsToSign),
+    const signedFeePsbt = await progress.runAsync("signFeePsbt", () =>
+      Promise.resolve(signer.signPsbtHex(quote.feePsbt!, quote.feeInputsToSign)),
     );
     feePayment = {
       psbtHex: signedFeePsbt,

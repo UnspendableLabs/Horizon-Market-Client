@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { HttpClient } from "../api/http.js";
 import { fillSwaps } from "./buy.js";
 import type { WorkflowProgressEvent } from "../types/progress.js";
-import { makeSequentialFetch, makeSigner } from "../test-utils.js";
+import { makeAsyncSigner, makeSequentialFetch, makeSigner } from "../test-utils.js";
 
 const WIRE_BUY_QUOTE = {
   psbt: "70736274ff_buy",
@@ -50,6 +50,32 @@ describe("fillSwaps", () => {
     expect(body.psbt_hex).toBe("70736274ff_buy_signed");
     expect(body.swap_ids).toEqual(["swap_abc"]);
     expect(body.buyer_address).toBe("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+  });
+
+  it("awaits an asynchronous signer (external wallet) for the buyer PSBT", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_BUY_QUOTE } },
+      { status: 200, body: { data: WIRE_PENDING_SALES } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    // signPsbtHex resolves asynchronously (a wallet popup). A dropped `await`
+    // would submit the unresolved Promise (serialized as `{}`) as psbt_hex.
+    const signer = makeAsyncSigner({
+      p2wpkh: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+    });
+
+    await fillSwaps(
+      { swapIds: ["swap_abc"], buyerAddress: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" },
+      http,
+      signer,
+    );
+
+    const [, purchaseInit] = (fetch as ReturnType<typeof makeSequentialFetch>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(purchaseInit.body as string);
+    expect(body.psbt_hex).toBe("70736274ff_buy_signed");
   });
 
   it("auto-fills buyerAddress from signer when omitted", async () => {

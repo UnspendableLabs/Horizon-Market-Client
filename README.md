@@ -65,7 +65,11 @@ flowchart LR
 
 Use the high-level workflow methods (`openSellOrder`, `fillSwaps`, `delistSwap`) or the REST helpers for manual control.
 
-For manual sell flows, `signAndFinalizeSellPrep(quote, signer, btcNetwork)` signs and finalizes attach or zeld transfer prep PSBTs from a sell quote (`btcNetwork` is a bitcoinjs-lib `Network` object — see [examples/sell.ts](examples/sell.ts)).
+For manual sell flows, `await signAndFinalizeSellPrep(quote, signer, btcNetwork)` signs and finalizes attach or zeld transfer prep PSBTs from a sell quote (`btcNetwork` is a bitcoinjs-lib `Network` object — see [examples/sell.ts](examples/sell.ts)). It is async because a `Signer` may sign asynchronously (see below).
+
+### Asynchronous signers
+
+A `Signer`'s `signPsbtHex` / `signMessage` may return either a `string` or a `Promise<string>`. Key-based signers (`LocalSigner`, `HDSigner`) sign synchronously, but a custom `Signer` that delegates to an external wallet — a browser extension or mobile wallet that prompts the user and never exposes its key — can sign asynchronously. Every workflow (`openSellOrder`, `fillSwaps`, `delistSwap`), send helper, and `signAndFinalizeSellPrep` awaits the result, so both forms work. `getAddresses()` stays synchronous (addresses are known up front).
 
 ## Progress callbacks
 
@@ -123,7 +127,7 @@ function App() {
 
 | Export | Description |
 |--------|-------------|
-| `HorizonMarketProvider` | Context: client, addresses, `initialize` / `logout`, theme |
+| `HorizonMarketProvider` | Context: client, addresses, `initialize` / `initializeWithMnemonic` / `initializeWithSigner` / `logout`, theme |
 | `useHorizonMarket`, `useTheme` | Access provider state and resolved theme |
 | `useLoginPanel`, `useAssets`, `useSellOrder`, `useSwapConfirmation`, `useSwapList` | Headless hooks (build your own UI) |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
@@ -136,6 +140,10 @@ function App() {
 | `defaultTheme`, `resolveTheme` | Theme helpers (plus `themeToCssVars` / `webTokens` on web) |
 
 On **web**, the provider injects theme CSS variables (`--hm-*`) and falls back to shadcn/ui tokens when present. On **React Native**, pass `styles` overrides per component.
+
+### Connecting an external wallet
+
+Besides `initialize` (raw key) and `initializeWithMnemonic` (phrase), the context exposes `initializeWithSigner(signer)` for wallets the SDK can't hold the key for — a browser extension or mobile wallet that signs through a prompt. Provide a `Signer` whose `signPsbtHex` / `signMessage` are asynchronous (see [Asynchronous signers](#asynchronous-signers)) and whose `getAddresses()` returns the connected addresses; the SDK never sees a private key. Pair it with `autoSignIn={false}` on the provider when you authenticate the API another way (e.g. a same-origin session cookie) so connecting doesn't trigger an extra wallet signature prompt — sign-in stays available on demand via the client's `signInWithWallet()`.
 
 ## Quick Start
 
@@ -242,8 +250,26 @@ the workflows throw marker errors so you can recover without re-broadcasting:
 - `fillSwaps` → `KontorPurchaseNotRecordedError` carrying `{ swapId, txId, buyerAddress }` — the offer is consumed; retry only the recording
 - `delistSwap` → `KontorDelistNotRecordedError` carrying `{ swapId }` — the revoke happened; re-run only `startDelist` → sign → `confirmDelist`
 
-> Requires a `LocalSigner` (i.e. construct with `privateKey`). Custom signers must
-> implement the optional `getKontorSigning(chain)` capability to support Kontor.
+**External wallets.** Kontor also works through a connected browser-extension or
+mobile wallet (Xverse, Horizon Wallet, …), not just an in-process key. Connect one via
+[`initializeWithSigner(signer)`](#connecting-an-external-wallet): when the `Signer`
+doesn't hold a key (no `getKontorSigning`) but its `getAddresses()` returns a Taproot
+address and its x-only public key (`{ p2tr, xOnlyPubkey }`), the SDK builds a wallet-backed
+Kontor `Signing` that signs each transaction through the wallet's `signPsbtHex` prompt —
+the key is never exposed. Two things the wallet path needs:
+
+- The `xOnlyPubkey` must be the wallet's **internal** taproot key (what wallets return on
+  connect), not the tweaked output key decoded from a `bc1p…` address. The SDK re-derives
+  the P2TR address from it and asserts it matches `p2tr`, so a wrong key or network fails
+  immediately.
+- The wallet's `signPsbtHex` must honor the per-input sighash the SDK stamps into the PSBT
+  (the seller's detach input is signed `SINGLE | ANYONECANPAY`) — i.e. pass the wallet's
+  `allowedSignHash` through when a non-default sighash is present.
+
+> Key-holding signers (`LocalSigner` / `HDSigner`, built from `privateKey` or `mnemonic`)
+> use their in-process key via `getKontorSigning(chain)`. BLS registration (raw
+> Schnorr-over-digest) is the only Kontor capability the external-wallet path can't do, and
+> no marketplace flow needs it.
 
 ## Locked asset UTXOs
 

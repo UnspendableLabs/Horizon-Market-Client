@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-18
+
+### Added
+
+- Asynchronous signers: `Signer.signPsbtHex` / `signMessage` may now return `string` **or** `Promise<string>`, so a custom `Signer` can delegate to an external wallet (browser extension / mobile) that signs through a prompt and never exposes its key. Every workflow (`openSellOrder`, `fillSwaps`, `delistSwap`), send helper, and `signAndFinalizeSellPrep` awaits the result; `LocalSigner` / `HDSigner` are unchanged (still synchronous). `getAddresses()` stays synchronous.
+- **Kontor now works with external wallets** (browser extension / mobile — Xverse, Horizon Wallet, …), not just in-process key signers. When a `Signer` doesn't implement `getKontorSigning` but exposes a Taproot address and its x-only public key (`getAddresses()` → `{ p2tr, xOnlyPubkey }`), the SDK builds a wallet-backed Kontor `Signing` that delegates transaction signing to `signPsbtHex` and message signing to `signMessage` — so `openSellOrder` / `fillSwaps` / `delistSwap` for KOR & Kontor-NFT listings run through the connected wallet's signing prompt, key never exposed. The wallet's **internal** taproot x-only key is Kontor's identity (re-tweaked to the P2TR address, which is asserted to match the wallet's own so a wrong key/network fails loudly). BLS registration (raw Schnorr-over-digest) is the only Kontor capability unavailable this way, and no marketplace flow needs it. Adds `@scure/btc-signer` / `@scure/base` as direct dependencies.
+- React: `HorizonMarketProvider` context gains `initializeWithSigner(signer)` — connect from a host-supplied `Signer` (external wallet) instead of a raw key or phrase; addresses come from the signer, `exportMnemonic()` returns `null`, and `sessionSource` reports `"external"`.
+- React: new `autoSignIn` prop on `HorizonMarketProvider` (default `true`) — set `false` to skip the automatic BIP322 wallet sign-in on connect (for hosts that authenticate another way, e.g. a same-origin session cookie, or an external signer whose message signing would pop the wallet). Sign-in stays available on demand via `client.signInWithWallet()`.
+
+### Changed
+
+- **BREAKING:** `signAndFinalizeSellPrep(quote, signer, btcNetwork)` is now `async` and returns `Promise<SignedSellPrepResult | undefined>` (was synchronous), so it can await asynchronous signers. Add `await` at call sites.
+
 ## [0.1.2] - 2026-07-17
 
 ### Added

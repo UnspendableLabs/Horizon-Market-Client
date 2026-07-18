@@ -158,3 +158,28 @@ export function makeSigner(
     signMessage: vi.fn().mockReturnValue("base64sig=="),
   };
 }
+
+/**
+ * Like {@link makeSigner}, but `signPsbtHex` / `signMessage` resolve
+ * ASYNCHRONOUSLY (they return a `Promise<string>`), modelling an external wallet
+ * (browser extension / mobile) that signs through a popup and never exposes its
+ * key. Resolves to the exact same values as {@link makeSigner}, so a test can
+ * assert the identical signed output — the point is that every signer call site
+ * must `await` the result. A dropped `await` would surface the unresolved
+ * Promise (serialized as `{}`) in place of the signature, failing the assertion.
+ */
+export function makeAsyncSigner(
+  addresses?: Partial<ReturnType<Signer["getAddresses"]>>,
+): Signer {
+  return {
+    getAddresses: vi.fn().mockReturnValue({
+      p2wpkh: "bc1qseller",
+      publicKey: "02aabbcc",
+      ...addresses,
+    }),
+    signPsbtHex: vi
+      .fn()
+      .mockImplementation(async (hex: string) => `${hex}_signed`),
+    signMessage: vi.fn().mockImplementation(async () => "base64sig=="),
+  };
+}

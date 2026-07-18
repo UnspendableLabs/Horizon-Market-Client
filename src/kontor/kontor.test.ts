@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as btc from "bitcoinjs-lib";
-import { signet } from "@kontor/sdk";
+import { Identity, signet } from "@kontor/sdk";
 import { resolveKontorChain, kontorNativeTokenAddress } from "./chain.js";
 import {
   attachRevealTxidFromBlob,
@@ -89,14 +89,14 @@ describe("attachRevealEscrowFromBlob", () => {
 });
 
 describe("getKontorSigning", () => {
-  it("throws a clear error for a signer without getKontorSigning", async () => {
+  it("throws a clear error for a signer with neither getKontorSigning nor a taproot identity", async () => {
     const signer: Signer = {
       getAddresses: () => ({ p2wpkh: "tb1qx", publicKey: "00" }),
       signPsbtHex: () => "",
       signMessage: () => "",
     };
     await expect(getKontorSigning(signer, signet)).rejects.toThrow(
-      /getKontorSigning/,
+      /getKontorSigning|x-only public key/,
     );
   });
 
@@ -106,6 +106,27 @@ describe("getKontorSigning", () => {
     // The Signing carries a taproot identity address — no key is exposed.
     expect(typeof (signing as { identity: { address: string } }).identity.address).toBe(
       "string",
+    );
+  });
+
+  it("falls back to a wallet-backed Signing for an external signer (no key)", async () => {
+    const xOnly = "ab".repeat(32);
+    const p2tr = Identity.fromXOnly(xOnly, signet).address;
+    // An external wallet signer: no getKontorSigning, but exposes its taproot
+    // identity and signs PSBTs asynchronously through the wallet.
+    const signer: Signer = {
+      getAddresses: () => ({
+        p2wpkh: "tb1qx",
+        p2tr,
+        publicKey: "00",
+        xOnlyPubkey: xOnly,
+      }),
+      signPsbtHex: (psbtHex) => psbtHex,
+      signMessage: () => "",
+    };
+    const signing = await getKontorSigning(signer, signet);
+    expect((signing as { identity: { address: string } }).identity.address).toBe(
+      p2tr,
     );
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { HttpClient } from "../api/http.js";
 import { delistSwap } from "./delist.js";
 import type { WorkflowProgressEvent } from "../types/progress.js";
-import { makeSequentialFetch, makeSigner } from "../test-utils.js";
+import { makeAsyncSigner, makeSequentialFetch, makeSigner } from "../test-utils.js";
 
 describe("delistSwap", () => {
   it("starts delist, signs the request id with BIP322, confirms", async () => {
@@ -43,6 +43,25 @@ describe("delistSwap", () => {
       "https://horizon.market/api/atomic-swaps/delist-requests/dr_abc123",
     );
     expect(confirmInit.method).toBe("PUT");
+    expect(JSON.parse(confirmInit.body as string)).toEqual({ signature: "base64sig==" });
+  });
+
+  it("awaits an asynchronous signer (external wallet) for the BIP322 signature", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 201, body: { data: { id: "dr_1", atomic_swap: { id: "swap_abc", seller_address: "bc1qseller" } } } },
+      { status: 201, body: { data: { id: "dr_1", signature: "sig" } } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    // signMessage resolves asynchronously (a wallet popup). A dropped `await`
+    // would PUT the unresolved Promise (serialized as `{}`) as the signature.
+    const signer = makeAsyncSigner();
+
+    await delistSwap("swap_abc", http, signer);
+
+    const [, confirmInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(confirmInit.body as string)).toEqual({ signature: "base64sig==" });
   });
 

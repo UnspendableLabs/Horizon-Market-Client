@@ -1,6 +1,6 @@
 {
   "name": "@unspendablelabs/horizon-market-client",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "TypeScript client for the Horizon Market Atomic Swap API",
   "keywords": [
     "bitcoin",
@@ -109,8 +109,10 @@
     "@kontor/sdk": "^0.3.0-rc.6",
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
+    "@scure/base": "^2.2.0",
     "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^2.2.0",
+    "@scure/btc-signer": "^2.2.0",
     "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^7.0.1",
     "ecpair": "^3.0.1"

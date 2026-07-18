@@ -121,7 +121,7 @@ export async function prepareCounterparty(
   const totalOut = psbt.txOutputs.reduce((sum, o) => sum + o.value, 0n);
   const feeSats = totalIn - totalOut;
 
-  const signedHex = signer.signPsbtHex(
+  const signedHex = await signer.signPsbtHex(
     psbt.toHex(),
     psbt.data.inputs.map((_, i) => i),
   );
