@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-07-18
+## [0.2.0] - 2026-07-19
 
 ### Added
 
@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** `signAndFinalizeSellPrep(quote, signer, btcNetwork)` is now `async` and returns `Promise<SignedSellPrepResult | undefined>` (was synchronous), so it can await asynchronous signers. Add `await` at call sites.
+
+### Fixed
+
+- Native example app (iOS): fixed a launch crash on TestFlight and physical iPhones — `dyld: Library not loaded: @rpath/RNWorklets.framework/RNWorklets`. Expo 57's precompiled native modules shipped a dynamic `RNReanimated.framework` that links `@rpath/RNWorklets.framework`, but that `RNWorklets.framework` was not embedded in the device IPA, so dyld failed before JS started (the simulator build embedded it and hid the issue). `react-native-reanimated` and `react-native-worklets` are now forced to build from source via `expo.autolinking.ios.buildFromSource`; under the app's static linking they compile into static libs, so no dynamic `RNWorklets.framework` is produced and the `@rpath` load disappears. Both must be source-built together — building only worklets leaves the precompiled reanimated referencing the un-embedded framework.
 
 ## [0.1.2] - 2026-07-17
 
@@ -74,5 +78,7 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.2.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/releases/tag/v0.1.0
