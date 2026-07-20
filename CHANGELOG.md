@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-07-19
+## [0.2.0] - 2026-07-20
 
 ### Added
 
@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - React: `HorizonMarketProvider` context gains `initializeWithSigner(signer)` — connect from a host-supplied `Signer` (external wallet) instead of a raw key or phrase; addresses come from the signer, `exportMnemonic()` returns `null`, and `sessionSource` reports `"external"`.
 - React: new `autoSignIn` prop on `HorizonMarketProvider` (default `true`) — set `false` to skip the automatic BIP322 wallet sign-in on connect (for hosts that authenticate another way, e.g. a same-origin session cookie, or an external signer whose message signing would pop the wallet). Sign-in stays available on demand via `client.signInWithWallet()`.
 - React: exported the sell-review data layer — `useSellReview` plus `SellCost`, `UseSellReviewArgs`, `UseSellReviewResult`, `FeeOption`, and the `FEE_HINTS` / `FEE_LABELS` / `FEE_OPTIONS` constants. It powers the packaged `<SellOrderForm/>` confirm step (listing/attach/network cost breakdown, live fee-rate selection, fee waiver, Kontor listing + attach-miner fee estimates); exporting it lets a host render its own confirmation UI on the exact same data, the way apps already build on `useSellOrder`.
+- React: exported the buy-review data layer — `useBuyReview` plus `UseBuyReviewArgs` / `UseBuyReviewResult` (its `FeeOption` and the `FEE_HINTS` / `FEE_LABELS` / `FEE_OPTIONS` constants are already exported via `useSellReview`). It powers the packaged `<SwapConfirmation/>` buy confirm step (price + royalty + buyer miner-fee breakdown, live fee-rate selection, Kontor estimates); exporting it lets a host render its own buy confirmation UI on the exact same data, symmetric with `useSellReview`.
 
 ### Changed
 
