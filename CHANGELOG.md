@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-07-21
 
+### Added
+
+- React: new `onSellAsset?: (asset: AssetOption) => void` prop on the web `<WalletBalances/>` — override the per-asset "Sell" action. When provided, clicking Sell (on the XCP / KOR / ZELD headline tokens and on every "other holdings" tile) calls the host callback with the pre-selected asset instead of opening the built-in inline `<SellOrderForm/>` modal — e.g. to navigate to a dedicated Sell screen. When omitted, the internal modal is used as before. Brings the web component to parity with the native `WalletBalances`, which already exposes `onSellAsset`.
+
 ### Changed
 
 - Withdraw / send: the wallet signature is now requested at **broadcast time, on confirm** — not while preparing the review screen. `prepareSend` (and `prepareBtc` / `prepareCounterparty` / `prepareZeld` / `prepareOrdinal`) now compose and fund the transaction but leave it **unsigned**; `PreparedSend.broadcast()` signs it (prompting the wallet) then publishes. The packaged `<WalletBalances/>` withdraw flow therefore shows its confirmation screen first and only pops the wallet when the user hits "Confirm & send". `feeSats` is unchanged — it is computed from UTXO selection at compose time, so the review screen still shows the exact miner fee before any signature. Kontor sends (`kor` / `kontor-nft`) were already sign-on-broadcast. `SendClient.send()` / `sendAsset()` (the one-shot `prepare().broadcast()` helpers) are unaffected.
