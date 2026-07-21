@@ -53,8 +53,12 @@ export type MnemonicWordCount = 12 | 24;
  *   (the Restore / New HD wallet flows). The phrase *is* the wallet — it is
  *   always an HD wallet — so the single-key `"horizon-market"` mode doesn't
  *   apply and a host should hide the toggle.
+ * - `"external"` — a host-supplied {@link Signer} through `initializeWithSigner`
+ *   (e.g. a browser-extension / mobile wallet that signs asynchronously and never
+ *   exposes its key). Addresses come straight from the signer, so neither the
+ *   derivation-mode toggle nor `exportMnemonic` applies.
  */
-export type SessionSource = "key" | "mnemonic";
+export type SessionSource = "key" | "mnemonic" | "external";
 
 export interface HorizonMarketContextValue {
   client: HorizonMarketClient;
@@ -84,6 +88,18 @@ export interface HorizonMarketContextValue {
    * follow the active prop.
    */
   initializeWithMnemonic: (mnemonic: string, mode?: DerivationMode) => void;
+  /**
+   * Connect from a host-supplied {@link Signer} instead of a key or phrase — for
+   * wallets the SDK can't hold the key for (browser extensions, mobile wallets).
+   * The signer owns signing (often asynchronous, via a popup) and provides the
+   * addresses through `getAddresses()`; the SDK never sees a private key, so
+   * `exportMnemonic()` returns `null` and the derivation-mode toggle is inert.
+   *
+   * Supersedes any prior key/phrase session. Pair with `autoSignIn={false}` when
+   * the host authenticates the API another way (e.g. a same-origin session
+   * cookie), so connecting doesn't trigger an extra wallet signature prompt.
+   */
+  initializeWithSigner: (signer: Signer) => void;
   logout: () => void;
   /**
    * How the current wallet connected (see {@link SessionSource}), or `null` when
@@ -192,6 +208,15 @@ export interface HorizonMarketProviderProps {
   mnemonicWordCount?: MnemonicWordCount;
   /** Called when the in-app selector changes the phrase length, for persistence. */
   onMnemonicWordCountChange?: (words: MnemonicWordCount) => void;
+  /**
+   * Whether to automatically establish a Horizon Market session (BIP322 wallet
+   * sign-in) when a wallet connects, so free credits waive the listing fee.
+   * Defaults to `true`. Set `false` for hosts that authenticate another way
+   * (e.g. a same-origin session cookie) or use an external {@link Signer} whose
+   * message signing would pop the wallet on connect — sign-in stays available on
+   * demand via the client's `signInWithWallet()`.
+   */
+  autoSignIn?: boolean;
   children: ReactNode;
 }
 
@@ -216,6 +241,7 @@ export function HorizonMarketProvider({
   onDerivationModeChange,
   mnemonicWordCount = 12,
   onMnemonicWordCountChange,
+  autoSignIn = true,
   children,
 }: HorizonMarketProviderProps) {
   const [authState, setAuthState] = useState<AuthState | null>(null);
@@ -373,6 +399,17 @@ export function HorizonMarketProvider({
     [buildSignerFromMnemonic],
   );
 
+  const initializeWithSigner = useCallback((signer: Signer) => {
+    // Host-owned signer (external wallet): no key/phrase to retain, so the
+    // in-place re-derivation on mode / word-count change is inert (the effect
+    // below early-returns while both refs are null). Addresses come from the
+    // signer itself.
+    privateKeyRef.current = null;
+    mnemonicRef.current = null;
+    setSessionSource("external");
+    setAuthState({ signer, addresses: signer.getAddresses() });
+  }, []);
+
   // Re-derive the connected wallet's addresses in place when the derivation mode
   // or phrase length changes (both captured by buildSigner). No-op until a key is
   // connected; the resulting address change flows into the sign-in effect below,
@@ -451,6 +488,11 @@ export function HorizonMarketProvider({
       setSignInError(null);
       return;
     }
+    // Opt-out: hosts that authenticate the API another way (e.g. a same-origin
+    // session cookie) or connect an external signer whose message signing would
+    // pop the wallet on connect. Sign-in is still available on demand via the
+    // client's `signInWithWallet()`.
+    if (!autoSignIn) return;
     const address = authState.addresses.p2wpkh;
     if (signedInFor.current === address) return;
     signedInFor.current = address;
@@ -495,6 +537,7 @@ export function HorizonMarketProvider({
     zeldApiBaseUrl,
     kontorNftContractAddress,
     fetchImpl,
+    autoSignIn,
   ]);
 
   const refreshCredits = useCallback(async () => {
@@ -529,6 +572,7 @@ export function HorizonMarketProvider({
       addresses: authState?.addresses ?? null,
       initialize,
       initializeWithMnemonic,
+      initializeWithSigner,
       logout,
       sessionSource,
       derivationMode,
@@ -551,7 +595,7 @@ export function HorizonMarketProvider({
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, initializeWithSigner, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
   );
 
   return (

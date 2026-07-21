@@ -99,8 +99,9 @@ export async function fillSwaps(
     requestBuyQuote(http, quoteParams),
   );
 
-  const signedPsbtHex = progress.runSync("signBuyerPsbt", () =>
-    signer.signPsbtHex(quote.psbt, quote.inputsToSign),
+  // `runAsync`: the signer may prompt an external wallet asynchronously.
+  const signedPsbtHex = await progress.runAsync("signBuyerPsbt", () =>
+    Promise.resolve(signer.signPsbtHex(quote.psbt, quote.inputsToSign)),
   );
 
   return progress.runAsync("submitPurchase", () =>

@@ -64,6 +64,35 @@ export type {
   UseSwapListResult,
 } from "./hooks/index.js";
 
+// The sell-review data layer that powers the packaged <SellOrderForm/> confirm
+// step (cost breakdown, live fee-rate selection, fee waiver, and the Kontor
+// fee estimates). Exported so an app can render its OWN confirmation UI on the
+// exact same data — the same dogfooding stance apps take with useSellOrder.
+export {
+  useSellReview,
+  FEE_HINTS,
+  FEE_LABELS,
+  FEE_OPTIONS,
+} from "./internal/useSellReview.js";
+export type {
+  UseSellReviewArgs,
+  UseSellReviewResult,
+  FeeOption,
+} from "./internal/useSellReview.js";
+export type { SellCost } from "./internal/useSellQuotePreview.js";
+
+// The buy-review data layer, symmetric with useSellReview above. Powers the
+// packaged buy confirm step (price + royalty + miner fee breakdown, live
+// fee-rate selection, and the Kontor fee estimates). Exported so an app can
+// render its OWN buy confirmation UI on the exact same data. Only the hook and
+// its arg/result types are re-exported here — FEE_HINTS/FEE_OPTIONS/FEE_LABELS/
+// FeeOption are already exported via the useSellReview block above.
+export { useBuyReview } from "./internal/useBuyReview.js";
+export type {
+  UseBuyReviewArgs,
+  UseBuyReviewResult,
+} from "./internal/useBuyReview.js";
+
 export type {
   HorizonMarketTheme,
   HorizonMarketThemeColors,

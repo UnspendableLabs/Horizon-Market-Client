@@ -35,18 +35,31 @@ function hybridSigner(): Signer {
   };
 }
 
+/** {@link hybridSigner} whose signPsbtHex resolves asynchronously (external wallet). */
+function asyncHybridSigner(): Signer {
+  return {
+    getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
+    signPsbtHex: vi.fn(async (hex: string, indices: number[]) =>
+      hex === FIXTURE_PSBT_HEX
+        ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
+        : `${hex}_signed`,
+    ),
+    signMessage: async () => "base64sig",
+  };
+}
+
 describe("signAndFinalizeSellPrep", () => {
-  it("returns undefined when quote has no prep PSBT", () => {
+  it("returns undefined when quote has no prep PSBT", async () => {
     const signer = hybridSigner();
     expect(
-      signAndFinalizeSellPrep(BASE_QUOTE, signer, btc.networks.bitcoin),
+      await signAndFinalizeSellPrep(BASE_QUOTE, signer, btc.networks.bitcoin),
     ).toBeUndefined();
     expect(signer.signPsbtHex).not.toHaveBeenCalled();
   });
 
-  it("finalizes attach prep to funding_tx_hex", () => {
+  it("finalizes attach prep to funding_tx_hex", async () => {
     const signer = hybridSigner();
-    const result = signAndFinalizeSellPrep(
+    const result = await signAndFinalizeSellPrep(
       {
         ...BASE_QUOTE,
         prepPsbt: FIXTURE_PSBT_HEX,
@@ -64,9 +77,9 @@ describe("signAndFinalizeSellPrep", () => {
     expect(result?.zeldPayment).toBeUndefined();
   });
 
-  it("finalizes zeld transfer prep to zeld_payment fields", () => {
+  it("finalizes zeld transfer prep to zeld_payment fields", async () => {
     const signer = hybridSigner();
-    const result = signAndFinalizeSellPrep(
+    const result = await signAndFinalizeSellPrep(
       {
         ...BASE_QUOTE,
         prepPsbt: FIXTURE_PSBT_HEX,
@@ -85,9 +98,9 @@ describe("signAndFinalizeSellPrep", () => {
     expect(result?.fundingTxHex).toBeUndefined();
   });
 
-  it("finalizes zeld transfer prep to funding_tx_hex when fee is waived", () => {
+  it("finalizes zeld transfer prep to funding_tx_hex when fee is waived", async () => {
     const signer = hybridSigner();
-    const result = signAndFinalizeSellPrep(
+    const result = await signAndFinalizeSellPrep(
       {
         ...BASE_QUOTE,
         prepPsbt: FIXTURE_PSBT_HEX,
@@ -104,9 +117,29 @@ describe("signAndFinalizeSellPrep", () => {
     expect(result?.zeldPayment).toBeUndefined();
   });
 
-  it("throws when prep_psbt is present but prep_kind is null", () => {
+  it("awaits an asynchronous signer before finalizing (external wallet)", async () => {
+    const signer = asyncHybridSigner();
+    const result = await signAndFinalizeSellPrep(
+      {
+        ...BASE_QUOTE,
+        prepPsbt: FIXTURE_PSBT_HEX,
+        prepInputsToSign: [0],
+        prepKind: "attach",
+        revealTxHex: "02000000reveal",
+      },
+      signer,
+      btc.networks.bitcoin,
+    );
+
+    // Finalization parses the RESOLVED signed hex as a transaction — an
+    // unresolved Promise (dropped `await`) would not be finalizable hex.
+    expect(result?.fundingTxHex).toMatch(/^[0-9a-f]+$/);
+    expect(result?.fundingTxHex?.startsWith("70736274ff")).toBe(false);
+  });
+
+  it("throws when prep_psbt is present but prep_kind is null", async () => {
     const signer = hybridSigner();
-    expect(() =>
+    await expect(
       signAndFinalizeSellPrep(
         {
           ...BASE_QUOTE,
@@ -117,6 +150,6 @@ describe("signAndFinalizeSellPrep", () => {
         signer,
         btc.networks.bitcoin,
       ),
-    ).toThrow('Unexpected prep_kind "null"');
+    ).rejects.toThrow('Unexpected prep_kind "null"');
   });
 });

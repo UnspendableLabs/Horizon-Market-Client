@@ -182,7 +182,7 @@ export async function prepareZeld(
   }
   psbt.addOutput({ script: buildZeldOpReturnScript(distribution), value: 0n });
 
-  const signedHex = signer.signPsbtHex(
+  const signedHex = await signer.signPsbtHex(
     psbt.toHex(),
     chosen.map((_, i) => i),
   );

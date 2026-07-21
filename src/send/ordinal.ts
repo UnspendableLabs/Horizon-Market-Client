@@ -129,7 +129,7 @@ export async function prepareOrdinal(
   }
 
   const inputCount = 1 + chosen.length;
-  const signedHex = signer.signPsbtHex(
+  const signedHex = await signer.signPsbtHex(
     psbt.toHex(),
     Array.from({ length: inputCount }, (_, i) => i),
   );

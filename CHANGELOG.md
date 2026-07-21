@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-20
+
+### Added
+
+- Asynchronous signers: `Signer.signPsbtHex` / `signMessage` may now return `string` **or** `Promise<string>`, so a custom `Signer` can delegate to an external wallet (browser extension / mobile) that signs through a prompt and never exposes its key. Every workflow (`openSellOrder`, `fillSwaps`, `delistSwap`), send helper, and `signAndFinalizeSellPrep` awaits the result; `LocalSigner` / `HDSigner` are unchanged (still synchronous). `getAddresses()` stays synchronous.
+- **Kontor now works with external wallets** (browser extension / mobile — Xverse, Horizon Wallet, …), not just in-process key signers. When a `Signer` doesn't implement `getKontorSigning` but exposes a Taproot address and its x-only public key (`getAddresses()` → `{ p2tr, xOnlyPubkey }`), the SDK builds a wallet-backed Kontor `Signing` that delegates transaction signing to `signPsbtHex` and message signing to `signMessage` — so `openSellOrder` / `fillSwaps` / `delistSwap` for KOR & Kontor-NFT listings run through the connected wallet's signing prompt, key never exposed. The wallet's **internal** taproot x-only key is Kontor's identity (re-tweaked to the P2TR address, which is asserted to match the wallet's own so a wrong key/network fails loudly). BLS registration (raw Schnorr-over-digest) is the only Kontor capability unavailable this way, and no marketplace flow needs it. Adds `@scure/btc-signer` / `@scure/base` as direct dependencies.
+- React: `HorizonMarketProvider` context gains `initializeWithSigner(signer)` — connect from a host-supplied `Signer` (external wallet) instead of a raw key or phrase; addresses come from the signer, `exportMnemonic()` returns `null`, and `sessionSource` reports `"external"`.
+- React: new `autoSignIn` prop on `HorizonMarketProvider` (default `true`) — set `false` to skip the automatic BIP322 wallet sign-in on connect (for hosts that authenticate another way, e.g. a same-origin session cookie, or an external signer whose message signing would pop the wallet). Sign-in stays available on demand via `client.signInWithWallet()`.
+- React: exported the sell-review data layer — `useSellReview` plus `SellCost`, `UseSellReviewArgs`, `UseSellReviewResult`, `FeeOption`, and the `FEE_HINTS` / `FEE_LABELS` / `FEE_OPTIONS` constants. It powers the packaged `<SellOrderForm/>` confirm step (listing/attach/network cost breakdown, live fee-rate selection, fee waiver, Kontor listing + attach-miner fee estimates); exporting it lets a host render its own confirmation UI on the exact same data, the way apps already build on `useSellOrder`.
+- React: exported the buy-review data layer — `useBuyReview` plus `UseBuyReviewArgs` / `UseBuyReviewResult` (its `FeeOption` and the `FEE_HINTS` / `FEE_LABELS` / `FEE_OPTIONS` constants are already exported via `useSellReview`). It powers the packaged `<SwapConfirmation/>` buy confirm step (price + royalty + buyer miner-fee breakdown, live fee-rate selection, Kontor estimates); exporting it lets a host render its own buy confirmation UI on the exact same data, symmetric with `useSellReview`.
+
+### Changed
+
+- **BREAKING:** `signAndFinalizeSellPrep(quote, signer, btcNetwork)` is now `async` and returns `Promise<SignedSellPrepResult | undefined>` (was synchronous), so it can await asynchronous signers. Add `await` at call sites.
+
+### Fixed
+
+- Native example app (iOS): fixed a launch crash on TestFlight and physical iPhones — `dyld: Library not loaded: @rpath/RNWorklets.framework/RNWorklets`. Expo 57's precompiled native modules shipped a dynamic `RNReanimated.framework` that links `@rpath/RNWorklets.framework`, but that `RNWorklets.framework` was not embedded in the device IPA, so dyld failed before JS started (the simulator build embedded it and hid the issue). `react-native-reanimated` and `react-native-worklets` are now forced to build from source via `expo.autolinking.ios.buildFromSource`; under the app's static linking they compile into static libs, so no dynamic `RNWorklets.framework` is produced and the `@rpath` load disappears. Both must be source-built together — building only worklets leaves the precompiled reanimated referencing the un-embedded framework.
+
 ## [0.1.2] - 2026-07-17
 
 ### Added
@@ -60,5 +79,7 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.2.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.2...v0.2.0
+[0.1.2]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/releases/tag/v0.1.0

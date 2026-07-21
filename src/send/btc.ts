@@ -113,7 +113,7 @@ export async function prepareBtc(
     psbt.addOutput({ address: changeAddress, value: change });
   }
 
-  const signedHex = signer.signPsbtHex(
+  const signedHex = await signer.signPsbtHex(
     psbt.toHex(),
     chosen.map((_, i) => i),
   );

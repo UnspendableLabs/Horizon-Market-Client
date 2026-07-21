@@ -2,6 +2,13 @@
   "name": "horizon-market-native-app",
   "version": "0.0.1",
   "main": "index.ts",
+  "expo": {
+    "autolinking": {
+      "ios": {
+        "buildFromSource": ["react-native-reanimated", "react-native-worklets"]
+      }
+    }
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",

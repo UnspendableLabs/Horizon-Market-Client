@@ -45,6 +45,7 @@ export function makeCtx(
     addresses: { p2wpkh: "bc1qwallet", p2tr: "bc1pwallet", publicKey: "02aa" },
     initialize: vi.fn(),
     initializeWithMnemonic: vi.fn(),
+    initializeWithSigner: vi.fn(),
     logout: vi.fn(),
     derivationMode: "horizon-market",
     setDerivationMode: vi.fn(),

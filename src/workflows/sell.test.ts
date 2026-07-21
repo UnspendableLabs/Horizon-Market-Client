@@ -8,6 +8,7 @@ import type { WorkflowProgressEvent } from "../types/progress.js";
 import {
   TEST_PRIVATE_KEY_HEX,
   FIXTURE_PSBT_HEX,
+  makeAsyncSigner,
   makeSequentialFetch,
   makeSigner,
 } from "../test-utils.js";
@@ -98,6 +99,42 @@ describe("openSellOrder", () => {
     const body = JSON.parse(createInit.body as string);
     expect(body.asset_utxo_id).toBe("quoteutxo:0");
     expect(body.asset_utxo_value).toBe(600);
+    expect(body.psbt_hex).toBe("70736274ff_swap_signed");
+    expect(body.fee_payment).toEqual({
+      psbt_hex: "70736274ff_fee_signed",
+      fee_payment_id: "fp_abc",
+    });
+  });
+
+  it("awaits an asynchronous signer (external wallet) for swap + fee PSBTs", async () => {
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_SELL_QUOTE } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    // Both PSBTs are signed asynchronously (a wallet popup). A dropped `await`
+    // would submit the unresolved Promises (serialized as `{}`) as the hexes.
+    const signer = makeAsyncSigner();
+
+    await openSellOrder(
+      {
+        assetUtxoId: "caller_utxo:0",
+        assetName: "RAREPEPE",
+        assetQuantity: 1n,
+        priceSats: 250000,
+        listingType: "counterparty",
+      },
+      http,
+      signer,
+      "mainnet",
+      btc.networks.bitcoin,
+    );
+
+    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(createInit.body as string);
     expect(body.psbt_hex).toBe("70736274ff_swap_signed");
     expect(body.fee_payment).toEqual({
       psbt_hex: "70736274ff_fee_signed",

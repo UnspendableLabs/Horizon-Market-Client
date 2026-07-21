@@ -23,13 +23,14 @@ export interface SignedSellPrepResult {
  * Returns `undefined` when the quote has no `prepPsbt`. Swap and fee PSBTs must
  * still be signed separately (as PSBT hex, not finalized).
  */
-export function signAndFinalizeSellPrep(
+export async function signAndFinalizeSellPrep(
   quote: SellQuote,
   signer: Signer,
   btcNetwork: btc.Network,
-): SignedSellPrepResult | undefined {
+): Promise<SignedSellPrepResult | undefined> {
   if (!quote.prepPsbt) return undefined;
-  const signedPrepHex = signer.signPsbtHex(
+  // `await`: external-wallet signers resolve asynchronously (popup prompt).
+  const signedPrepHex = await signer.signPsbtHex(
     quote.prepPsbt,
     quote.prepInputsToSign,
   );
