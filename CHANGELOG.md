@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-21
+
+### Changed
+
+- Withdraw / send: the wallet signature is now requested at **broadcast time, on confirm** — not while preparing the review screen. `prepareSend` (and `prepareBtc` / `prepareCounterparty` / `prepareZeld` / `prepareOrdinal`) now compose and fund the transaction but leave it **unsigned**; `PreparedSend.broadcast()` signs it (prompting the wallet) then publishes. The packaged `<WalletBalances/>` withdraw flow therefore shows its confirmation screen first and only pops the wallet when the user hits "Confirm & send". `feeSats` is unchanged — it is computed from UTXO selection at compose time, so the review screen still shows the exact miner fee before any signature. Kontor sends (`kor` / `kontor-nft`) were already sign-on-broadcast. `SendClient.send()` / `sendAsset()` (the one-shot `prepare().broadcast()` helpers) are unaffected.
+
 ## [0.2.0] - 2026-07-20
 
 ### Added

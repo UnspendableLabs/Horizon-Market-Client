@@ -31,14 +31,16 @@ function isWitnessScript(script: Uint8Array): boolean {
 }
 
 /**
- * Compose and sign a Counterparty send (XCP or any named asset), returning a
- * {@link PreparedSend} with the exact miner fee — built but not yet broadcast.
+ * Compose a Counterparty send (XCP or any named asset), returning a
+ * {@link PreparedSend} with the exact miner fee — built but not yet signed or
+ * broadcast. {@link PreparedSend.broadcast} signs (prompting the wallet) then
+ * publishes, so the signature is requested at confirm time, not review time.
  *
  * counterparty-core composes the transaction (input selection + the send's
  * OP_RETURN/data outputs) and returns a PSBT; every input is one of the source
  * address's own UTXOs. We backfill each input's prevout (mempool) so bitcoinjs
- * can sign, then sign all inputs and finalize. The fee is read back off the
- * composed PSBT as `Σ inputs − Σ outputs`.
+ * can sign later. The fee is read back off the composed PSBT as
+ * `Σ inputs − Σ outputs` — known without signing.
  */
 export async function prepareCounterparty(
   params: SendCounterpartyParams,
@@ -121,15 +123,17 @@ export async function prepareCounterparty(
   const totalOut = psbt.txOutputs.reduce((sum, o) => sum + o.value, 0n);
   const feeSats = totalIn - totalOut;
 
-  const signedHex = await signer.signPsbtHex(
-    psbt.toHex(),
-    psbt.data.inputs.map((_, i) => i),
-  );
-  const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
+  const unsignedHex = psbt.toHex();
+  const inputIndices = psbt.data.inputs.map((_, i) => i);
   return {
     kind: "counterparty",
     feeSats,
+    // Sign at broadcast time (not here) so the wallet prompt fires on confirm.
+    // `feeSats` above is already exact — read off the composed PSBT, no
+    // signature needed.
     broadcast: async () => {
+      const signedHex = await signer.signPsbtHex(unsignedHex, inputIndices);
+      const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
       await broadcastRawTx(fetch, base, txHex);
       return { txid: txId };
     },

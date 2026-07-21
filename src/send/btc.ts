@@ -25,9 +25,11 @@ interface FundingUtxo extends SpendableUtxo {
 }
 
 /**
- * Compose, fund and sign a plain BTC send, returning a {@link PreparedSend}
- * whose `feeSats` is the exact miner fee — the transaction is built but not yet
- * broadcast.
+ * Compose and fund a plain BTC send, returning a {@link PreparedSend} whose
+ * `feeSats` is the exact miner fee. The transaction is built but not yet signed
+ * or broadcast — {@link PreparedSend.broadcast} signs it (prompting the wallet)
+ * then publishes, so the signature is requested when the user confirms, not
+ * when they open the review screen.
  *
  * Funds from the signer's own P2WPKH + P2TR confirmed UTXOs (asset-bearing /
  * inscription UTXOs excluded via `deps.protectedUtxoIds`), greedily selected
@@ -113,16 +115,18 @@ export async function prepareBtc(
     psbt.addOutput({ address: changeAddress, value: change });
   }
 
-  const signedHex = await signer.signPsbtHex(
-    psbt.toHex(),
-    chosen.map((_, i) => i),
-  );
-  const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
+  const unsignedHex = psbt.toHex();
+  const inputIndices = chosen.map((_, i) => i);
   const feeSats = totalIn - amountSats - change;
   return {
     kind: "btc",
     feeSats,
+    // Sign at broadcast time (not here) so the wallet prompt fires when the user
+    // confirms. `feeSats` above is already exact — it comes from UTXO selection,
+    // independent of the signature.
     broadcast: async () => {
+      const signedHex = await signer.signPsbtHex(unsignedHex, inputIndices);
+      const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
       await broadcastRawTx(fetch, base, txHex);
       return { txid: txId };
     },

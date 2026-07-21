@@ -78,15 +78,18 @@ export interface SendResult {
 }
 
 /**
- * A composed-and-signed send, ready to broadcast — the review-step handle that
+ * A composed send, ready to sign and broadcast — the review-step handle that
  * lets the UI show the *exact* miner fee before committing. `prepareSend`
- * composes, funds and signs the transaction (no network write); calling
- * {@link PreparedSend.broadcast} publishes it.
+ * composes and funds the transaction (no signature, no network write); calling
+ * {@link PreparedSend.broadcast} signs it — prompting the wallet — then
+ * publishes. Signing lives in `broadcast()` so the wallet prompt fires when the
+ * user confirms, not when the review screen opens.
  *
  * `feeSats` is the exact miner fee for the Bitcoin-family sends (btc, ordinal,
- * zeld, counterparty), computed as `Σ inputs − Σ outputs`. It is `null` for
- * Kontor sends, whose fee is set by the `@kontor/sdk` at submit time — those
- * cannot be pre-composed, so `broadcast()` performs the whole submit.
+ * zeld, counterparty), computed at compose time as `Σ inputs − Σ outputs` —
+ * exact without signing. It is `null` for Kontor sends, whose fee is set by the
+ * `@kontor/sdk` at submit time — those cannot be pre-composed, so `broadcast()`
+ * performs the whole submit.
  */
 export interface PreparedSend {
   kind: SendKind;

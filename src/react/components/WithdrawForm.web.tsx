@@ -161,9 +161,10 @@ function TargetAvatar({
  * Withdraw (send) flow for a single wallet asset, rendered inside a {@link Modal}
  * by {@link WalletBalances}. Steps through `form → review → sending → result`.
  *
- * The fee rate is chosen on the form; moving to review composes and signs the
+ * The fee rate is chosen on the form; moving to review composes and funds the
  * transaction (see {@link useWithdraw}) so the review shows the *exact* miner
- * fee. Confirming just broadcasts the prepared transaction.
+ * fee. Confirming signs the transaction (prompting the wallet) then broadcasts,
+ * so the wallet prompt fires on confirm, not on review.
  */
 export function WithdrawForm({
   target,

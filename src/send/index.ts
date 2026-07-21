@@ -20,15 +20,16 @@ export type {
 } from "./types.js";
 
 /**
- * Unified send/withdraw dispatcher: composes, funds and signs a transfer for any
+ * Unified send/withdraw dispatcher: composes and funds a transfer for any
  * supported asset type, returning a {@link PreparedSend} whose `feeSats` is the
- * exact miner fee (null for Kontor). The transaction is *not* broadcast — call
- * {@link PreparedSend.broadcast} to publish it. This two-phase split lets the
- * review UI show the exact fee before the user commits.
+ * exact miner fee (null for Kontor). The transaction is *not* signed or
+ * broadcast — call {@link PreparedSend.broadcast} to sign (prompting the wallet)
+ * then publish it. This two-phase split lets the review UI show the exact fee
+ * before the user commits, with the wallet prompt firing only on confirm.
  *
  * Each branch delegates to its family composer:
  * - `btc` / `ordinal` — local bitcoinjs PSBT over mempool.space
- * - `counterparty` (incl. XCP) — counterparty-core compose → sign
+ * - `counterparty` (incl. XCP) — counterparty-core compose (signed at broadcast)
  * - `zeld` — local bitcoinjs PSBT with a ZELD OP_RETURN distribution
  * - `kor` / `kontor-nft` — `@kontor/sdk` contract transfer (composed at submit)
  *
