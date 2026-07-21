@@ -43,8 +43,10 @@ function toBigInt(value: unknown): bigint {
 }
 
 /**
- * Compose, fund and sign a ZELD transfer, returning a {@link PreparedSend} with
- * the exact miner fee — built but not yet broadcast.
+ * Compose and fund a ZELD transfer, returning a {@link PreparedSend} with the
+ * exact miner fee — built but not yet signed or broadcast.
+ * {@link PreparedSend.broadcast} signs (prompting the wallet) then publishes, so
+ * the signature is requested at confirm time, not review time.
  *
  * Port of Horizon Market's `composeZeldTransferForSwap` as a plain send: no WASM
  * miner is needed for a transfer — ZELD moves via an OP_RETURN `"ZELD"` + CBOR
@@ -182,19 +184,19 @@ export async function prepareZeld(
   }
   psbt.addOutput({ script: buildZeldOpReturnScript(distribution), value: 0n });
 
-  const signedHex = await signer.signPsbtHex(
-    psbt.toHex(),
-    chosen.map((_, i) => i),
-  );
-  const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
+  const unsignedHex = psbt.toHex();
+  const inputIndices = chosen.map((_, i) => i);
   // Every output value (recipient dust, ZELD change, BTC change; OP_RETURN is 0)
-  // is known, so the miner fee is exactly inputs − outputs.
+  // is known, so the miner fee is exactly inputs − outputs — no signing needed.
   const totalOut = swapValue + zeldChangeValue + btcChange;
   const feeSats = totalIn - totalOut;
   return {
     kind: "zeld",
     feeSats,
+    // Sign at broadcast time (not here) so the wallet prompt fires on confirm.
     broadcast: async () => {
+      const signedHex = await signer.signPsbtHex(unsignedHex, inputIndices);
+      const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
       await broadcastRawTx(fetch, base, txHex);
       return { txid: txId };
     },

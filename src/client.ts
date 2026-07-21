@@ -436,10 +436,11 @@ export class HorizonMarketClient {
   // ─── Send / withdraw (all asset types) ───────────────────────────────────────
 
   /**
-   * Compose, fund and sign a send of any supported asset type *without*
+   * Compose and fund a send of any supported asset type *without* signing or
    * broadcasting — the review-step path used by the wallet UI. Returns a
    * {@link PreparedSend} whose `feeSats` is the exact miner fee (null for
-   * Kontor, whose fee is set at submit); call `.broadcast()` to publish.
+   * Kontor, whose fee is set at submit); call `.broadcast()` to sign (prompting
+   * the wallet) then publish, so the signature is requested on confirm.
    *
    * Requires an authenticated client (`privateKey`/`signer`). BTC / ordinal
    * funding excludes any `options.protectedUtxoIds` (inscription / asset-bearing

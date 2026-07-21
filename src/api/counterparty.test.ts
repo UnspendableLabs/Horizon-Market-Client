@@ -10,12 +10,13 @@ function row(
   quantity: number | string,
   quantityNormalized: string,
   divisible: boolean,
+  assetLongname: string | null = null,
 ) {
   return {
     asset,
     quantity,
     quantity_normalized: quantityNormalized,
-    asset_info: { divisible },
+    asset_info: { divisible, asset_longname: assetLongname },
   };
 }
 
@@ -32,6 +33,7 @@ describe("getCounterpartyBalances", () => {
     expect(balances).toEqual([
       {
         asset: "XCP",
+        assetLongname: null,
         address: ADDR,
         quantity: 1250000000n,
         quantityNormalized: "12.5",
@@ -39,9 +41,30 @@ describe("getCounterpartyBalances", () => {
       },
       {
         asset: "RAREPEPE",
+        assetLongname: null,
         address: ADDR,
         quantity: 3n,
         quantityNormalized: "3",
+        divisible: false,
+      },
+    ]);
+  });
+
+  it("captures the subasset long name from asset_info", async () => {
+    const fetchFn = makeFetch(200, {
+      result: [
+        row("A4950153011122931022", 5, "5", false, "PEPENARDO.CARD"),
+      ],
+      next_cursor: null,
+    });
+    const balances = await getCounterpartyBalances(fetchFn, BASE, ADDR);
+    expect(balances).toEqual([
+      {
+        asset: "A4950153011122931022",
+        assetLongname: "PEPENARDO.CARD",
+        address: ADDR,
+        quantity: 5n,
+        quantityNormalized: "5",
         divisible: false,
       },
     ]);

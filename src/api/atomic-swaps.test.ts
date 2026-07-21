@@ -49,6 +49,7 @@ const DOMAIN_SWAP = {
   assetUtxoId: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234:0",
   assetUtxoValue: 600,
   assetName: "RAREPEPE",
+  assetLongname: null,
   assetQuantity: 1n,
   price: 250000,
   pricePerUnit: 250000,
@@ -89,6 +90,29 @@ describe("getSwap", () => {
     });
     const swap = await getSwap(http, "swap_abc123");
     expect(swap).toEqual(DOMAIN_SWAP);
+  });
+
+  it("maps the subasset long name from asset_longname (null when absent)", async () => {
+    const wire = {
+      ...WIRE_SWAP,
+      asset_name: "A4950153011122931022",
+      asset_longname: "PEPENARDO.CARD",
+    };
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: wire }),
+    });
+    const swap = await getSwap(http, "swap_abc123");
+    expect(swap.assetName).toBe("A4950153011122931022");
+    expect(swap.assetLongname).toBe("PEPENARDO.CARD");
+
+    // Absent on the wire → null (WIRE_SWAP has no asset_longname).
+    const http2 = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, { data: WIRE_SWAP }),
+    });
+    const swap2 = await getSwap(http2, "swap_abc123");
+    expect(swap2.assetLongname).toBeNull();
   });
 
   it("converts asset_quantity string to bigint", async () => {

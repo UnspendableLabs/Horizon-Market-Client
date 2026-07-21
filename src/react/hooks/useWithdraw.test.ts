@@ -60,6 +60,7 @@ function btcTarget(balanceSats: bigint | null = 100_000_000n): WithdrawTarget {
 function counterpartyTarget(
   over: Partial<{
     assetName: string;
+    assetLongname: string | null;
     address: string;
     balance: bigint;
     quantityNormalized: string;
@@ -69,6 +70,7 @@ function counterpartyTarget(
   return {
     type: "counterparty",
     assetName: over.assetName ?? "XCP",
+    assetLongname: over.assetLongname ?? null,
     address: over.address ?? "bc1qhold",
     balance: over.balance ?? 500_000_000n,
     quantityNormalized: over.quantityNormalized ?? "5",
@@ -233,6 +235,20 @@ describe("useWithdraw", () => {
       const kor = renderHook(() => useWithdraw({ target: korTarget("100.5") }));
       expect(kor.result.current.assetLabel).toBe("KOR");
       expect(kor.result.current.availableDisplay).toBe("100.5");
+    });
+
+    it("labels a subasset by its long name, not the numeric A… name", () => {
+      const { result } = renderHook(() =>
+        useWithdraw({
+          target: counterpartyTarget({
+            assetName: "A4950153011122931022",
+            assetLongname: "PEPENARDO.CARD",
+            quantityNormalized: "3",
+          }),
+        }),
+      );
+      expect(result.current.assetLabel).toBe("PEPENARDO.CARD");
+      expect(result.current.withdrawingDisplay.name).toBe("PEPENARDO.CARD");
     });
 
     it("shortens a long ordinal id but keeps a short one, and hides quantity", () => {

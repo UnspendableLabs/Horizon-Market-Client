@@ -44,6 +44,13 @@ export interface WalletBalancesProps {
   /** Optional heading rendered at the left of the header row (title lives on the
    * same line as the "Updated …" timestamp + Refresh button). */
   title?: ReactNode;
+  /**
+   * Override the per-asset "Sell" action. When provided, clicking Sell calls this
+   * instead of opening the built-in sell modal — e.g. to navigate to a dedicated
+   * Sell screen with the asset pre-selected. When omitted, the internal modal
+   * (an inline {@link SellOrderForm}) is used.
+   */
+  onSellAsset?: (asset: AssetOption) => void;
   className?: string;
   classNames?: WalletBalancesClassNames;
   style?: CSSProperties;
@@ -628,6 +635,7 @@ function OtherAssetTile({
  */
 export function WalletBalances({
   title,
+  onSellAsset,
   className,
   classNames,
   style,
@@ -726,7 +734,7 @@ export function WalletBalances({
             className={classNames?.token}
             onDeposit={openDeposit}
             onWithdraw={setWithdraw}
-            onSell={setSellAsset}
+            onSell={onSellAsset ?? setSellAsset}
           />
         ))}
       </div>
@@ -764,7 +772,7 @@ export function WalletBalances({
                 asset={a}
                 onDeposit={openDepositForAsset}
                 onWithdraw={setWithdraw}
-                onSell={setSellAsset}
+                onSell={onSellAsset ?? setSellAsset}
                 className={classNames?.tile}
               />
             ))}

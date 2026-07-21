@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as btc from "bitcoinjs-lib";
 import type { HttpClient } from "../api/http.js";
 import { LocalSigner } from "../crypto/signer.js";
-import { sendBtc } from "./btc.js";
+import { prepareBtc, sendBtc } from "./btc.js";
 import { sendZeld } from "./zeld.js";
 import { sendOrdinal } from "./ordinal.js";
 import { decodeZeldOpReturnScript } from "./zeld-opreturn.js";
@@ -133,6 +133,37 @@ describe("sendBtc", () => {
     await expect(
       sendBtc({ toAddress: P2TR, amountSats: 50_000n, satsPerVbyte: 2 }, baseDeps(fetchImpl)),
     ).rejects.toThrow(/Insufficient/);
+  });
+
+  it("defers signing to broadcast() — prepare exposes the exact fee unsigned", async () => {
+    let raw = "";
+    const fetchImpl = makeFetch({
+      utxosByAddress: {
+        [P2WPKH]: [{ txid: "aa".repeat(32), vout: 0, value: 100_000 }],
+        [P2TR]: [],
+      },
+      onBroadcast: (hex) => (raw = hex),
+    });
+    const signSpy = vi.spyOn(signer, "signPsbtHex");
+    try {
+      const prepared = await prepareBtc(
+        { toAddress: P2TR, amountSats: 50_000n, satsPerVbyte: 2 },
+        baseDeps(fetchImpl),
+      );
+
+      // Composed: the exact fee is known from UTXO selection, no signature yet.
+      expect(prepared.feeSats).toBeGreaterThan(0n);
+      expect(signSpy).not.toHaveBeenCalled();
+      expect(raw).toBe("");
+
+      // The wallet prompt (and broadcast) fire only when the user confirms.
+      const { txid } = await prepared.broadcast();
+      expect(signSpy).toHaveBeenCalledTimes(1);
+      expect(raw).not.toBe("");
+      expect(btc.Transaction.fromHex(raw).getId()).toBe(txid);
+    } finally {
+      signSpy.mockRestore();
+    }
   });
 });
 

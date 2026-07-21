@@ -66,7 +66,7 @@ const priceStyle: CSSProperties = {
 /** Mountain + sun "no image" pictogram (matches the common image-placeholder icon). */
 function ThumbnailOrPlaceholder({
   thumbnailUrl,
-  assetName,
+  altText,
   imageStyle,
   placeholderStyle,
   imageClassName,
@@ -76,7 +76,8 @@ function ThumbnailOrPlaceholder({
   placeholderContent,
 }: {
   thumbnailUrl: string | null;
-  assetName: string | null;
+  /** Alt text for the artwork — the asset's display name (long name for subassets). */
+  altText: string | null;
   imageStyle: CSSProperties;
   placeholderStyle: CSSProperties;
   imageClassName?: string;
@@ -94,7 +95,7 @@ function ThumbnailOrPlaceholder({
     return (
       <img
         src={thumbnailUrl}
-        alt={assetName ?? ""}
+        alt={altText ?? ""}
         className={imageClassName}
         style={imageStyle}
         onError={() => setFailedUrl(thumbnailUrl)}
@@ -150,7 +151,7 @@ export function SwapListItem({
     <div className={cx(classNames?.root, className)} style={itemStyle}>
       <ThumbnailOrPlaceholder
         thumbnailUrl={thumbnail}
-        assetName={swap.assetName}
+        altText={swap.assetLongname ?? swap.assetName}
         imageStyle={ws.swapItemImageFull}
         placeholderStyle={ws.swapItemPlaceholder}
         imageClassName={classNames?.image}

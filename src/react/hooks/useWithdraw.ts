@@ -148,7 +148,7 @@ function assetLabelFor(target: WithdrawTarget): string {
     case "btc":
       return "BTC";
     case "counterparty":
-      return target.assetName;
+      return target.assetLongname ?? target.assetName;
     case "zeld":
       return "ZELD";
     case "kor":
@@ -292,9 +292,10 @@ function buildRequest(
  * `form → confirm → progress → result`, mirroring {@link useSellOrder}.
  *
  * The fee rate is chosen on the form step. Moving to the review step *composes
- * and signs* the transaction via `client.prepareSend(...)` — the resulting
+ * and funds* the transaction via `client.prepareSend(...)` — the resulting
  * {@link PreparedSend} carries the exact miner fee shown on review; `confirm`
- * just broadcasts it. The wallet's inscription UTXO ids are passed as
+ * signs it (prompting the wallet) then broadcasts, so the wallet prompt fires on
+ * confirm, not on review. The wallet's inscription UTXO ids are passed as
  * `protectedUtxoIds` so plain-BTC funding never spends an ordinal.
  */
 export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
@@ -352,8 +353,9 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
     setError(null);
   }, []);
 
-  // Compose + sign the transaction, then advance to the review step so the exact
-  // miner fee can be shown. Kept as a `void`-returning callback (fire-and-forget).
+  // Compose + fund the transaction (no signing — that happens on confirm/
+  // broadcast), then advance to the review step so the exact miner fee can be
+  // shown. Kept as a `void`-returning callback (fire-and-forget).
   const submitForm = useCallback(() => {
     if (preparingRef.current) return;
     const rate = rateForOption(feeOption, estimates) ?? 1;

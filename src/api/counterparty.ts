@@ -13,6 +13,13 @@
 export interface CounterpartyBalance {
   /** Asset name (e.g. "XCP", "RAREPEPE"). */
   asset: string;
+  /**
+   * Human-readable long name for subassets (e.g. "PEPENARDO.CARD"), or `null`
+   * when the asset has none. Subassets are stored on-chain under a numeric
+   * `A…` name (the `asset` field); this is the name to *display*. Prefer
+   * `assetLongname ?? asset` wherever the asset is shown to users.
+   */
+  assetLongname: string | null;
   /** The address that holds this balance. */
   address: string;
   /** Quantity in base units (sats for divisible assets, whole units otherwise). */
@@ -30,7 +37,7 @@ interface BalanceRowWire {
   asset?: unknown;
   quantity?: unknown;
   quantity_normalized?: unknown;
-  asset_info?: { divisible?: unknown } | null;
+  asset_info?: { divisible?: unknown; asset_longname?: unknown } | null;
 }
 
 interface BalancesPageWire {
@@ -80,8 +87,14 @@ function mapRow(raw: unknown, address: string): CounterpartyBalance | null {
     typeof row.quantity_normalized === "string"
       ? row.quantity_normalized
       : quantity.toString();
+  const assetLongname =
+    typeof row.asset_info?.asset_longname === "string" &&
+    row.asset_info.asset_longname.length > 0
+      ? row.asset_info.asset_longname
+      : null;
   return {
     asset: row.asset,
+    assetLongname,
     address,
     quantity,
     quantityNormalized,

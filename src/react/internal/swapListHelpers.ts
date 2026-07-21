@@ -42,7 +42,9 @@ export function swapDisplayName(swap: AtomicSwap): string {
       ? `#${swap.inscriptionNumber}`
       : (swap.assetName ?? "—");
   }
-  return swap.assetName ?? "—";
+  // Counterparty (and zeld): subassets list under a numeric `A…` assetName —
+  // show the human-readable long name when the server resolved one.
+  return swap.assetLongname ?? swap.assetName ?? "—";
 }
 
 export function formatQuantity(quantity: bigint, divisible: boolean): string {
@@ -146,12 +148,15 @@ export function swapMonogram(swap: AtomicSwap): { label: string; bg: string } {
     return swap.kontorAssetKind === "nft"
       ? { label: "NFT", bg: "#a855f7" }
       : { label: "KOR", bg: "#f59e0b" };
-  const name = swap.assetName ?? "?";
+  // Label letters come from the display name (long name for subassets), but the
+  // hue stays seeded on the stable on-chain `assetName` so an asset keeps the
+  // same colour whether or not a long name resolved (matches `assetMonogram`).
+  const seed = swap.assetName ?? "?";
   let hash = 0;
-  for (let i = 0; i < name.length; i++)
-    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  for (let i = 0; i < seed.length; i++)
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   return {
-    label: name.slice(0, 4),
+    label: (swap.assetLongname ?? swap.assetName ?? "?").slice(0, 4),
     bg: MONOGRAM_HUES[Math.abs(hash) % MONOGRAM_HUES.length],
   };
 }

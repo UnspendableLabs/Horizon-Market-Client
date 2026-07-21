@@ -29,8 +29,10 @@ interface FundingUtxo extends SpendableUtxo {
 }
 
 /**
- * Compose, fund and sign an ordinal (inscription) transfer, returning a
- * {@link PreparedSend} with the exact miner fee — built but not yet broadcast.
+ * Compose and fund an ordinal (inscription) transfer, returning a
+ * {@link PreparedSend} with the exact miner fee — built but not yet signed or
+ * broadcast. {@link PreparedSend.broadcast} signs (prompting the wallet) then
+ * publishes, so the signature is requested at confirm time, not review time.
  *
  * The inscription is input 0 and its full value is paid to `toAddress` as output
  * 0, so the inscribed sat's offset is preserved. The fee is paid from separate
@@ -129,18 +131,19 @@ export async function prepareOrdinal(
   }
 
   const inputCount = 1 + chosen.length;
-  const signedHex = await signer.signPsbtHex(
-    psbt.toHex(),
-    Array.from({ length: inputCount }, (_, i) => i),
-  );
-  const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
+  const unsignedHex = psbt.toHex();
+  const inputIndices = Array.from({ length: inputCount }, (_, i) => i);
   // Inscription value passes straight through (in 0 → out 0); the fee is funded
-  // entirely from the plain-BTC inputs, so it's exactly funding − change.
+  // entirely from the plain-BTC inputs, so it's exactly funding − change — known
+  // without signing.
   const feeSats = totalFunding - change;
   return {
     kind: "ordinal",
     feeSats,
+    // Sign at broadcast time (not here) so the wallet prompt fires on confirm.
     broadcast: async () => {
+      const signedHex = await signer.signPsbtHex(unsignedHex, inputIndices);
+      const { txHex, txId } = finalizePsbtHex(signedHex, btcNetwork);
       await broadcastRawTx(fetch, base, txHex);
       return { txid: txId };
     },

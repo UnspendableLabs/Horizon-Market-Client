@@ -15,6 +15,13 @@ export type AssetOption =
   | {
       type: "counterparty";
       assetName: string;
+      /**
+       * Subasset long name (e.g. "PEPENARDO.CARD"), or `null` when the asset has
+       * none. `assetName` is the on-chain identifier (a numeric `A…` name for
+       * subassets); prefer `assetLongname ?? assetName` for display. Optional so
+       * hand-built fixtures need not set it.
+       */
+      assetLongname?: string | null;
       address: string;
       balance: bigint;
       quantityNormalized: string;
@@ -274,6 +281,7 @@ export function useAssets(): UseAssetsResult {
         next.counterparty = cpResult.value.map((b) => ({
           type: "counterparty" as const,
           assetName: b.asset,
+          assetLongname: b.assetLongname ?? null,
           address: b.address,
           balance: b.quantity,
           quantityNormalized: b.quantityNormalized,

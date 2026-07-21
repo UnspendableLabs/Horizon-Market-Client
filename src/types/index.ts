@@ -83,6 +83,14 @@ export interface AtomicSwap {
   assetUtxoId: string | null;
   assetUtxoValue: number | null;
   assetName: string | null;
+  /**
+   * Counterparty subasset long name (e.g. "PEPENARDO.CARD"), or `null` when the
+   * asset has none. Subassets list under a numeric `A…` `assetName`; this is the
+   * human-readable name to *display*. Prefer `assetLongname ?? assetName`
+   * wherever the asset is shown. Optional: present on real listings from
+   * `listSwaps`/`getSwap`, but may be absent on hand-built fixtures.
+   */
+  assetLongname?: string | null;
   /** Parsed from wire number or string (large values). */
   assetQuantity: bigint | null;
   /** Net sats the seller receives. */

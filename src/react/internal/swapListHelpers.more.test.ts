@@ -117,6 +117,23 @@ describe("swapMonogram", () => {
     expect(m.label).toBe("?");
     expect(m.bg).toMatch(/^#/);
   });
+
+  it("labels a subasset from its long name but keeps the hue seeded on assetName", () => {
+    const m = swapMonogram(
+      swap({
+        id: "s",
+        assetName: "A4950153011122931022",
+        assetLongname: "PEPENARDO.CARD",
+      }),
+    );
+    expect(m.label).toBe("PEPE");
+    // Hue is hashed from the stable on-chain name, so it matches the same asset
+    // rendered before any long name resolved.
+    const noLongname = swapMonogram(
+      swap({ id: "s2", assetName: "A4950153011122931022" }),
+    );
+    expect(m.bg).toBe(noLongname.bg);
+  });
 });
 
 // Covers `swapListItemView` (lines 179-192) — not imported by the existing suite.

@@ -60,7 +60,7 @@ export function depositTargetFor(
 export function assetDepositLabel(a: AssetOption): string {
   switch (a.type) {
     case "counterparty":
-      return a.assetName;
+      return a.assetLongname ?? a.assetName;
     case "zeld":
       return "ZELD";
     case "kor":
@@ -76,7 +76,7 @@ export function assetDepositLabel(a: AssetOption): string {
 export function otherLabel(a: AssetOption): { name: string; sub: string | null } {
   switch (a.type) {
     case "counterparty":
-      return { name: a.assetName, sub: a.quantityNormalized };
+      return { name: a.assetLongname ?? a.assetName, sub: a.quantityNormalized };
     case "kontor-nft":
       return { name: `NFT ${truncate(a.nftId)}`, sub: null };
     case "ordinal":
@@ -92,7 +92,7 @@ export function withdrawTitle(target: WithdrawTarget): string {
     case "btc":
       return "BTC";
     case "counterparty":
-      return target.assetName;
+      return target.assetLongname ?? target.assetName;
     case "zeld":
       return "ZELD";
     case "kor":
