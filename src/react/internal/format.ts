@@ -71,7 +71,7 @@ export function kontorKorFirst(options: AssetOption[]): AssetOption[] {
 export function describeAsset(a: AssetOption): string {
   if (a.type === "zeld") return `ZELD — ${a.quantityNormalized}`;
   if (a.type === "counterparty")
-    return `${a.assetName} — ${a.quantityNormalized}`;
+    return `${a.assetLongname ?? a.assetName} — ${a.quantityNormalized}`;
   if (a.type === "kor") return `KOR — ${a.amount}`;
   if (a.type === "kontor-nft")
     return `NFT ${a.nftId.slice(0, 8)}…${a.nftId.slice(-6)}`;
@@ -88,7 +88,7 @@ export function sellingDisplay(
 ): { name: string; sub: string | null } {
   switch (a.type) {
     case "counterparty":
-      return { name: a.assetName, sub: `${quantity} units` };
+      return { name: a.assetLongname ?? a.assetName, sub: `${quantity} units` };
     case "zeld":
       return { name: "ZELD", sub: `${quantity} ZELD` };
     case "kor":
@@ -129,8 +129,9 @@ export function buyingDisplay(
       sub: swap.kontorAmount ? `${swap.kontorAmount} KOR` : null,
     };
   }
-  // counterparty / zeld — both carry assetName + assetQuantity.
-  const name = swap.assetName ?? "Asset";
+  // counterparty / zeld — both carry assetName + assetQuantity. Counterparty
+  // subassets prefer their resolved long name (zeld has none, so it falls back).
+  const name = swap.assetLongname ?? swap.assetName ?? "Asset";
   const qty = swap.assetQuantity != null ? swap.assetQuantity.toString() : null;
   const unit = swap.listingType === "zeld" ? name : "units";
   return { name, sub: qty ? `${qty} ${unit}` : null };
@@ -194,7 +195,7 @@ export function formatAssetLabel(swap: AtomicSwap): string {
   if (swap.listingType === "ordinal")
     return `Inscription ${swap.assetUtxoId ?? swap.id}`;
   const qty = swap.assetQuantity?.toString() ?? "?";
-  const name = swap.assetName ?? "?";
+  const name = swap.assetLongname ?? swap.assetName ?? "?";
   return `${qty} ${name}`;
 }
 

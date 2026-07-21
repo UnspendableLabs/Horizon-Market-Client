@@ -30,7 +30,13 @@ export function hashHue(seed: string): string {
 export function assetMonogram(asset: AssetOption): { label: string; bg: string } {
   switch (asset.type) {
     case "counterparty":
-      return { label: asset.assetName.slice(0, 4), bg: hashHue(asset.assetName) };
+      // Badge letters come from the display name (long name for subassets), but
+      // the hue stays seeded on the stable on-chain `assetName` so an asset keeps
+      // the same color whether or not a long name resolved.
+      return {
+        label: (asset.assetLongname ?? asset.assetName).slice(0, 4),
+        bg: hashHue(asset.assetName),
+      };
     case "zeld":
       return { label: "ZELD", bg: "#2563eb" };
     case "kor":

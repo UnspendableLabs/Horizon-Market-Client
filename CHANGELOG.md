@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - React: new `onSellAsset?: (asset: AssetOption) => void` prop on the web `<WalletBalances/>` — override the per-asset "Sell" action. When provided, clicking Sell (on the XCP / KOR / ZELD headline tokens and on every "other holdings" tile) calls the host callback with the pre-selected asset instead of opening the built-in inline `<SellOrderForm/>` modal — e.g. to navigate to a dedicated Sell screen. When omitted, the internal modal is used as before. Brings the web component to parity with the native `WalletBalances`, which already exposes `onSellAsset`.
+- Counterparty subasset **long names** are now captured and surfaced for display. Subassets list on-chain under a numeric `A…` name; the human-readable long name (e.g. `PEPENARDO.CARD`) was previously fetched from the API but discarded. Now:
+  - `CounterpartyBalance` gains `assetLongname: string | null` (read from the balances endpoint's `asset_info.asset_longname`).
+  - `AtomicSwap` gains `assetLongname?: string | null` (mapped from the `asset_longname` field the Horizon backend resolves on `listSwaps` / `getSwap`).
+  - The owned-asset `AssetOption` (counterparty variant) gains `assetLongname?: string | null`.
+- React: every packaged display surface now shows `assetLongname ?? assetName`, so subassets read as their long name instead of `A4950…` — the swap-list tiles / `<SwapList/>`, the buy & sell review screens (`<SwapConfirmation/>` / `<SellOrderForm/>`), and `<WalletBalances/>` (headline + "other holdings" tiles, deposit / withdraw modals, and the placeholder monogram). `assetName` remains the identifier used for image resolution and API calls; only the display label changed.
 
 ### Changed
 

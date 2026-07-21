@@ -38,6 +38,12 @@ export interface WireAtomicSwap {
   asset_utxo_id: string | null;
   asset_utxo_value: number | null;
   asset_name: string | null;
+  /**
+   * Counterparty subasset long name (e.g. "PEPENARDO.CARD") resolved server-side,
+   * or `null` when the asset has none. Absent on endpoints/fixtures that don't
+   * resolve it. See {@link AtomicSwap.assetLongname}.
+   */
+  asset_longname?: string | null;
   asset_quantity: number | string | null;
   price: number;
   price_per_unit: number | null;
@@ -172,6 +178,7 @@ export function mapAtomicSwap(wire: WireAtomicSwap): AtomicSwap {
     assetUtxoId: wire.asset_utxo_id,
     assetUtxoValue: wire.asset_utxo_value,
     assetName: wire.asset_name,
+    assetLongname: wire.asset_longname ?? null,
     assetQuantity,
     price: wire.price,
     pricePerUnit: wire.price_per_unit,

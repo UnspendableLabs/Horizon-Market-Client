@@ -148,7 +148,7 @@ function assetLabelFor(target: WithdrawTarget): string {
     case "btc":
       return "BTC";
     case "counterparty":
-      return target.assetName;
+      return target.assetLongname ?? target.assetName;
     case "zeld":
       return "ZELD";
     case "kor":
