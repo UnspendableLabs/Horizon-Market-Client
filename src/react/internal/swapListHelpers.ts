@@ -1,6 +1,6 @@
 import type { AtomicSwap } from "../../types/index.js";
 import type { Addresses } from "../context.js";
-import type { SwapListOrder, SwapListOrderBy } from "../hooks/useSwapList.js";
+import type { SwapListOrder, SwapListOrderBy } from "./swapListConstants.js";
 
 export function getSellerAddresses(addresses: Addresses): string[] {
   const addrs = [addresses.p2wpkh, addresses.p2tr].filter(Boolean) as string[];

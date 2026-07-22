@@ -18,6 +18,18 @@ export default defineConfig([
     target: "node20",
   },
   {
+    // The WASM-free swap-list logic (`./swaps`). Pure TypeScript — no React/JSX,
+    // no `@kontor/sdk`, so it builds for Node and stays out of every WASM path
+    // (it's the whole reason this entry exists: importable in Node unit tests and
+    // SSR without triggering the eager WebAssembly compile the other barrels do).
+    entry: { "swaps/index": "src/swaps/index.ts" },
+    format: ["esm", "cjs"],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    target: "node20",
+  },
+  {
     entry: { "react/index": "src/react/index.web.ts" },
     format: ["esm", "cjs"],
     dts: true,
