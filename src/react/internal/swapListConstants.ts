@@ -1,4 +1,21 @@
-import type { SwapListingType } from "../hooks/useSwapList.js";
+import type { ListingType } from "../../types/index.js";
+
+/** The listing-type dimension of the swap filter (an alias of {@link ListingType}). */
+export type SwapListingType = ListingType;
+
+/** Server sort key for `listSwaps` (`orderBy`). */
+export type SwapListOrderBy = "created_at" | "price" | "price_per_unit";
+
+/** Server sort direction for `listSwaps` (`order`). */
+export type SwapListOrder = "asc" | "desc";
+
+/** UI-facing sort presets, each mapping to an `orderBy`/`order` pair (see {@link SORT_MAP}). */
+export type SortOption =
+  | "latest"
+  | "oldest"
+  | "cheapest"
+  | "expensive"
+  | "cheapest_unit";
 
 export const FILTER_TABS: Array<{ key: SwapListingType | null; label: string }> =
   [
@@ -8,6 +25,9 @@ export const FILTER_TABS: Array<{ key: SwapListingType | null; label: string }> 
     { key: "zeld", label: "ZELD" },
     { key: "kontor", label: "Kontor" },
   ];
+
+/** Default page size for the swap list. */
+export const DEFAULT_LIMIT = 24;
 
 /** Max rows fetched per seller address when merging multi-address "My swaps". */
 export const MY_SWAPS_MERGE_FETCH_LIMIT = 500;
@@ -36,3 +56,27 @@ export const PENDING_ORDERS_POLL_MS = 20_000;
  * and balances are force-refreshed (the KOR has settled by then either way).
  */
 export const OPTIMISTIC_PENDING_MAX_MS = 15 * 60_000;
+
+/** Maps each UI {@link SortOption} to the `orderBy`/`order` pair sent to `listSwaps`. */
+export const SORT_MAP: Record<
+  SortOption,
+  { orderBy: SwapListOrderBy; order: SwapListOrder }
+> = {
+  latest: { orderBy: "created_at", order: "desc" },
+  oldest: { orderBy: "created_at", order: "asc" },
+  cheapest: { orderBy: "price", order: "asc" },
+  expensive: { orderBy: "price", order: "desc" },
+  cheapest_unit: { orderBy: "price_per_unit", order: "asc" },
+};
+
+/** Human-readable label for each {@link SortOption} (for a sort dropdown). */
+export const SORT_OPTION_LABELS: Record<SortOption, string> = {
+  latest: "Latest first",
+  oldest: "Oldest first",
+  cheapest: "Cheapest first",
+  expensive: "Most expensive",
+  cheapest_unit: "Cheapest per unit",
+};
+
+/** All {@link SortOption} keys, in display order. */
+export const SORT_OPTIONS = Object.keys(SORT_MAP) as SortOption[];

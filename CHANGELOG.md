@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-07-22
+
+### Added
+
+- `useSwapList` / `SwapList`: **price-range and collection filters**. New options `defaultPriceMin` / `defaultPriceMax` (inclusive sat bounds) and `defaultCollection` (a collection slug), surfaced as reactive state `priceMin` / `priceMax` / `collection` with setters `setPriceRange(min, max)` and `setCollection(slug)`. Both reset to the first page and re-query `listSwaps` with the matching `priceMin` / `priceMax` / `collection` params (added to the client in 0.1.2); unset bounds are omitted from the query (sent as `undefined`, never `null`). Pair `setPriceRange` with a price bucket's sat-bounds from the facets below.
+- `useSwapList` / `SwapList`: opt-in **reactive facet counts** via `includeFacets`. When on, one `getSwapFacets` request (added in 0.1.2) runs per filter change — never one per option — using the exact same filters as the feed (minus sort/pagination), and the counts are exposed as `facets` (per `type`, per price bucket, per `collection`) and `facetsLoading`. Stale responses are seq-guarded, the last-known counts stay visible while the next request is in flight (no flicker to empty), and a facets failure is swallowed — it never surfaces the main `error` banner. Powers a faceted filter sidebar with live, filter-aware counts.
+- New **`@unspendablelabs/horizon-market-client/swaps` subpath** — a WASM-free entry that re-exports the SDK's pure swap-list logic: the display derivations (`swapDisplayName`, `swapDisplayTitle`, `swapListItemView`, `swapMonogram`, `swapImageUrl`, `swapDisplayQuantity`, `swapDisplayPricePerUnit`, `pendingSwapTrackingTxid`, `formatQuantity`), the list utilities (`mergeSwapsById`, `sortSwaps`, `paginateSwaps`, `clampPage`, `getSellerAddresses`, `checkIsMySwap`), and the list constants / sort presets / types (`DEFAULT_LIMIT`, `FILTER_TABS`, `SORT_OPTIONS`, `SORT_OPTION_LABELS`, `SORT_MAP`, `SortOption`, `SwapListingType`, `SwapListOrderBy`, `SwapListOrder`, the `PENDING_ORDERS_*` / `MY_SWAPS_*` caps). Unlike the main (`.`) and `./react` barrels — which statically import `@kontor/sdk` and eagerly compile WebAssembly on import — this entry has **zero** runtime dependency on `@kontor/sdk`, `bitcoinjs-lib`, `@scure/*`, `ecpair`, or React, so it imports cleanly in Node unit tests and SSR-reachable code. It lets a host build its own faceted swap browser on the exact pure logic the packaged `<SwapList/>` uses, without duplicating it.
+
+### Changed
+
+- (internal, no consumer-facing change) The swap-list sort presets, list constants, and the `SortOption` / `SwapListingType` / `SwapListOrderBy` / `SwapListOrder` types moved out of the React `useSwapList` module into the WASM-free `swapListConstants` module (the one now published at `./swaps`), removing the circular import between them. They stay re-exported from the `./react` entry, so existing imports (`SORT_OPTIONS`, `SORT_OPTION_LABELS`, `SortOption`, …) are unchanged.
+
 ## [0.2.1] - 2026-07-21
 
 ### Added
@@ -94,6 +106,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.2.2]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.0...v0.1.1

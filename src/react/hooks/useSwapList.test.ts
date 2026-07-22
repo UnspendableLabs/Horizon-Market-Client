@@ -978,3 +978,270 @@ describe("useSwapList — pending orders", () => {
     expect(after).toBe(before);
   });
 });
+
+describe("useSwapList — price / collection filters", () => {
+  it("threads priceMin/priceMax/collection into the listSwaps query", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "a" })], 100));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({
+        defaultPriceMin: 1000,
+        defaultPriceMax: 5000,
+        defaultCollection: "punks",
+      }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.priceMin).toBe(1000);
+    expect(result.current.priceMax).toBe(5000);
+    expect(result.current.collection).toBe("punks");
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priceMin: 1000,
+        priceMax: 5000,
+        collection: "punks",
+      }),
+    );
+  });
+
+  it("omits unset price/collection bounds (undefined, not null) in the query", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([], 0));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.priceMin).toBeNull();
+    expect(result.current.priceMax).toBeNull();
+    expect(result.current.collection).toBeNull();
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priceMin: undefined,
+        priceMax: undefined,
+        collection: undefined,
+      }),
+    );
+  });
+
+  it("setPriceRange updates both bounds, re-queries, and resets to page 0", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "a" })], 100));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => result.current.setPage(2));
+    await waitFor(() => expect(result.current.page).toBe(2));
+
+    await act(async () => result.current.setPriceRange(2000, null));
+    await waitFor(() => expect(result.current.page).toBe(0));
+    expect(result.current.priceMin).toBe(2000);
+    expect(result.current.priceMax).toBeNull();
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        priceMin: 2000,
+        priceMax: undefined,
+        offset: 0,
+      }),
+    );
+  });
+
+  it("setCollection updates the slug, re-queries, and resets to page 0", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "a" })], 100));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => result.current.setPage(1));
+    await waitFor(() => expect(result.current.page).toBe(1));
+
+    await act(async () => result.current.setCollection("bitcoin-frogs"));
+    await waitFor(() => expect(result.current.page).toBe(0));
+    expect(result.current.collection).toBe("bitcoin-frogs");
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ collection: "bitcoin-frogs", offset: 0 }),
+    );
+
+    // Clearing it back to null drops the filter (undefined in the query).
+    await act(async () => result.current.setCollection(null));
+    await waitFor(() =>
+      expect(listSwaps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ collection: undefined }),
+      ),
+    );
+    expect(result.current.collection).toBeNull();
+  });
+});
+
+describe("useSwapList — facets", () => {
+  function facetsFixture(counterparty = 0) {
+    return {
+      type: { counterparty, ordinal: 0, zeld: 0, kontor: 0 },
+      price: [],
+      collection: [],
+    };
+  }
+
+  function ctxWithFacets(
+    listSwaps: ReturnType<typeof vi.fn>,
+    getSwapFacets: ReturnType<typeof vi.fn>,
+    overrides: Partial<HorizonMarketContextValue> = {},
+  ): HorizonMarketContextValue {
+    return makeCtx({
+      client: { listSwaps, getSwapFacets } as unknown as Client,
+      ...overrides,
+    });
+  }
+
+  it("does not fetch facets unless includeFacets is set", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue(facetsFixture());
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(getSwapFacets).not.toHaveBeenCalled();
+    expect(result.current.facets).toBeNull();
+    expect(result.current.facetsLoading).toBe(false);
+  });
+
+  it("fetches facets with the SAME filters as the feed, minus sort/pagination", async () => {
+    const facets = facetsFixture(3);
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue(facets);
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() =>
+      useSwapList({
+        includeFacets: true,
+        defaultListingType: "ordinal",
+        defaultPriceMin: 1000,
+        defaultCollection: "punks",
+      }),
+    );
+    await waitFor(() => expect(result.current.facets).not.toBeNull());
+
+    expect(result.current.facets).toEqual(facets);
+    expect(getSwapFacets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        listingType: "ordinal",
+        priceMin: 1000,
+        collection: "punks",
+        filled: false,
+        delisted: false,
+        funded: true,
+      }),
+    );
+    // Facet counts ignore sort + pagination — those fields must not be sent.
+    const params = getSwapFacets.mock.calls[0][0];
+    expect(params).not.toHaveProperty("orderBy");
+    expect(params).not.toHaveProperty("order");
+    expect(params).not.toHaveProperty("offset");
+    expect(params).not.toHaveProperty("limit");
+  });
+
+  it("queries sold-mode facets with sales:true", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue(facetsFixture());
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() =>
+      useSwapList({ includeFacets: true, defaultShowSold: true }),
+    );
+    await waitFor(() => expect(result.current.facets).not.toBeNull());
+
+    expect(getSwapFacets).toHaveBeenCalledWith(
+      expect.objectContaining({ sales: true }),
+    );
+    const params = getSwapFacets.mock.calls[0][0];
+    expect(params).not.toHaveProperty("funded");
+  });
+
+  it("re-fetches facets on a filter change (one request per change)", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue(facetsFixture());
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() => useSwapList({ includeFacets: true }));
+    await waitFor(() => expect(getSwapFacets).toHaveBeenCalledTimes(1));
+
+    await act(async () => result.current.setListingType("zeld"));
+    await waitFor(() => expect(getSwapFacets).toHaveBeenCalledTimes(2));
+    expect(getSwapFacets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ listingType: "zeld" }),
+    );
+  });
+
+  it("ignores a stale facets response once a newer request has resolved", async () => {
+    const stale = facetsFixture(1);
+    const fresh = facetsFixture(2);
+    let resolveStale!: (v: unknown) => void;
+    const getSwapFacets = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStale = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(fresh);
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() => useSwapList({ includeFacets: true }));
+    // The mount request hangs; change a filter to fire a second, newer request.
+    await act(async () => result.current.setListingType("ordinal"));
+    await waitFor(() => expect(result.current.facets).toEqual(fresh));
+
+    // The stale first request finally resolves — it must NOT overwrite `fresh`.
+    await act(async () => {
+      resolveStale(stale);
+    });
+    expect(result.current.facets).toEqual(fresh);
+  });
+
+  it("a facets failure never surfaces the main error banner", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "a" })], 1));
+    const getSwapFacets = vi.fn().mockRejectedValue(new Error("facets boom"));
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result } = renderHook(() => useSwapList({ includeFacets: true }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.facetsLoading).toBe(false));
+
+    // The list still resolved; the facets error is swallowed (last-known counts
+    // stay, which is null here), and the main error banner never lights up.
+    expect(result.current.error).toBeNull();
+    expect(result.current.facets).toBeNull();
+    expect(result.current.swaps.map((s) => s.id)).toEqual(["a"]);
+  });
+
+  it("clears facets and stops fetching when includeFacets flips off", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue(facetsFixture(4));
+    ctxRef.current = ctxWithFacets(listSwaps, getSwapFacets);
+
+    const { result, rerender } = renderHook(
+      ({ on }: { on: boolean }) => useSwapList({ includeFacets: on }),
+      { initialProps: { on: true } },
+    );
+    await waitFor(() => expect(result.current.facets).not.toBeNull());
+    const callsBefore = getSwapFacets.mock.calls.length;
+
+    rerender({ on: false });
+    await waitFor(() => expect(result.current.facets).toBeNull());
+    expect(result.current.facetsLoading).toBe(false);
+    expect(getSwapFacets.mock.calls.length).toBe(callsBefore);
+  });
+});

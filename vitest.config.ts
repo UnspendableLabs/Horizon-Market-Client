@@ -23,6 +23,7 @@ export default defineConfig({
         "src/react/**/*.native.ts", // index.native barrel + styles.native tokens
         "src/react/index.web.ts", // web re-export barrel
         "src/react/hooks/index.ts", // hooks re-export barrel
+        "src/swaps/index.ts", // WASM-free swaps re-export barrel
         "src/react/internal/styles.web.ts", // style token map
         "src/react/internal/useMediaQuery.web.ts", // matchMedia browser shim
         "src/react/theme.ts", // theme tokens

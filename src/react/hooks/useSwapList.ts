@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket, type Addresses } from "../context.js";
-import type { AtomicSwap, ListingType } from "../../types/index.js";
+import type {
+  AtomicSwap,
+  SwapFacets,
+  SwapFacetsParams,
+} from "../../types/index.js";
 import {
+  DEFAULT_LIMIT,
   MY_SWAPS_MERGE_FETCH_LIMIT,
   OPTIMISTIC_PENDING_MAX_MS,
   PENDING_ORDERS_FETCH_LIMIT,
   PENDING_ORDERS_POLL_MS,
+  SORT_MAP,
+} from "../internal/swapListConstants.js";
+import type {
+  SortOption,
+  SwapListingType,
 } from "../internal/swapListConstants.js";
 import {
   checkIsMySwap,
@@ -16,36 +26,20 @@ import {
   sortSwaps,
 } from "../internal/swapListHelpers.js";
 
-export type SwapListOrderBy = "created_at" | "price" | "price_per_unit";
-export type SwapListOrder = "asc" | "desc";
-export type SwapListingType = ListingType;
-export type SortOption =
-  | "latest"
-  | "oldest"
-  | "cheapest"
-  | "expensive"
-  | "cheapest_unit";
-
-const SORT_MAP: Record<
+// The swap-list sort presets, the listing-type alias, and the sort key/direction
+// types now live in the WASM-free `swapListConstants` module (also published at
+// the `./swaps` subpath). Re-exported here so existing consumers importing them
+// from the React entry (e.g. `SORT_OPTIONS`, `SortOption`) keep working unchanged.
+export {
+  SORT_OPTIONS,
+  SORT_OPTION_LABELS,
+} from "../internal/swapListConstants.js";
+export type {
   SortOption,
-  { orderBy: SwapListOrderBy; order: SwapListOrder }
-> = {
-  latest: { orderBy: "created_at", order: "desc" },
-  oldest: { orderBy: "created_at", order: "asc" },
-  cheapest: { orderBy: "price", order: "asc" },
-  expensive: { orderBy: "price", order: "desc" },
-  cheapest_unit: { orderBy: "price_per_unit", order: "asc" },
-};
-
-export const SORT_OPTION_LABELS: Record<SortOption, string> = {
-  latest: "Latest first",
-  oldest: "Oldest first",
-  cheapest: "Cheapest first",
-  expensive: "Most expensive",
-  cheapest_unit: "Cheapest per unit",
-};
-
-export const SORT_OPTIONS = Object.keys(SORT_MAP) as SortOption[];
+  SwapListOrder,
+  SwapListOrderBy,
+  SwapListingType,
+} from "../internal/swapListConstants.js";
 
 export interface UseSwapListOptions {
   defaultListingType?: SwapListingType | null;
@@ -68,6 +62,22 @@ export interface UseSwapListOptions {
    * {@link PENDING_ORDERS_POLL_MS}) so an item drops out once its tx confirms.
    */
   includePendingOrders?: boolean;
+  /** Initial minimum listing price filter, in sats. Null (default) = no lower bound. */
+  defaultPriceMin?: number | null;
+  /** Initial maximum listing price filter, in sats. Null (default) = no upper bound. */
+  defaultPriceMax?: number | null;
+  /** Initial collection-slug filter. Null (default) = all collections. */
+  defaultCollection?: string | null;
+  /**
+   * Also fetch reactive facet counts (type / price bucket / collection) for the
+   * current filter set via the client's `getSwapFacets`, and expose them as
+   * {@link UseSwapListResult.facets} / {@link UseSwapListResult.facetsLoading} —
+   * so a faceted filter sidebar can show live, filter-aware counts. Off by
+   * default; one request runs per filter change (never one per option), guarded
+   * against stale responses, and a failed facets fetch never surfaces the main
+   * {@link UseSwapListResult.error} banner.
+   */
+  includeFacets?: boolean;
 }
 
 export interface UseSwapListResult {
@@ -94,6 +104,29 @@ export interface UseSwapListResult {
   showSold: boolean;
   setShowSold: (v: boolean) => void;
   canShowSold: boolean;
+  /** Active minimum listing-price filter in sats, or null for no lower bound. */
+  priceMin: number | null;
+  /** Active maximum listing-price filter in sats, or null for no upper bound. */
+  priceMax: number | null;
+  /**
+   * Set the price-range filter (both bounds at once, in sats; pass null for an
+   * open bound) and reset to the first page. Pair with the price buckets from
+   * {@link UseSwapListResult.facets} (apply a bucket's `minSats`/`maxSats`).
+   */
+  setPriceRange: (min: number | null, max: number | null) => void;
+  /** Active collection-slug filter, or null for all collections. */
+  collection: string | null;
+  /** Set the collection-slug filter (null clears it) and reset to the first page. */
+  setCollection: (slug: string | null) => void;
+  /**
+   * Reactive facet counts (type / price bucket / collection) for the current
+   * filter set, or null before the first load / when
+   * {@link UseSwapListOptions.includeFacets} is off. Each dimension is counted
+   * excluding its own active selection, so sibling options keep clickable counts.
+   */
+  facets: SwapFacets | null;
+  /** True while a facets request is in flight (the last-known counts stay visible). */
+  facetsLoading: boolean;
   /**
    * True when the Kontor filter is selected but Kontor is not enabled
    * (no `kontorNetwork="signet"` on the provider). Kontor is signet-only, so
@@ -141,8 +174,6 @@ export interface UseSwapListResult {
   handleLoginSuccess: (addresses: Addresses) => void;
 }
 
-const DEFAULT_LIMIT = 24;
-
 export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult {
   const { client, addresses, kontorNetwork, refreshBalances } =
     useHorizonMarket();
@@ -151,8 +182,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
     defaultShowSold = false,
+    defaultPriceMin = null,
+    defaultPriceMax = null,
+    defaultCollection = null,
     limit = DEFAULT_LIMIT,
     includePendingOrders = false,
+    includeFacets = false,
   } = options;
 
   const [listingType, setListingTypeState] = useState<SwapListingType | null>(
@@ -163,6 +198,11 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   );
   const [showMySwaps, setShowMySwapsState] = useState(defaultShowMySwaps);
   const [showSold, setShowSoldState] = useState(defaultShowSold);
+  const [priceMin, setPriceMinState] = useState<number | null>(defaultPriceMin);
+  const [priceMax, setPriceMaxState] = useState<number | null>(defaultPriceMax);
+  const [collection, setCollectionState] = useState<string | null>(
+    defaultCollection,
+  );
   const [page, setPageState] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -172,6 +212,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [error, setError] = useState<Error | null>(null);
   // When the current list was last (re-)fetched, for an "Updated …" label.
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+
+  // Reactive facet counts for the current filter set (populated only when
+  // `includeFacets` is on). `facetsFetchSeqRef` guards against stale responses.
+  const [facets, setFacets] = useState<SwapFacets | null>(null);
+  const [facetsLoading, setFacetsLoading] = useState(false);
+  const facetsFetchSeqRef = useRef(0);
 
   // The connected wallet's in-progress orders (pending listings + pending
   // purchases), fetched separately from the main feed via `pending_address`.
@@ -230,6 +276,20 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
   const setShowSold = useCallback((v: boolean) => {
     setShowSoldState(v);
+    setPageState(0);
+  }, []);
+
+  const setPriceRange = useCallback(
+    (min: number | null, max: number | null) => {
+      setPriceMinState(min);
+      setPriceMaxState(max);
+      setPageState(0);
+    },
+    [],
+  );
+
+  const setCollection = useCallback((slug: string | null) => {
+    setCollectionState(slug);
     setPageState(0);
   }, []);
 
@@ -300,15 +360,21 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     setError(null);
 
     const sort = SORT_MAP[sortOption];
+    const filters = {
+      listingType: listingType ?? undefined,
+      priceMin: priceMin ?? undefined,
+      priceMax: priceMax ?? undefined,
+      collection: collection ?? undefined,
+    };
     const baseParams = showSold
       ? {
-          listingType: listingType ?? undefined,
+          ...filters,
           orderBy: sort.orderBy,
           order: sort.order,
           sales: true,
         }
       : {
-          listingType: listingType ?? undefined,
+          ...filters,
           orderBy: sort.orderBy,
           order: sort.order,
           filled: false,
@@ -401,11 +467,65 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     sortOption,
     showMySwaps,
     showSold,
+    priceMin,
+    priceMax,
+    collection,
     addresses,
     page,
     limit,
     refreshKey,
     kontorUnavailable,
+  ]);
+
+  // Reactive facet counts for the current filter set (opt-in via `includeFacets`).
+  // One `getSwapFacets` request per filter change — never one per option — using
+  // the SAME filters as the main feed, so the counts describe the exact set the
+  // grid shows. `getSwapFacets` ignores sort/pagination, so those are omitted.
+  // The request is seq-guarded so a slow earlier response can't overwrite a newer
+  // one, the last-known counts stay visible while the next is in flight (no
+  // flicker to empty), and a failure is swallowed — it must never surface the
+  // main list's error banner. Runs independently of the "My swaps" seller filter
+  // (facets describe the public marketplace set for the current filters).
+  useEffect(() => {
+    if (!includeFacets) {
+      setFacets(null);
+      setFacetsLoading(false);
+      return;
+    }
+    const seq = ++facetsFetchSeqRef.current;
+    setFacetsLoading(true);
+
+    const facetFilters = {
+      listingType: listingType ?? undefined,
+      priceMin: priceMin ?? undefined,
+      priceMax: priceMax ?? undefined,
+      collection: collection ?? undefined,
+    };
+    const facetParams: SwapFacetsParams = showSold
+      ? { ...facetFilters, sales: true }
+      : { ...facetFilters, filled: false, delisted: false, funded: true };
+
+    client
+      .getSwapFacets(facetParams)
+      .then((result) => {
+        if (seq === facetsFetchSeqRef.current) setFacets(result);
+      })
+      .catch(() => {
+        // Keep the last-known counts on a transient failure; the next filter
+        // change (or refresh) retries. Never surface the main error banner.
+      })
+      .finally(() => {
+        if (seq === facetsFetchSeqRef.current) setFacetsLoading(false);
+      });
+  }, [
+    client,
+    includeFacets,
+    listingType,
+    showSold,
+    priceMin,
+    priceMax,
+    collection,
+    refreshKey,
   ]);
 
   // Fetch the connected wallet's in-progress orders via the API's
@@ -590,6 +710,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     showSold,
     setShowSold,
     canShowSold: true,
+    priceMin,
+    priceMax,
+    setPriceRange,
+    collection,
+    setCollection,
+    facets,
+    facetsLoading,
     kontorUnavailable,
     page,
     setPage,
