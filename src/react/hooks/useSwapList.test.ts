@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-utils.js";
 import type { HorizonMarketContextValue } from "../context.js";
 import type { AtomicSwap } from "../../types/index.js";
-import { useSwapList } from "./useSwapList.js";
+import { useSwapList, type UseSwapListOptions } from "./useSwapList.js";
 import { PENDING_ORDERS_POLL_MS } from "../internal/swapListConstants.js";
 
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
@@ -530,10 +530,13 @@ describe("useSwapList — removeSwap / refetch / pagination clamp", () => {
 });
 
 describe("useSwapList — item action + modals", () => {
-  async function mounted(overrides: Partial<HorizonMarketContextValue> = {}) {
+  async function mounted(
+    overrides: Partial<HorizonMarketContextValue> = {},
+    hookOptions: UseSwapListOptions = {},
+  ) {
     const listSwaps = vi.fn().mockResolvedValue(listResult([]));
     ctxRef.current = ctxWith(listSwaps, overrides);
-    const { result } = renderHook(() => useSwapList());
+    const { result } = renderHook(() => useSwapList(hookOptions));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     return result;
   }
@@ -638,6 +641,87 @@ describe("useSwapList — item action + modals", () => {
     );
     expect(result.current.loginModalOpen).toBe(false);
     expect(result.current.confirmationModalOpen).toBe(false);
+  });
+
+  it("fires onLoginRequired (not onBuyStarted/onDelistStarted) when acting while logged out", async () => {
+    const onLoginRequired = vi.fn();
+    const onBuyStarted = vi.fn();
+    const onDelistStarted = vi.fn();
+    const result = await mounted(
+      { addresses: null },
+      { onLoginRequired, onBuyStarted, onDelistStarted },
+    );
+    const s = swap({ id: "s6" });
+    await act(async () => result.current.onItemAction(s));
+    expect(onLoginRequired).toHaveBeenCalledWith(s);
+    expect(onBuyStarted).not.toHaveBeenCalled();
+    expect(onDelistStarted).not.toHaveBeenCalled();
+  });
+
+  it("fires onDelistStarted (not onBuyStarted) when acting on the viewer's own listing", async () => {
+    const onBuyStarted = vi.fn();
+    const onDelistStarted = vi.fn();
+    const result = await mounted(
+      { addresses: { p2wpkh: "bc1qme", p2tr: "bc1pme", publicKey: "02aa" } },
+      { onBuyStarted, onDelistStarted },
+    );
+    const s = swap({ id: "s7", sellerAddress: "bc1qme" });
+    await act(async () => result.current.onItemAction(s));
+    expect(onDelistStarted).toHaveBeenCalledWith(s);
+    expect(onBuyStarted).not.toHaveBeenCalled();
+  });
+
+  it("fires onBuyStarted (not onDelistStarted) when acting on someone else's listing", async () => {
+    const onBuyStarted = vi.fn();
+    const onDelistStarted = vi.fn();
+    const result = await mounted(
+      { addresses: { p2wpkh: "bc1qme", p2tr: "bc1pme", publicKey: "02aa" } },
+      { onBuyStarted, onDelistStarted },
+    );
+    const s = swap({ id: "s8", sellerAddress: "bc1qother" });
+    await act(async () => result.current.onItemAction(s));
+    expect(onBuyStarted).toHaveBeenCalledWith(s);
+    expect(onDelistStarted).not.toHaveBeenCalled();
+  });
+
+  it("fires onBuyStarted from handleLoginSuccess for a foreign pending swap", async () => {
+    const onBuyStarted = vi.fn();
+    const onDelistStarted = vi.fn();
+    const result = await mounted(
+      { addresses: null },
+      { onBuyStarted, onDelistStarted },
+    );
+    const s = swap({ id: "s9", sellerAddress: "bc1qseller" });
+    await act(async () => result.current.onItemAction(s));
+    await act(async () =>
+      result.current.handleLoginSuccess({
+        p2wpkh: "bc1qme",
+        p2tr: "bc1pme",
+        publicKey: "02aa",
+      }),
+    );
+    expect(onBuyStarted).toHaveBeenCalledWith(s);
+    expect(onDelistStarted).not.toHaveBeenCalled();
+  });
+
+  it("fires onDelistStarted from handleLoginSuccess for the viewer's own pending swap", async () => {
+    const onBuyStarted = vi.fn();
+    const onDelistStarted = vi.fn();
+    const result = await mounted(
+      { addresses: null },
+      { onBuyStarted, onDelistStarted },
+    );
+    const s = swap({ id: "s10", sellerAddress: "bc1qme" });
+    await act(async () => result.current.onItemAction(s));
+    await act(async () =>
+      result.current.handleLoginSuccess({
+        p2wpkh: "bc1qme",
+        p2tr: "bc1pme",
+        publicKey: "02aa",
+      }),
+    );
+    expect(onDelistStarted).toHaveBeenCalledWith(s);
+    expect(onBuyStarted).not.toHaveBeenCalled();
   });
 });
 

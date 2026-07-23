@@ -40,6 +40,9 @@ EXPO_PUBLIC_COUNTERPARTY_API_URL_SIGNET=    # Counterparty supports signet
 EXPO_PUBLIC_ZELD_API_URL_SIGNET=            # set once ZELD signet API exists
 EXPO_PUBLIC_KONTOR_INDEXER_URL_SIGNET=      # blank → public signet indexer
 EXPO_PUBLIC_KONTOR_NFT_CONTRACT_SIGNET=     # optional — owned-NFT lookup
+
+# Analytics (optional — blank disables tracking entirely)
+EXPO_PUBLIC_USERMAVEN_API_KEY=              # same PUBLIC key as the web app's NEXT_PUBLIC_USERMAVEN_API_KEY
 ```
 
 API base URLs are resolved **per network**: on mainnet a blank value uses the
@@ -74,8 +77,9 @@ Configuration lives in `eas.json`:
 - `submit.production.ios.ascAppId` points at the existing App Store Connect app, so
   `eas submit` never tries to re-create it (creation fails on a fresh org account
   with a `companyName` error).
-- `EXPO_PUBLIC_WEB3AUTH_CLIENT_ID` is **not** committed — it's an EAS environment
-  variable (production + preview). Only non-secret toggles live in `eas.json`.
+- `EXPO_PUBLIC_WEB3AUTH_CLIENT_ID` and `EXPO_PUBLIC_USERMAVEN_API_KEY` are **not**
+  committed — they're EAS environment variables (production + preview). Only
+  non-secret toggles live in `eas.json`.
 
 Two build-specific details also matter:
 

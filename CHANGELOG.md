@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-07-23
+
+### Added
+
+- React: **buy / delist funnel observer callbacks** on `useSwapList` / `<SwapList/>` (web + native) — `onLoginRequired`, `onBuyStarted`, `onDelistStarted` on `useSwapList`, and `onBuySuccess`, `onBuyError`, `onDelistSuccess`, `onDelistError` on `<SwapList/>`. Previously a host could only observe the raw `onSwapSelect` tap (fires for both buy and sell) with no visibility into the login/confirm/result funnel — buy/delist results were consumed entirely inside the component. These are **observers, not overrides**: the built-in login modal, confirmation modal, and result screens still drive the UX unchanged — the callbacks only notify, each passed the full `AtomicSwap` (not just the asset-poor `PendingSale`) so a host can build rich analytics and branch kontor-vs-multisig via `swap.listingType`.
+  - `onLoginRequired(swap)` fires from `onItemAction` when acting while logged out, before the login modal opens.
+  - `onBuyStarted(swap)` / `onDelistStarted(swap)` fire when the buy/delist confirmation modal opens — immediately, or after a successful login.
+  - `onBuySuccess(swap, sales)` / `onBuyError(swap, error)` and `onDelistSuccess(swap)` / `onDelistError(swap, error)` fire from `SwapList`'s existing confirmation wiring.
+
 ## [0.2.3] - 2026-07-23
 
 ### Added

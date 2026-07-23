@@ -9,6 +9,10 @@ import { ConnectPrompt } from "../../components/ConnectPrompt.js";
 import { useSellIntent } from "../../lib/sell-intent.js";
 import { useBuyRefresh } from "../../lib/buy-refresh.js";
 import { colors, fonts, spacing } from "../../lib/theme.js";
+import {
+  trackListingFormFailed,
+  trackListingFormSuccess,
+} from "../../lib/analytics/events.js";
 
 /**
  * Sell tab: the SDK's <SellOrderForm/> as a full-screen, two-step mobile flow —
@@ -53,7 +57,17 @@ export default function SellScreen() {
             // Refresh the Buy list when the order is created; the detail Back
             // button returns to the wallet it came from, but closing the result
             // screen jumps to the Buy tab to see the new order at the top.
-            onSuccess={() => requestBuyRefresh()}
+            onSuccess={(swap, created) => {
+              trackListingFormSuccess({
+                id: swap.id,
+                listingType: swap.listingType,
+                assetName: swap.assetName,
+                inscriptionNumber: swap.inscriptionNumber,
+                created,
+              });
+              requestBuyRefresh();
+            }}
+            onError={trackListingFormFailed}
             onClose={() => router.navigate("/wallet")}
             onDone={() => router.navigate("/")}
           />
@@ -62,7 +76,17 @@ export default function SellScreen() {
             title={<Text style={styles.title}>Sell</Text>}
             // Once the order is created, refresh the Buy list; closing the result
             // screen jumps to the Buy tab to see it at the top.
-            onSuccess={() => requestBuyRefresh()}
+            onSuccess={(swap, created) => {
+              trackListingFormSuccess({
+                id: swap.id,
+                listingType: swap.listingType,
+                assetName: swap.assetName,
+                inscriptionNumber: swap.inscriptionNumber,
+                created,
+              });
+              requestBuyRefresh();
+            }}
+            onError={trackListingFormFailed}
             onDone={() => router.navigate("/")}
           />
         )

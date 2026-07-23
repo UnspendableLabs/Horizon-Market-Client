@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { AtomicSwap } from "../../types/index.js";
+import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import {
   useSwapList,
   SORT_OPTIONS,
@@ -47,6 +47,20 @@ export interface SwapListProps extends UseSwapListOptions {
    */
   getPrivateKey: (email: string) => Promise<string>;
   onSwapSelect?: (swap: AtomicSwap) => void;
+  /**
+   * Fired when a buy succeeds. Observation only — the built-in confirmation
+   * modal still drives the UX unchanged. `sales` is the raw fill result
+   * (asset-poor); `swap` is the full listing that was bought, so a host can
+   * build a rich analytics payload and branch kontor-vs-multisig via
+   * `swap.listingType` with no extra lookup.
+   */
+  onBuySuccess?: (swap: AtomicSwap, sales: PendingSale[]) => void;
+  /** Fired when a buy fails. Observation only, mirrors {@link onBuySuccess}. */
+  onBuyError?: (swap: AtomicSwap, error: Error) => void;
+  /** Fired when delisting the viewer's own swap succeeds. Observation only. */
+  onDelistSuccess?: (swap: AtomicSwap) => void;
+  /** Fired when delisting fails. Observation only. */
+  onDelistError?: (swap: AtomicSwap, error: Error) => void;
   className?: string;
   classNames?: SwapListClassNames;
   style?: CSSProperties;
@@ -99,6 +113,10 @@ const phoneSwapGrid: CSSProperties = {
 export function SwapList({
   getPrivateKey,
   onSwapSelect,
+  onBuySuccess,
+  onBuyError,
+  onDelistSuccess,
+  onDelistError,
   className,
   classNames,
   style,
@@ -336,10 +354,16 @@ export function SwapList({
               }
               removeSwap(pendingSwap.id);
               refetch();
+              onBuySuccess?.(pendingSwap, sales);
             }}
             onDelistSuccess={() => {
               removeSwap(pendingSwap.id);
               refetch();
+              onDelistSuccess?.(pendingSwap);
+            }}
+            onError={(error) => {
+              if (confirmationMode === "buy") onBuyError?.(pendingSwap, error);
+              else onDelistError?.(pendingSwap, error);
             }}
             onComplete={closeConfirmationModal}
             classNames={classNames?.confirmation}

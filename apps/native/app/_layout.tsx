@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +25,7 @@ import {
   persistDerivationMode,
 } from "../lib/derivation.js";
 import type { DerivationMode } from "@unspendablelabs/horizon-market-client/react";
+import { trackNetworkSwitched, trackScreenView } from "../lib/analytics/events.js";
 
 // Keep the native splash up until fonts settle (or fail), so the market doesn't
 // flash unstyled text first.
@@ -145,9 +146,17 @@ export default function RootLayout() {
 
   const handleNetworkChange = (next: UiNetwork) => {
     userPicked.current = true;
+    trackNetworkSwitched(network, next);
     void persistNetwork(next);
     setNetwork(next);
   };
+
+  // Screen-view tracking (mirrors the web app's page-view tracking): fires once
+  // per route change, for every route regardless of which tab it's under.
+  const pathname = usePathname();
+  useEffect(() => {
+    trackScreenView(pathname);
+  }, [pathname]);
 
   if (!fontsLoaded && !fontError) return null;
 

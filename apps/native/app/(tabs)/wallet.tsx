@@ -9,6 +9,13 @@ import { useSellIntent } from "../../lib/sell-intent.js";
 import { logout as web3authLogout } from "../../lib/web3auth.js";
 import { clearMnemonicSession } from "../../lib/mnemonic-session.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
+import {
+  trackWalletDepositOpened,
+  trackWalletDisconnectClicked,
+  trackWalletSellAssetClicked,
+  trackWalletWithdrawCompleted,
+  trackWalletWithdrawOpened,
+} from "../../lib/analytics/events.js";
 
 /** Credits (paid + free) — the market's per-listing allowance, surfaced from the
  *  old header dropdown onto the wallet screen. */
@@ -48,6 +55,7 @@ export default function WalletTab() {
   // awaiting its lazy init would freeze the button for seconds. (Mirrors the old
   // header's handleLogout.)
   const handleDisconnect = () => {
+    trackWalletDisconnectClicked();
     logout();
     clearMnemonicSession().catch((err) => {
       console.error("Clearing recovery phrase failed:", err);
@@ -74,9 +82,21 @@ export default function WalletTab() {
           <WalletBalances
             title={<Text style={styles.title}>Wallet</Text>}
             onSellAsset={(asset) => {
+              trackWalletSellAssetClicked(asset.type);
               requestSell(asset);
               router.navigate("/sell");
             }}
+            onDeposit={({ symbol, depositType, asset }) =>
+              trackWalletDepositOpened({
+                symbol,
+                depositType,
+                assetType: asset?.type,
+              })
+            }
+            onWithdraw={({ target }) => trackWalletWithdrawOpened(target.type)}
+            onWithdrawComplete={({ target, txid }) =>
+              trackWalletWithdrawCompleted(target.type, txid)
+            }
           />
           <CreditsRow />
           <Pressable
