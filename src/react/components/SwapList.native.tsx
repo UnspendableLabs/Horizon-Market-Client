@@ -9,7 +9,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import type { AtomicSwap } from "../../types/index.js";
+import type { AtomicSwap, PendingSale } from "../../types/index.js";
 import {
   useSwapList,
   SORT_OPTIONS,
@@ -63,6 +63,20 @@ export interface SwapListProps extends UseSwapListOptions {
   title?: ReactNode;
   onSwapSelect?: (swap: AtomicSwap) => void;
   /**
+   * Fired when a buy succeeds. Observation only — the built-in confirmation
+   * modal still drives the UX unchanged. `sales` is the raw fill result
+   * (asset-poor); `swap` is the full listing that was bought, so a host can
+   * build a rich analytics payload and branch kontor-vs-multisig via
+   * `swap.listingType` with no extra lookup.
+   */
+  onBuySuccess?: (swap: AtomicSwap, sales: PendingSale[]) => void;
+  /** Fired when a buy fails. Observation only, mirrors {@link onBuySuccess}. */
+  onBuyError?: (swap: AtomicSwap, error: Error) => void;
+  /** Fired when delisting the viewer's own swap succeeds. Observation only. */
+  onDelistSuccess?: (swap: AtomicSwap) => void;
+  /** Fired when delisting fails. Observation only. */
+  onDelistError?: (swap: AtomicSwap, error: Error) => void;
+  /**
    * When true, the toolbar (filters/sort) stays fixed and only the swap list
    * content scrolls. The root View expands to flex:1. Use this when SwapList
    * fills the remaining screen space below a sticky header.
@@ -82,6 +96,10 @@ export function SwapList({
   getPrivateKey,
   title,
   onSwapSelect,
+  onBuySuccess,
+  onBuyError,
+  onDelistSuccess,
+  onDelistError,
   scrollable,
   footerSlot,
   style,
@@ -342,10 +360,16 @@ export function SwapList({
               }
               removeSwap(pendingSwap.id);
               refetch();
+              onBuySuccess?.(pendingSwap, sales);
             }}
             onDelistSuccess={() => {
               removeSwap(pendingSwap.id);
               refetch();
+              onDelistSuccess?.(pendingSwap);
+            }}
+            onError={(error) => {
+              if (confirmationMode === "buy") onBuyError?.(pendingSwap, error);
+              else onDelistError?.(pendingSwap, error);
             }}
             onComplete={closeConfirmationModal}
             styles={stylesProp?.confirmation}

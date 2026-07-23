@@ -17,6 +17,7 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { markFreshLogin } from "../lib/app-lock-events.js";
 import { persistMnemonicSession } from "../lib/mnemonic-session.js";
+import { trackWalletConnected } from "../lib/analytics/events.js";
 import { useSecretClipboard } from "../lib/secret-clipboard.js";
 import { ScreenCaptureGuard } from "./ScreenCaptureGuard.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
@@ -72,6 +73,9 @@ function useMnemonicConnect() {
         setBusy(false);
         throw err;
       }
+      // Only tracked once derivation actually succeeded — a thrown derivation
+      // above must never be counted as a connect.
+      trackWalletConnected("mnemonic");
       // Seal the phrase for a later cold-start restore. Fire-and-forget: a write
       // failure only costs the "stay signed in" convenience, never the connect.
       // Leave `busy` set — once addresses resolve the host swaps this screen out,

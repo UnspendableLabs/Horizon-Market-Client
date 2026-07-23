@@ -3,6 +3,15 @@ import { SwapList } from "@unspendablelabs/horizon-market-client/react";
 import { getPrivateKey } from "../../lib/web3auth.js";
 import { useBuyRefresh } from "../../lib/buy-refresh.js";
 import { colors, fonts } from "../../lib/theme.js";
+import {
+  trackBuyCompleted,
+  trackBuyFailed,
+  trackBuyLoginRequired,
+  trackBuyStarted,
+  trackDelistCompleted,
+  trackDelistFailed,
+  trackDelistStarted,
+} from "../../lib/analytics/events.js";
 
 // Buy tab: the SDK's SwapList (the atomic-swap marketplace). Fills the space
 // between the top safe area and the fixed tab bar; the list scrolls on its own.
@@ -22,6 +31,13 @@ export default function BuyScreen() {
       title={<Text style={styles.title}>Buy</Text>}
       scrollable
       style={styles.list}
+      onLoginRequired={trackBuyLoginRequired}
+      onBuyStarted={trackBuyStarted}
+      onDelistStarted={trackDelistStarted}
+      onBuySuccess={trackBuyCompleted}
+      onBuyError={trackBuyFailed}
+      onDelistSuccess={trackDelistCompleted}
+      onDelistError={trackDelistFailed}
     />
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "@unspendablelabs/horizon-market-client",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "TypeScript client for the Horizon Market Atomic Swap API",
   "keywords": [
     "bitcoin",

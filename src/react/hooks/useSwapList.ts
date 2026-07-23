@@ -78,6 +78,24 @@ export interface UseSwapListOptions {
    * {@link UseSwapListResult.error} banner.
    */
   includeFacets?: boolean;
+  /**
+   * Fired from {@link UseSwapListResult.onItemAction} when acting on a swap
+   * while logged out, right before the login modal opens. Observation only —
+   * useful for analytics (e.g. "buy attempted, login required").
+   */
+  onLoginRequired?: (swap: AtomicSwap) => void;
+  /**
+   * Fired when the buy-confirmation modal opens for `swap` — either
+   * immediately (already logged in) or after a successful login. Observation
+   * only: the built-in confirmation modal still drives the UX unchanged.
+   */
+  onBuyStarted?: (swap: AtomicSwap) => void;
+  /**
+   * Fired when the delist-confirmation modal opens for the viewer's own
+   * `swap` — either immediately or after a successful login. Observation
+   * only, mirrors {@link UseSwapListOptions.onBuyStarted}.
+   */
+  onDelistStarted?: (swap: AtomicSwap) => void;
 }
 
 export interface UseSwapListResult {
@@ -188,7 +206,15 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     limit = DEFAULT_LIMIT,
     includePendingOrders = false,
     includeFacets = false,
+    onLoginRequired,
+    onBuyStarted,
+    onDelistStarted,
   } = options;
+
+  // Latest analytics observers without forcing onItemAction/handleLoginSuccess
+  // to re-create per render.
+  const analyticsRef = useRef({ onLoginRequired, onBuyStarted, onDelistStarted });
+  analyticsRef.current = { onLoginRequired, onBuyStarted, onDelistStarted };
 
   const [listingType, setListingTypeState] = useState<SwapListingType | null>(
     defaultListingType,
@@ -652,20 +678,30 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     [addresses],
   );
 
+  // Single entry point for opening the buy/delist confirmation modal, so the
+  // `onBuyStarted`/`onDelistStarted` observers fire from one place regardless
+  // of whether the modal opens directly (onItemAction) or after a login
+  // (handleLoginSuccess).
+  const openConfirmation = useCallback((swap: AtomicSwap, mode: "buy" | "sell") => {
+    setConfirmationMode(mode);
+    setConfirmationModalOpen(true);
+    if (mode === "sell") analyticsRef.current.onDelistStarted?.(swap);
+    else analyticsRef.current.onBuyStarted?.(swap);
+  }, []);
+
   const onItemAction = useCallback(
     (swap: AtomicSwap) => {
       setPendingSwap(swap);
       if (!addresses) {
+        analyticsRef.current.onLoginRequired?.(swap);
         setLoginModalOpen(true);
       } else if (checkIsMySwap(swap, addresses)) {
-        setConfirmationMode("sell");
-        setConfirmationModalOpen(true);
+        openConfirmation(swap, "sell");
       } else {
-        setConfirmationMode("buy");
-        setConfirmationModalOpen(true);
+        openConfirmation(swap, "buy");
       }
     },
-    [addresses],
+    [addresses, openConfirmation],
   );
 
   const closeLoginModal = useCallback(() => {
@@ -682,14 +718,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     (newAddresses: Addresses) => {
       setLoginModalOpen(false);
       if (!pendingSwap) return;
-      if (checkIsMySwap(pendingSwap, newAddresses)) {
-        setConfirmationMode("sell");
-      } else {
-        setConfirmationMode("buy");
-      }
-      setConfirmationModalOpen(true);
+      openConfirmation(
+        pendingSwap,
+        checkIsMySwap(pendingSwap, newAddresses) ? "sell" : "buy",
+      );
     },
-    [pendingSwap],
+    [pendingSwap, openConfirmation],
   );
 
   const totalPages = limit > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;

@@ -1,9 +1,10 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Linking,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -12,6 +13,10 @@ import { NETWORKS, type UiNetwork } from "../../lib/networks.js";
 import { useNetwork } from "../../lib/network-context.js";
 import { DerivationSettings } from "../../components/DerivationSettings.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
+import {
+  hasAnalyticsConsent,
+  setAnalyticsConsent,
+} from "../../lib/analytics/usermaven-client.js";
 
 const ORDER: UiNetwork[] = ["mainnet", "signet"];
 
@@ -67,6 +72,22 @@ function TelegramIcon({ size = 16 }: { size?: number }) {
  */
 export default function SettingsScreen() {
   const { network, setNetwork } = useNetwork();
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void hasAnalyticsConsent().then((enabled) => {
+      if (active) setAnalyticsEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleAnalytics = (enabled: boolean) => {
+    setAnalyticsEnabled(enabled);
+    void setAnalyticsConsent(enabled);
+  };
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -105,6 +126,28 @@ export default function SettingsScreen() {
 
       {/* Wallet: address-derivation mode + recovery-phrase export */}
       <DerivationSettings />
+
+      {/* Privacy: usage analytics opt-out */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Privacy</Text>
+        <View style={styles.card}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.switchTitle}>Share usage analytics</Text>
+              <Text style={styles.switchSub}>
+                Anonymous product-usage data (no wallet address). Helps us
+                improve the app.
+              </Text>
+            </View>
+            <Switch
+              value={analyticsEnabled}
+              onValueChange={toggleAnalytics}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={colors.foreground}
+            />
+          </View>
+        </View>
+      </View>
 
       {/* About: legal links + socials + copyright (from the old footer) */}
       <View style={styles.section}>
@@ -206,6 +249,27 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontFamily: fonts.sans,
     lineHeight: 18,
+  },
+
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  switchText: { flex: 1, gap: 2 },
+  switchTitle: {
+    fontSize: 15,
+    color: colors.foreground,
+    fontFamily: fonts.sansSemiBold,
+  },
+  switchSub: {
+    fontSize: 12,
+    color: colors.muted,
+    fontFamily: fonts.sans,
+    lineHeight: 17,
   },
 
   /* About */

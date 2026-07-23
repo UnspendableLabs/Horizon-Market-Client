@@ -4,6 +4,7 @@ import { LoginPanel } from "@unspendablelabs/horizon-market-client/react";
 import { getPrivateKey } from "../lib/web3auth.js";
 import { RestoreWalletForm, NewWalletForm } from "./MnemonicConnect.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
+import { trackWalletConnected } from "../lib/analytics/events.js";
 
 interface ConnectPromptProps {
   /** One-line reason shown above the login form (e.g. "…to list an asset"). */
@@ -34,7 +35,11 @@ export function ConnectPrompt({ message }: ConnectPromptProps) {
       <Text style={styles.message}>{message}</Text>
       {/* autoDetectSession is off: SessionRestorer already probes for a persisted
           session at boot, so this form only handles an explicit sign-in. */}
-      <LoginPanel getPrivateKey={getPrivateKey} autoDetectSession={false} />
+      <LoginPanel
+        getPrivateKey={getPrivateKey}
+        autoDetectSession={false}
+        onSuccess={() => trackWalletConnected("web3auth")}
+      />
 
       <View style={styles.divider}>
         <View style={styles.dividerLine} />
