@@ -148,6 +148,9 @@ export { WalletBalances } from "./components/WalletBalances.native.js";
 export type {
   WalletBalancesProps,
   WalletBalancesStyles,
+  WalletDepositEvent,
+  WalletWithdrawEvent,
+  WalletWithdrawCompleteEvent,
 } from "./components/WalletBalances.native.js";
 
 export { WalletBalanceSummary } from "./components/WalletBalanceSummary.native.js";

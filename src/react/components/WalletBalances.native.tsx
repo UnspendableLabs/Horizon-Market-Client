@@ -36,6 +36,9 @@ import {
   withdrawTitle,
   type ActionKind,
   type DepositType,
+  type WalletDepositEvent,
+  type WalletWithdrawEvent,
+  type WalletWithdrawCompleteEvent,
 } from "../internal/useWalletBalancesController.js";
 import { ListHeader } from "../internal/ListHeader.native.js";
 import { Modal } from "./Modal.native.js";
@@ -64,9 +67,25 @@ export interface WalletBalancesProps {
    * (an inline {@link SellOrderForm}) is used.
    */
   onSellAsset?: (asset: AssetOption) => void;
+  /**
+   * Notified when a deposit address is opened. Observation only — the built-in
+   * deposit modal still shows. Use it for analytics.
+   */
+  onDeposit?: (event: WalletDepositEvent) => void;
+  /** Notified when a withdraw flow is opened for a balance. Observation only. */
+  onWithdraw?: (event: WalletWithdrawEvent) => void;
+  /** Notified when a withdraw broadcasts successfully (funds have left). */
+  onWithdrawComplete?: (event: WalletWithdrawCompleteEvent) => void;
   style?: StyleProp<ViewStyle>;
   styles?: WalletBalancesStyles;
 }
+
+// Same deposit/withdraw observer payloads as the web component (shared controller).
+export type {
+  WalletDepositEvent,
+  WalletWithdrawEvent,
+  WalletWithdrawCompleteEvent,
+} from "../internal/useWalletBalancesController.js";
 
 function createSheet(theme: ResolvedTheme) {
   return StyleSheet.create({
@@ -419,6 +438,9 @@ function TokenCell({
 export function WalletBalances({
   title,
   onSellAsset,
+  onDeposit,
+  onWithdraw,
+  onWithdrawComplete,
   style,
   styles: stylesProp,
 }: WalletBalancesProps) {
@@ -449,9 +471,10 @@ export function WalletBalances({
     setWithdraw,
     canWithdrawBtc,
     openBtcWithdraw,
+    openWithdraw,
     openDeposit,
     openDepositForAsset,
-  } = useWalletBalancesController();
+  } = useWalletBalancesController({ onDeposit, onWithdraw });
 
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
@@ -508,7 +531,7 @@ export function WalletBalances({
             key={line.symbol}
             line={line}
             onDeposit={openDeposit}
-            onWithdraw={setWithdraw}
+            onWithdraw={openWithdraw}
             onSell={onSellAsset ?? setSellAsset}
             sheet={sheet}
             color={iconColor}
@@ -549,7 +572,7 @@ export function WalletBalances({
                 key={assetKey(a)}
                 asset={a}
                 onDeposit={openDepositForAsset}
-                onWithdraw={setWithdraw}
+                onWithdraw={openWithdraw}
                 onSell={onSellAsset ?? setSellAsset}
                 sheet={sheet}
                 color={iconColor}
@@ -610,6 +633,9 @@ export function WalletBalances({
           <WithdrawForm
             key={withdrawKey(withdraw)}
             target={withdraw}
+            onSuccess={(txid) =>
+              onWithdrawComplete?.({ target: withdraw, txid })
+            }
             onClose={() => setWithdraw(null)}
           />
         ) : null}

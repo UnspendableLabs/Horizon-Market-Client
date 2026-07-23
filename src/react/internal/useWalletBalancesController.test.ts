@@ -253,6 +253,66 @@ describe("useWalletBalancesController", () => {
     act(() => result.current.openBtcWithdraw());
     expect(result.current.withdraw).toBeNull();
   });
+
+  it("notifies onDeposit when a deposit opens (symbol only, then with the asset)", () => {
+    const onDeposit = vi.fn();
+    const { result } = renderHook(() =>
+      useWalletBalancesController({ onDeposit }),
+    );
+
+    act(() => result.current.openDeposit("XCP", "counterparty"));
+    expect(onDeposit).toHaveBeenLastCalledWith({
+      symbol: "XCP",
+      depositType: "counterparty",
+      asset: undefined,
+    });
+
+    act(() => result.current.openDepositForAsset(PEPE));
+    expect(onDeposit).toHaveBeenLastCalledWith({
+      symbol: "PEPE",
+      depositType: "counterparty",
+      asset: PEPE,
+    });
+  });
+
+  it("does not notify onDeposit while disconnected (no modal opens)", () => {
+    ctxRef.current = makeCtx({ addresses: null });
+    const onDeposit = vi.fn();
+    const { result } = renderHook(() =>
+      useWalletBalancesController({ onDeposit }),
+    );
+
+    act(() => result.current.openDeposit("XCP", "counterparty"));
+    expect(onDeposit).not.toHaveBeenCalled();
+  });
+
+  it("notifies onWithdraw for an asset target and for BTC", () => {
+    summaryRef.current = makeSummary({ btcSats: 500n });
+    const onWithdraw = vi.fn();
+    const { result } = renderHook(() =>
+      useWalletBalancesController({ onWithdraw }),
+    );
+
+    act(() => result.current.openWithdraw(PEPE));
+    expect(onWithdraw).toHaveBeenLastCalledWith({ target: PEPE });
+    expect(result.current.withdraw).toBe(PEPE);
+
+    act(() => result.current.openBtcWithdraw());
+    expect(onWithdraw).toHaveBeenLastCalledWith({
+      target: { type: "btc", balanceSats: 500n },
+    });
+  });
+
+  it("does not notify onWithdraw when the BTC balance is zero", () => {
+    summaryRef.current = makeSummary({ btcSats: 0n });
+    const onWithdraw = vi.fn();
+    const { result } = renderHook(() =>
+      useWalletBalancesController({ onWithdraw }),
+    );
+
+    act(() => result.current.openBtcWithdraw());
+    expect(onWithdraw).not.toHaveBeenCalled();
+  });
 });
 
 describe("depositTargetFor", () => {

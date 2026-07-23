@@ -25,6 +25,9 @@ import {
   withdrawTitle,
   type ActionKind,
   type DepositType,
+  type WalletDepositEvent,
+  type WalletWithdrawEvent,
+  type WalletWithdrawCompleteEvent,
 } from "../internal/useWalletBalancesController.js";
 import { Modal } from "./Modal.web.js";
 import { SellOrderForm } from "./SellOrderForm.web.js";
@@ -40,6 +43,14 @@ export interface WalletBalancesClassNames {
   groupHeader?: string;
 }
 
+// Deposit/withdraw observer payloads live on the shared controller; surface them
+// here so they're part of the same public module as WalletBalancesProps.
+export type {
+  WalletDepositEvent,
+  WalletWithdrawEvent,
+  WalletWithdrawCompleteEvent,
+} from "../internal/useWalletBalancesController.js";
+
 export interface WalletBalancesProps {
   /** Optional heading rendered at the left of the header row (title lives on the
    * same line as the "Updated …" timestamp + Refresh button). */
@@ -51,6 +62,19 @@ export interface WalletBalancesProps {
    * (an inline {@link SellOrderForm}) is used.
    */
   onSellAsset?: (asset: AssetOption) => void;
+  /**
+   * Notified when a deposit address is opened (the user intends to receive
+   * funds). Observation only — the built-in deposit modal still shows. Use it for
+   * analytics; it never changes behavior.
+   */
+  onDeposit?: (event: WalletDepositEvent) => void;
+  /**
+   * Notified when a withdraw flow is opened for a balance. Observation only — the
+   * built-in withdraw form still shows.
+   */
+  onWithdraw?: (event: WalletWithdrawEvent) => void;
+  /** Notified when a withdraw broadcasts successfully (funds have left). */
+  onWithdrawComplete?: (event: WalletWithdrawCompleteEvent) => void;
   className?: string;
   classNames?: WalletBalancesClassNames;
   style?: CSSProperties;
@@ -636,6 +660,9 @@ function OtherAssetTile({
 export function WalletBalances({
   title,
   onSellAsset,
+  onDeposit,
+  onWithdraw,
+  onWithdrawComplete,
   className,
   classNames,
   style,
@@ -660,9 +687,10 @@ export function WalletBalances({
     setWithdraw,
     canWithdrawBtc,
     openBtcWithdraw,
+    openWithdraw,
     openDeposit,
     openDepositForAsset,
-  } = useWalletBalancesController();
+  } = useWalletBalancesController({ onDeposit, onWithdraw });
 
   return (
     <div
@@ -733,7 +761,7 @@ export function WalletBalances({
             line={line}
             className={classNames?.token}
             onDeposit={openDeposit}
-            onWithdraw={setWithdraw}
+            onWithdraw={openWithdraw}
             onSell={onSellAsset ?? setSellAsset}
           />
         ))}
@@ -771,7 +799,7 @@ export function WalletBalances({
                 key={assetKey(a)}
                 asset={a}
                 onDeposit={openDepositForAsset}
-                onWithdraw={setWithdraw}
+                onWithdraw={openWithdraw}
                 onSell={onSellAsset ?? setSellAsset}
                 className={classNames?.tile}
               />
@@ -825,6 +853,9 @@ export function WalletBalances({
           <WithdrawForm
             key={withdrawKey(withdraw)}
             target={withdraw}
+            onSuccess={(txid) =>
+              onWithdrawComplete?.({ target: withdraw, txid })
+            }
             onClose={() => setWithdraw(null)}
           />
         )}
