@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
 import type { AssetOption } from "../hooks/useAssets.js";
 import { usePrices } from "../hooks/usePrices.js";
@@ -15,6 +15,41 @@ export type ActionKind = "deposit" | "withdraw" | "sell";
 
 /** Deposit picks the address a given asset is (or would be) received on. */
 export type DepositType = AssetOption["type"] | "btc";
+
+/**
+ * A deposit affordance was opened — the user is viewing a receive address.
+ * Observation only: the built-in deposit modal still shows. Useful for analytics
+ * (e.g. "intent to fund").
+ */
+export interface WalletDepositEvent {
+  /** Human name of what's being received (e.g. "BTC", "XCP", "Ordinals"). */
+  symbol: string;
+  /** Which address family the deposit resolves to. */
+  depositType: DepositType;
+  /** The specific owned asset, when opened from a holding tile (else undefined). */
+  asset?: AssetOption;
+}
+
+/** A withdraw flow was opened for a target. Observation only. */
+export interface WalletWithdrawEvent {
+  target: WithdrawTarget;
+}
+
+/** A withdraw broadcast succeeded (funds have left the wallet). */
+export interface WalletWithdrawCompleteEvent {
+  target: WithdrawTarget;
+  txid: string;
+}
+
+/**
+ * Optional observers for the wallet deposit/withdraw actions. Passed to the
+ * controller so both renderers (web + native) fire them identically. They never
+ * change behavior — the built-in modals still open — they only notify.
+ */
+export interface WalletBalancesCallbacks {
+  onDeposit?: (event: WalletDepositEvent) => void;
+  onWithdraw?: (event: WalletWithdrawEvent) => void;
+}
 
 export const ACTION_LABEL: Record<ActionKind, string> = {
   deposit: "Deposit",
@@ -136,8 +171,10 @@ export interface UseWalletBalancesControllerResult extends WalletTokenSummary {
   canWithdrawBtc: boolean;
   /** Open the BTC withdraw modal (no-op unless {@link canWithdrawBtc}). */
   openBtcWithdraw: () => void;
+  /** Open the withdraw modal for a target, firing the `onWithdraw` observer. */
+  openWithdraw: (target: WithdrawTarget) => void;
   /** Open the deposit modal for a named symbol + deposit type. */
-  openDeposit: (symbol: string, type: DepositType) => void;
+  openDeposit: (symbol: string, type: DepositType, asset?: AssetOption) => void;
   /** Open the deposit modal for a specific owned asset. */
   openDepositForAsset: (asset: AssetOption) => void;
 }
@@ -149,7 +186,9 @@ export interface UseWalletBalancesControllerResult extends WalletTokenSummary {
  * derivation — so the web and native components share one behavior and differ
  * only in markup.
  */
-export function useWalletBalancesController(): UseWalletBalancesControllerResult {
+export function useWalletBalancesController(
+  callbacks?: WalletBalancesCallbacks,
+): UseWalletBalancesControllerResult {
   const summary = useWalletTokenSummary();
   const { btcSats, others } = summary;
   const { btcUsd } = usePrices();
@@ -160,13 +199,25 @@ export function useWalletBalancesController(): UseWalletBalancesControllerResult
   const [withdraw, setWithdraw] = useState<WithdrawTarget | null>(null);
   const [otherTab, setOtherTab] = useState<string | null>(null);
 
-  const openDeposit = (symbol: string, type: DepositType) => {
+  // Latest callbacks without forcing the handlers to re-create per render.
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
+
+  const openDeposit = (symbol: string, type: DepositType, asset?: AssetOption) => {
     if (!addresses) return;
     const target = depositTargetFor(type, addresses);
+    callbacksRef.current?.onDeposit?.({ symbol, depositType: type, asset });
     setDeposit({ symbol, label: target.label, address: target.address });
   };
   const openDepositForAsset = (asset: AssetOption) =>
-    openDeposit(assetDepositLabel(asset), asset.type);
+    openDeposit(assetDepositLabel(asset), asset.type, asset);
+
+  // Single entry point for opening the withdraw modal, so the `onWithdraw`
+  // observer fires from one place regardless of which balance triggered it.
+  const openWithdraw = (target: WithdrawTarget) => {
+    callbacksRef.current?.onWithdraw?.({ target });
+    setWithdraw(target);
+  };
 
   const otherGroups = useMemo<OtherGroup[]>(
     () => [
@@ -208,7 +259,7 @@ export function useWalletBalancesController(): UseWalletBalancesControllerResult
   const canWithdrawBtc = btcSats !== null && btcSats !== 0n;
   const openBtcWithdraw = () => {
     if (btcSats === null || btcSats === 0n) return;
-    setWithdraw({ type: "btc", balanceSats: btcSats });
+    openWithdraw({ type: "btc", balanceSats: btcSats });
   };
 
   return {
@@ -227,6 +278,7 @@ export function useWalletBalancesController(): UseWalletBalancesControllerResult
     setWithdraw,
     canWithdrawBtc,
     openBtcWithdraw,
+    openWithdraw,
     openDeposit,
     openDepositForAsset,
   };
