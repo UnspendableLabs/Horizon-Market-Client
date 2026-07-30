@@ -25,6 +25,8 @@ import {
 } from "../internal/icons.native.js";
 import {
   TokenMark,
+  tokenAmountText,
+  tokenAmountTitle,
   type TokenLine,
 } from "../internal/walletBalances.native.js";
 import {
@@ -166,6 +168,9 @@ function createSheet(theme: ResolvedTheme) {
     tabTextActive: { color: theme.colors.text },
     emptyOthers: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, flexWrap: "wrap" },
     emptyText: { color: theme.colors.textMuted, fontSize: theme.typography.fontSizeSm },
+    errorText: { color: theme.colors.error, fontSize: theme.typography.fontSizeSm },
+    // Applied over an amount style, so it must carry the color only.
+    amountError: { color: theme.colors.error },
     // Other-holdings tiles: 2-column flex-wrap.
     tilesWrap: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.md },
     tile: { width: "47%", gap: theme.spacing.sm, flexGrow: 1 },
@@ -398,8 +403,14 @@ function TokenCell({
       <View style={sheet.balanceInfo}>
         <TokenMark line={line} size={38} />
         <View style={{ flexShrink: 1 }}>
-          <Text style={sheet.tokenAmount} numberOfLines={1}>
-            {line.amount ?? "…"}
+          {/* "—" (not "0") when the read failed — the balance is unknown, and
+              the accessibility label carries the reason. */}
+          <Text
+            style={[sheet.tokenAmount, line.error && sheet.amountError]}
+            numberOfLines={1}
+            accessibilityLabel={tokenAmountTitle(line)}
+          >
+            {tokenAmountText(line)}
           </Text>
           <Text style={sheet.tokenSymbol}>{line.symbol}</Text>
         </View>
@@ -505,11 +516,19 @@ export function WalletBalances({
         <View style={sheet.balanceInfo}>
           <TokenMark line={btc} size={44} />
           <View style={{ flexShrink: 1 }}>
-            <Text numberOfLines={1}>
-              <Text style={sheet.btcAmount}>{btc.amount ?? "…"}</Text>{" "}
+            <Text numberOfLines={1} accessibilityLabel={tokenAmountTitle(btc)}>
+              <Text style={[sheet.btcAmount, btc.error && sheet.amountError]}>
+                {tokenAmountText(btc)}
+              </Text>{" "}
               <Text style={sheet.btcUnit}>BTC</Text>
             </Text>
-            {usd ? <Text style={sheet.btcUsd}>{usd}</Text> : null}
+            {btc.error ? (
+              <Text style={sheet.errorText}>
+                Couldn&apos;t load your BTC balance: {btc.error.message}
+              </Text>
+            ) : usd ? (
+              <Text style={sheet.btcUsd}>{usd}</Text>
+            ) : null}
           </View>
         </View>
         <View style={sheet.btcActions}>
@@ -550,21 +569,43 @@ export function WalletBalances({
                 onPress={() => setOtherTab(group.label)}
                 style={[sheet.tab, active && sheet.tabActive]}
               >
-                <Text style={[sheet.tabText, active && sheet.tabTextActive]}>{group.label}</Text>
+                {/* The marker is NESTED in the label Text, not a sibling: `tab`
+                    is a column View, so a sibling would sit on its own line and
+                    (with tabRow's flex-end alignment) shove the failing tab's
+                    label out of line with the others. */}
+                <Text style={[sheet.tabText, active && sheet.tabTextActive]}>
+                  {group.label}
+                  {/* A failed group is empty, so it never wins the "first
+                      non-empty tab" default — without a marker its failure would
+                      be invisible unless the user happened to tap it. */}
+                  {group.error && <Text style={sheet.errorText}> !</Text>}
+                </Text>
               </Pressable>
             );
           })}
         </View>
-        {activeGroup.options.length === 0 ? (
+        {activeGroup.error && (
           <View style={sheet.emptyOthers}>
-            <Text style={sheet.emptyText}>No {activeGroup.label} holdings yet.</Text>
-            <LabeledAction
-              kind="deposit"
-              onPress={() => openDeposit(activeGroup.depositSymbol, activeGroup.depositType)}
-              sheet={sheet}
-              color={iconColor}
-            />
+            <Text style={sheet.errorText}>
+              Couldn&apos;t load your {activeGroup.label} holdings: {activeGroup.error.message}
+            </Text>
           </View>
+        )}
+        {activeGroup.options.length === 0 ? (
+          // Only claim the wallet holds nothing when the read actually SUCCEEDED
+          // — a failed read yields the same empty list, and saying "no holdings
+          // yet" there states something we don't know to be true.
+          !activeGroup.error && (
+            <View style={sheet.emptyOthers}>
+              <Text style={sheet.emptyText}>No {activeGroup.label} holdings yet.</Text>
+              <LabeledAction
+                kind="deposit"
+                onPress={() => openDeposit(activeGroup.depositSymbol, activeGroup.depositType)}
+                sheet={sheet}
+                color={iconColor}
+              />
+            </View>
+          )
         ) : (
           <View style={sheet.tilesWrap}>
             {activeGroup.options.map((a) => (

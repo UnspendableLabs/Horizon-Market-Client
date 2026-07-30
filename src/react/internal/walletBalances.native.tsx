@@ -7,6 +7,8 @@ import { type TokenLine } from "./useWalletTokenSummary.js";
 // re-export it here so native imports can pull the hook + types from one place.
 export {
   useWalletTokenSummary,
+  tokenAmountText,
+  tokenAmountTitle,
   type TokenSymbol,
   type TokenLine,
   type WalletTokenSummary,

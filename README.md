@@ -342,7 +342,7 @@ Read the connected wallet's real holdings (used by `SellOrderForm` / `useAssets`
 
 - `getCounterpartyBalances(addresses)` — XCP + Counterparty assets per address (mainnet; excludes ZELD)
 - `getZeldBalances(addresses)` — ZELD balance per address from the ZeldHash API (its own protocol; mainnet only)
-- `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`)
+- `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`). It degrades to empty holdings instead of throwing when it can't read at all, so check `unavailable` (`"runtime" | "network" | "wallet-key"`, else null) before treating an empty result as "this wallet holds nothing"
 
 ### Send / Withdraw
 

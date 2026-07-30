@@ -22,6 +22,22 @@ function settled<T>(r: PromiseSettledResult<T>, fallback: T): T {
   return r.status === "fulfilled" ? r.value : fallback;
 }
 
+/** The failure behind an empty list, or null when the read actually succeeded. */
+function failure(r: PromiseSettledResult<unknown>): string | null {
+  if (r.status === "fulfilled") return null;
+  return r.reason instanceof Error ? r.reason.message : String(r.reason);
+}
+
+/** Why a Kontor read came back empty without reaching the chain (SDK wording). */
+const KONTOR_UNAVAILABLE: Record<
+  NonNullable<KontorHoldings["unavailable"]>,
+  string
+> = {
+  runtime: "no Kontor backend could load here",
+  network: "Kontor is signet-only and this client targets another network",
+  "wallet-key": "this wallet exposes no Taproot public key",
+};
+
 export const balancesCommand = defineCommand({
   meta: {
     name: "balances",
@@ -74,6 +90,19 @@ export const balancesCommand = defineCommand({
       const zeld = settled<ZeldBalance[]>(zeldR, []);
       const ordinals = settled<OrdinalUtxo[]>(ordR, []);
 
+      // A failed read yields the same empty list as an empty wallet, so keep the
+      // reason: printing "0" for a source that never answered claims a balance
+      // we could not read.
+      const errors = {
+        btc: failure(btcR),
+        counterparty: failure(cpR),
+        zeld: failure(zeldR),
+        ordinals: failure(ordR),
+        kontor: kontor?.unavailable
+          ? KONTOR_UNAVAILABLE[kontor.unavailable]
+          : null,
+      };
+
       return {
         json: {
           network: cfg.uiNetwork,
@@ -91,6 +120,9 @@ export const balancesCommand = defineCommand({
           zeld,
           ordinals,
           kontor,
+          // Null per source on success; a message when that source's list is
+          // empty because the read failed, not because the wallet holds none.
+          errors,
         },
         human: () => {
           console.log(pc.bold(`\nWallet on ${cfg.label}`));
@@ -108,7 +140,8 @@ export const balancesCommand = defineCommand({
           console.log(addrTable.toString());
 
           // Headline balances — BTC / XCP / KOR / ZELD, always shown ("0" when
-          // none), mirroring the wallet page's four featured tokens.
+          // none, "—" when the read failed), mirroring the wallet page's four
+          // featured tokens.
           const usd = btcSats != null ? formatUsd(Number(btcSats), btcUsd) : null;
           const btcCell =
             btcSats == null
@@ -118,26 +151,37 @@ export const balancesCommand = defineCommand({
           // XCP / ZELD are divisible: sum the (possibly multi-address) base-unit
           // holdings and normalize, matching `useWalletTokenSummary`.
           const xcp = counterparty.filter((b) => b.asset === "XCP");
-          const xcpAmount = xcp.length
-            ? formatAssetQuantity(xcp.reduce((t, b) => t + b.quantity, 0n), true)
-            : "0";
-          const zeldAmount = zeld.length
-            ? formatAssetQuantity(zeld.reduce((t, b) => t + b.balance, 0n), true)
-            : "0";
-          // KOR needs an unlock (--include-kontor); "—" + a footnote when unread.
-          const korAmount = kontor ? (kontor.kor?.amount ?? "0") : null;
+          const xcpAmount = errors.counterparty
+            ? null
+            : xcp.length
+              ? formatAssetQuantity(xcp.reduce((t, b) => t + b.quantity, 0n), true)
+              : "0";
+          const zeldAmount = errors.zeld
+            ? null
+            : zeld.length
+              ? formatAssetQuantity(zeld.reduce((t, b) => t + b.balance, 0n), true)
+              : "0";
+          // KOR needs an unlock (--include-kontor); "—" + a footnote when unread
+          // — and the same when the read ran but never reached the chain.
+          const korAmount =
+            kontor && !errors.kontor ? (kontor.kor?.amount ?? "0") : null;
 
           console.log(pc.bold("Balances"));
           const balances = makeTable(["Asset", "Balance"]);
           balances.push(["BTC", btcCell]);
-          balances.push(["XCP", xcpAmount]);
+          balances.push(["XCP", xcpAmount ?? pc.dim("—")]);
           balances.push(["KOR", korAmount ?? pc.dim("—")]);
-          balances.push(["ZELD", zeldAmount]);
+          balances.push(["ZELD", zeldAmount ?? pc.dim("—")]);
           console.log(balances.toString());
           if (!kontor) {
             console.log(
               pc.dim("  KOR + Kontor NFTs not read — pass --include-kontor (signet)."),
             );
+          }
+          // Name every failed source: a "—" the user can't explain is barely
+          // better than the "0" it replaces.
+          for (const [source, message] of Object.entries(errors)) {
+            if (message) console.log(pc.dim(`  ${source} unavailable — ${message}`));
           }
 
           // Counterparty holdings (everything but the XCP headline above).

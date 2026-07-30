@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
+import type {
+  CounterpartyBalance,
+  KontorUnavailableReason,
+  ZeldBalance,
+} from "../../client.js";
 import {
   balancesCacheKey,
   readBalancesCache,
@@ -81,7 +86,12 @@ export interface UseAssetsResult {
     ordinals: Error | null;
     kontor: Error | null;
   };
-  /** Epoch ms of the last successful fetch (cache or network), or null. */
+  /**
+   * Epoch ms of the snapshot currently in the groups — the network read, or the
+   * cache entry it was seeded from (a partial refresh keeps the seeded
+   * timestamp, so this never claims the data is newer than it is). Null before
+   * the first load.
+   */
   lastFetchedAt: number | null;
   /** True while a fetch (initial or refresh) is in flight. */
   isFetching: boolean;
@@ -138,6 +148,21 @@ function flatten(groups: AssetGroups): AssetOption[] {
   ];
 }
 
+/**
+ * User-facing wording for each {@link KontorUnavailableReason}. Says what went
+ * wrong and, where the user can act, what to do — these render in the wallet's
+ * Kontor tab, so "unavailable" alone would be as unhelpful as the silent empty
+ * list it replaces.
+ */
+const KONTOR_UNAVAILABLE_MESSAGE: Record<KontorUnavailableReason, string> = {
+  runtime:
+    "Kontor could not start in this environment, so your KOR and NFTs could not be read.",
+  network:
+    "Kontor is only available on signet, and this client is configured for another network.",
+  "wallet-key":
+    "This wallet did not expose a Taproot public key, so your Kontor holdings could not be looked up. Reconnecting the wallet — or using one that reports a Taproot address — should fix it.",
+};
+
 type GroupErrors = UseAssetsResult["errors"];
 
 const NO_ERRORS: GroupErrors = {
@@ -146,6 +171,45 @@ const NO_ERRORS: GroupErrors = {
   ordinals: null,
   kontor: null,
 };
+
+/** The independent reads behind the groups — one error slot, one cache slot each. */
+type SourceKey = keyof GroupErrors;
+
+const SOURCE_KEYS: SourceKey[] = ["counterparty", "zeld", "ordinals", "kontor"];
+
+/**
+ * What we persist per wallet: the holdings of the sources that answered, plus
+ * the names of those that did NOT.
+ *
+ * Caching a failed source's absence would replay a wrong "you hold nothing" for
+ * the rest of the TTL (the snapshot carries no errors); dropping the whole
+ * snapshot instead would make one flaky source — the ord API, typically — cost a
+ * full re-fetch of the other three on every mount for as long as it stays down.
+ * So we cache what we know and re-fetch only what we don't.
+ */
+interface CachedBalances {
+  assets: AssetOption[];
+  stale: SourceKey[];
+}
+
+/** Cached snapshot for `key`, or null on a miss / expiry / unusable payload. */
+function readSnapshot(
+  key: string,
+  ttlMs: number,
+): { groups: AssetGroups; stale: SourceKey[]; fetchedAt: number } | null {
+  const cached = readBalancesCache<CachedBalances>(key, ttlMs);
+  if (!cached || !Array.isArray(cached.data?.assets)) return null;
+  const raw = cached.data.stale;
+  return {
+    groups: regroup(cached.data.assets),
+    // An unreadable `stale` list means we can't tell which sources are covered
+    // — paint what's there, but re-fetch everything.
+    stale: Array.isArray(raw)
+      ? SOURCE_KEYS.filter((k) => raw.includes(k))
+      : SOURCE_KEYS,
+    fetchedAt: cached.fetchedAt,
+  };
+}
 
 export function useAssets(): UseAssetsResult {
   const {
@@ -188,19 +252,29 @@ export function useAssets(): UseAssetsResult {
       const fetchAddresses = [p2wpkh, ...(p2tr ? [p2tr] : [])];
       const cacheKey = balancesCacheKey(network, fetchAddresses);
 
-      // Seed from a fresh cache entry without hitting the network.
+      // Seed from a fresh cache entry. A complete snapshot skips the network
+      // entirely; a partial one (some source failed when it was written) is
+      // painted immediately and tops itself up by re-fetching only what's stale.
+      let seeded: AssetGroups | null = null;
+      let seededAt: number | null = null;
+      let sources = SOURCE_KEYS;
       if (!opts.force) {
-        const cached = readBalancesCache<AssetOption[]>(cacheKey, ttlMs);
-        if (cached) {
+        const snapshot = readSnapshot(cacheKey, ttlMs);
+        if (snapshot) {
           // Same invalidation as the reset branch: an in-flight fetch for a
           // previous wallet must not overwrite this seed when it settles.
           seqRef.current++;
-          setIsFetching(false);
-          setGroups(regroup(cached.data));
+          setGroups(snapshot.groups);
           setErrors(NO_ERRORS);
-          setLastFetchedAt(cached.fetchedAt);
+          setLastFetchedAt(snapshot.fetchedAt);
           setLoadedOnce(true);
-          return;
+          if (snapshot.stale.length === 0) {
+            setIsFetching(false);
+            return;
+          }
+          seeded = snapshot.groups;
+          seededAt = snapshot.fetchedAt;
+          sources = snapshot.stale;
         }
       }
 
@@ -257,80 +331,135 @@ export function useAssets(): UseAssetsResult {
         return lists.flat();
       };
 
+      // Only the stale sources are hit on a partial refresh; the rest keep the
+      // values they were seeded with. The empty placeholders are never read —
+      // each source's result is consumed only when it was actually wanted.
+      const wanted = (s: SourceKey) => sources.includes(s);
+
       const [cpResult, zeldResult, ordResult, kontorResult] =
         await Promise.allSettled([
-          client.getCounterpartyBalances(fetchAddresses),
-          client.getZeldBalances(fetchAddresses),
-          fetchOrdinals(),
-          kontorNetwork === "signet"
+          wanted("counterparty")
+            ? client.getCounterpartyBalances(fetchAddresses)
+            : Promise.resolve<CounterpartyBalance[]>([]),
+          wanted("zeld")
+            ? client.getZeldBalances(fetchAddresses)
+            : Promise.resolve<ZeldBalance[]>([]),
+          wanted("ordinals")
+            ? fetchOrdinals()
+            : Promise.resolve<AssetOption[]>([]),
+          wanted("kontor") && kontorNetwork === "signet"
             ? client.getKontorHoldings()
-            : Promise.resolve({ kor: null, nfts: [] as const }),
+            : // Kontor isn't configured for this network at all — empty is the
+              // truth here, not a failure, so `unavailable` stays null.
+              Promise.resolve({
+                kor: null,
+                nfts: [] as const,
+                unavailable: null,
+              }),
         ]);
 
       if (seq !== seqRef.current) return;
 
-      const next: AssetGroups = {
-        counterparty: [],
-        zeld: [],
-        ordinals: [],
-        kor: [],
-        kontorNfts: [],
-      };
+      // Start from what was seeded so a skipped source keeps its cached
+      // holdings; every fetched source overwrites its own groups below.
+      const next: AssetGroups = seeded
+        ? { ...seeded }
+        : {
+            counterparty: [],
+            zeld: [],
+            ordinals: [],
+            kor: [],
+            kontorNfts: [],
+          };
 
-      if (cpResult.status === "fulfilled") {
-        next.counterparty = cpResult.value.map((b) => ({
-          type: "counterparty" as const,
-          assetName: b.asset,
-          assetLongname: b.assetLongname ?? null,
-          address: b.address,
-          balance: b.quantity,
-          quantityNormalized: b.quantityNormalized,
-          divisible: b.divisible,
-        }));
-      } else {
-        nextErrors.counterparty = toError(cpResult.reason);
-      }
-
-      if (zeldResult.status === "fulfilled") {
-        next.zeld = zeldResult.value.map((b) => ({
-          type: "zeld" as const,
-          address: b.address,
-          balance: b.balance,
-          quantityNormalized: b.quantityNormalized,
-          divisible: true as const,
-        }));
-      } else {
-        nextErrors.zeld = toError(zeldResult.reason);
-      }
-
-      if (ordResult.status === "fulfilled") {
-        next.ordinals = ordResult.value;
-      } else {
-        nextErrors.ordinals = toError(ordResult.reason);
-      }
-
-      if (kontorResult.status === "fulfilled") {
-        const holdings = kontorResult.value;
-        if (holdings.kor) {
-          next.kor = [
-            {
-              type: "kor" as const,
-              address: holdings.kor.address,
-              amount: holdings.kor.amount,
-            },
-          ];
+      if (wanted("counterparty")) {
+        if (cpResult.status === "fulfilled") {
+          next.counterparty = cpResult.value.map((b) => ({
+            type: "counterparty" as const,
+            assetName: b.asset,
+            assetLongname: b.assetLongname ?? null,
+            address: b.address,
+            balance: b.quantity,
+            quantityNormalized: b.quantityNormalized,
+            divisible: b.divisible,
+          }));
+        } else {
+          nextErrors.counterparty = toError(cpResult.reason);
         }
-        next.kontorNfts = holdings.nfts.map((n) => ({
-          type: "kontor-nft" as const,
-          nftId: n.nftId,
-          contractAddress: n.contractAddress,
-          address: n.address,
-        }));
-      } else {
-        nextErrors.kontor = toError(kontorResult.reason);
       }
 
-      const fetchedAt = writeBalancesCache(cacheKey, flatten(next));
+      if (wanted("zeld")) {
+        if (zeldResult.status === "fulfilled") {
+          next.zeld = zeldResult.value.map((b) => ({
+            type: "zeld" as const,
+            address: b.address,
+            balance: b.balance,
+            quantityNormalized: b.quantityNormalized,
+            divisible: true as const,
+          }));
+        } else {
+          nextErrors.zeld = toError(zeldResult.reason);
+        }
+      }
+
+      if (wanted("ordinals")) {
+        if (ordResult.status === "fulfilled") {
+          next.ordinals = ordResult.value;
+        } else {
+          nextErrors.ordinals = toError(ordResult.reason);
+        }
+      }
+
+      if (wanted("kontor")) {
+        if (kontorResult.status === "fulfilled") {
+          const holdings = kontorResult.value;
+          // `getKontorHoldings` degrades to EMPTY holdings (never throws) when
+          // it can't read at all, so a fulfilled result is not proof the wallet
+          // holds nothing. Surface the reason as an error, otherwise every
+          // consumer renders a confident "no Kontor holdings" for what is really
+          // "we couldn't look".
+          if (holdings.unavailable) {
+            nextErrors.kontor = new Error(
+              KONTOR_UNAVAILABLE_MESSAGE[holdings.unavailable],
+            );
+          }
+          // Kontor owns two groups — both are replaced together, so a re-read
+          // that now finds nothing clears a stale seeded value.
+          next.kor = holdings.kor
+            ? [
+                {
+                  type: "kor" as const,
+                  address: holdings.kor.address,
+                  amount: holdings.kor.amount,
+                },
+              ]
+            : [];
+          next.kontorNfts = holdings.nfts.map((n) => ({
+            type: "kontor-nft" as const,
+            nftId: n.nftId,
+            contractAddress: n.contractAddress,
+            address: n.address,
+          }));
+        } else {
+          nextErrors.kontor = toError(kontorResult.reason);
+        }
+      }
+
+      // Cache what answered, and name what didn't so the next mount re-fetches
+      // exactly those sources instead of replaying a silent, wrong "you hold
+      // nothing" for the rest of the TTL. A failed source contributed no
+      // holdings, so `flatten(next)` already excludes it.
+      //
+      // Keep the seeded timestamp when this was only a top-up: re-stamping it
+      // would let a source that keeps failing extend the *other* sources' TTL
+      // indefinitely, and `lastFetchedAt` would claim the data is newer than it
+      // is. Expiring on the original timestamp forces a full re-read instead.
+      const stale = SOURCE_KEYS.filter((k) => nextErrors[k] !== null);
+      const fetchedAt = writeBalancesCache<CachedBalances>(
+        cacheKey,
+        { assets: flatten(next), stale },
+        seededAt ?? undefined,
+      );
       setGroups(next);
       setErrors(nextErrors);
       setLastFetchedAt(fetchedAt);

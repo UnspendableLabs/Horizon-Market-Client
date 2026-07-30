@@ -50,6 +50,7 @@ function makeSummary(o: Partial<WalletTokenSummary> = {}): WalletTokenSummary {
   const btcLine = {
     symbol: "BTC" as const,
     amount: null,
+    error: null,
     asset: null,
     sellAsset: null,
   };
@@ -59,6 +60,7 @@ function makeSummary(o: Partial<WalletTokenSummary> = {}): WalletTokenSummary {
     primary: [],
     tokens: [btcLine],
     others: [],
+    errors: { counterparty: null, zeld: null, ordinals: null, kontor: null },
     loading: false,
     isFetching: false,
     lastFetchedAt: null,
@@ -119,6 +121,32 @@ describe("useWalletBalancesController", () => {
     expect(result.current.otherGroups[2].options).toEqual([ORD]);
     expect(result.current.activeLabel).toBe("Counterparty");
     expect(result.current.activeGroup.label).toBe("Counterparty");
+  });
+
+  it("attaches each source's fetch error to its tab", () => {
+    const kontorErr = new Error("kontor down");
+    summaryRef.current = makeSummary({
+      others: [PEPE],
+      errors: {
+        counterparty: null,
+        zeld: null,
+        ordinals: null,
+        kontor: kontorErr,
+      },
+    });
+
+    const { result } = renderHook(() => useWalletBalancesController());
+    const byLabel = Object.fromEntries(
+      result.current.otherGroups.map((g) => [g.label, g]),
+    );
+
+    expect(byLabel.Kontor.error).toBe(kontorErr);
+    // A failed group is empty, so it can never win the "first non-empty tab"
+    // default — the renderers mark the tab instead.
+    expect(byLabel.Kontor.options).toEqual([]);
+    expect(result.current.activeLabel).toBe("Counterparty");
+    expect(byLabel.Counterparty.error).toBeNull();
+    expect(byLabel.Ordinals.error).toBeNull();
   });
 
   it("defaults active tab to the first non-empty group when Counterparty is empty", () => {

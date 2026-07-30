@@ -71,6 +71,14 @@ export interface OtherGroup {
   depositType: DepositType;
   depositSymbol: string;
   options: AssetOption[];
+  /**
+   * The failure that produced this tab's (necessarily empty) `options`, or null
+   * when the read succeeded. `useAssets` resolves a rejected source to an empty
+   * list and records the reason here, so WITHOUT this an unreachable indexer, an
+   * unsupported wallet key, or a down API is indistinguishable from "this wallet
+   * holds nothing" — the renderers must not claim the latter when it's the former.
+   */
+  error: Error | null;
 }
 
 /**
@@ -190,7 +198,7 @@ export function useWalletBalancesController(
   callbacks?: WalletBalancesCallbacks,
 ): UseWalletBalancesControllerResult {
   const summary = useWalletTokenSummary();
-  const { btcSats, others } = summary;
+  const { btcSats, others, errors } = summary;
   const { btcUsd } = usePrices();
   const { addresses } = useHorizonMarket();
 
@@ -226,21 +234,24 @@ export function useWalletBalancesController(
         depositType: "counterparty",
         depositSymbol: "Counterparty assets",
         options: others.filter((a) => a.type === "counterparty"),
+        error: errors.counterparty,
       },
       {
         label: "Kontor",
         depositType: "kontor-nft",
         depositSymbol: "Kontor NFTs",
         options: others.filter((a) => a.type === "kontor-nft"),
+        error: errors.kontor,
       },
       {
         label: "Ordinals",
         depositType: "ordinal",
         depositSymbol: "Ordinals",
         options: others.filter((a) => a.type === "ordinal"),
+        error: errors.ordinals,
       },
     ],
-    [others],
+    [others, errors],
   );
 
   // Active other-holdings tab: user choice, else the first group that has any
