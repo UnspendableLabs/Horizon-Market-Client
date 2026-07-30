@@ -3,6 +3,8 @@ import { cx } from "../internal/format.js";
 import { webTokens } from "../theme.js";
 import {
   TokenMark,
+  tokenAmountText,
+  tokenAmountTitle,
   useWalletTokenSummary,
   type TokenLine,
 } from "../internal/walletBalances.web.js";
@@ -88,12 +90,17 @@ function BalanceCell({
   line: TokenLine;
   className?: string;
 }) {
-  const amount = line.amount ?? "…";
   return (
-    <div className={className} style={cell} title={`${amount} ${line.symbol}`}>
+    <div className={className} style={cell} title={tokenAmountTitle(line)}>
       <TokenMark line={line} size={22} />
-      <span style={amountText}>
-        {amount} <span style={unitText}>{line.symbol}</span>
+      {/* "—" (not "0") when the read failed: the compact summary has no room for
+          the reason, but it must not state a balance we could not read. */}
+      <span
+        style={
+          line.error ? { ...amountText, color: webTokens.error } : amountText
+        }
+      >
+        {tokenAmountText(line)} <span style={unitText}>{line.symbol}</span>
       </span>
     </div>
   );

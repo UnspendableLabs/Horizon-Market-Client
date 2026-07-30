@@ -11,7 +11,10 @@
  * serialized as `{ $bigint: "<decimal>" }` and revived back to `bigint` on read.
  */
 
-const KEY_PREFIX = "hm:balances:v1";
+// v2: the stored payload went from a bare `AssetOption[]` to
+// `{ assets, stale }` (see `useAssets`). Bumping the prefix makes every v1 entry
+// a clean miss instead of a shape mismatch at read time.
+const KEY_PREFIX = "hm:balances:v2";
 
 /** Build the cache key for a network + the set of addresses being queried. */
 export function balancesCacheKey(

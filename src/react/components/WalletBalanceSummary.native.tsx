@@ -12,6 +12,8 @@ import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
 import {
   TokenMark,
+  tokenAmountText,
+  tokenAmountTitle,
   useWalletTokenSummary,
   type TokenLine,
 } from "../internal/walletBalances.native.js";
@@ -58,6 +60,8 @@ function createSheet(theme: ResolvedTheme) {
       fontWeight: "600",
       color: theme.colors.text,
     },
+    // Applied over `amount`, so it must carry the color only.
+    amountError: { color: theme.colors.error },
     unit: { color: theme.colors.textMuted, fontWeight: "500" },
     showAll: {
       alignSelf: "flex-start",
@@ -78,12 +82,17 @@ function BalanceCell({
   sheet: ReturnType<typeof createSheet>;
   styleProp?: StyleProp<ViewStyle>;
 }) {
-  const amount = line.amount ?? "…";
   return (
     <View style={[sheet.cell, styleProp]}>
       <TokenMark line={line} size={22} />
-      <Text style={sheet.amount} numberOfLines={1}>
-        {amount} <Text style={sheet.unit}>{line.symbol}</Text>
+      {/* "—" (not "0") when the read failed: the compact summary has no room for
+          the reason, but it must not state a balance we could not read. */}
+      <Text
+        style={[sheet.amount, line.error && sheet.amountError]}
+        numberOfLines={1}
+        accessibilityLabel={tokenAmountTitle(line)}
+      >
+        {tokenAmountText(line)} <Text style={sheet.unit}>{line.symbol}</Text>
       </Text>
     </View>
   );

@@ -513,6 +513,7 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
     await expect(client.getKontorHoldings()).resolves.toEqual({
       kor: null,
       nfts: [],
+      unavailable: null,
     });
   });
 
@@ -524,6 +525,7 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
     await expect(client.getKontorHoldings()).resolves.toEqual({
       kor: null,
       nfts: [],
+      unavailable: null,
     });
   });
 
@@ -536,6 +538,7 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
     await expect(client.getKontorHoldings()).resolves.toEqual({
       kor: null,
       nfts: [],
+      unavailable: "network",
     });
   });
 
@@ -548,6 +551,7 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
     await expect(client.getKontorHoldings()).resolves.toEqual({
       kor: null,
       nfts: [],
+      unavailable: "wallet-key",
     });
   });
 

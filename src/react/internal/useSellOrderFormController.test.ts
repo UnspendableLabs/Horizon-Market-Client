@@ -26,6 +26,12 @@ function makeAssets(o: Partial<UseAssetsResult> = {}): UseAssetsResult {
     allAssets: [],
     isEmpty: false,
     errors: { counterparty: null, zeld: null, ordinals: null, kontor: null },
+    sources: {
+      counterparty: { status: "ok" },
+      zeld: { status: "ok" },
+      ordinals: { status: "ok" },
+      kontor: { status: "ok" },
+    },
     lastFetchedAt: null,
     isFetching: false,
     refresh: vi.fn(),

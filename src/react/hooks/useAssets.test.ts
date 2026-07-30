@@ -4,6 +4,7 @@ import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-uti
 import type { HorizonMarketContextValue } from "../context.js";
 import {
   balancesCacheKey,
+  readBalancesCache,
   writeBalancesCache,
 } from "../internal/balancesCache.js";
 import { useAssets } from "./useAssets.js";
@@ -384,7 +385,229 @@ describe("useAssets", () => {
     expect(result.current.errors.ordinals).toBeNull(); // ord not configured → []
     expect(result.current.korAssets).toEqual([]);
     expect(result.current.kontorNfts).toEqual([]);
-    // Everything either failed or was empty → loaded but empty.
+    // Loaded, and every group is empty — but two of them are empty because the
+    // read FAILED, so this wallet is not known to hold nothing. `isEmpty` drives
+    // empty states ("No assets to sell"), which must not be shown here.
+    expect(result.current.isEmpty).toBe(false);
+    expect(result.current.sources.kontor).toEqual({
+      status: "error",
+      error: result.current.errors.kontor,
+    });
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+    // No ord endpoint in this context: never read, so its empty list is not
+    // evidence of anything — and it is NOT reported as a failure either.
+    expect(result.current.sources.ordinals.status).toBe("unread");
+    expect(result.current.errors.ordinals).toBeNull();
+  });
+
+  it("surfaces an unavailable kontor read as an error, not as an empty wallet", async () => {
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(async () => []),
+      getZeldBalances: vi.fn(async () => []),
+      // The real client RESOLVES (never throws) when it can't read at all, so
+      // without the `unavailable` tag this is indistinguishable from "holds
+      // nothing" — which is exactly what used to reach the UI.
+      getKontorHoldings: vi.fn(async () => ({
+        kor: null,
+        nfts: [],
+        unavailable: "wallet-key" as const,
+      })),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh: "bc1qkna", p2tr: "bc1pkna", publicKey: "02aa" },
+      network: "testnet",
+      kontorNetwork: "signet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.errors.kontor).not.toBeNull());
+
+    expect(result.current.errors.kontor?.message).toMatch(/Taproot public key/);
+    expect(result.current.kontorNfts).toEqual([]);
+    expect(result.current.errors.counterparty).toBeNull();
+  });
+
+  it("caches the sources that answered and names the one that failed", async () => {
+    const p2wpkh = "bc1qnocache";
+    const p2tr = "bc1pnocache";
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(async () => [
+        {
+          asset: "PEPECASH",
+          address: p2wpkh,
+          quantity: 100n,
+          quantityNormalized: "100",
+          divisible: false,
+        },
+      ]),
+      getZeldBalances: vi.fn(async () => []),
+      getKontorHoldings: vi.fn(async () => {
+        throw new Error("kontor down");
+      }),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh, p2tr, publicKey: "02aa" },
+      network: "testnet",
+      kontorNetwork: "signet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.errors.kontor).not.toBeNull());
+
+    // Caching Kontor's absence would make the NEXT mount seed silently (the
+    // snapshot carries no errors), replaying a wrong "you hold nothing" for the
+    // whole TTL. Dropping the whole snapshot would instead re-fetch the three
+    // sources that DID answer on every mount until Kontor recovers.
+    const entry = readBalancesCache<{ assets: unknown[]; stale: string[] }>(
+      balancesCacheKey("testnet", [p2wpkh, p2tr]),
+      3_600_000,
+    );
+    expect(entry?.data.stale).toEqual(["kontor"]);
+    expect(entry?.data.assets).toEqual([
+      {
+        type: "counterparty",
+        assetName: "PEPECASH",
+        assetLongname: null,
+        address: p2wpkh,
+        balance: 100n,
+        quantityNormalized: "100",
+        divisible: false,
+      },
+    ]);
+  });
+
+  it("re-fetches only the stale source when seeding a partial snapshot", async () => {
+    const p2wpkh = "bc1qpartial";
+    const p2tr = "bc1ppartial";
+    const cacheKey = balancesCacheKey("testnet", [p2wpkh, p2tr]);
+    const fetchedAt = writeBalancesCache(cacheKey, {
+      assets: [
+        {
+          type: "counterparty",
+          assetName: "XCP",
+          assetLongname: null,
+          address: p2wpkh,
+          balance: 500n,
+          quantityNormalized: "0.000005",
+          divisible: true,
+        },
+      ],
+      stale: ["kontor"],
+    });
+
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(),
+      getZeldBalances: vi.fn(),
+      getKontorHoldings: vi.fn(async () => ({
+        kor: { address: "tb1pkor", amount: "12" },
+        nfts: [],
+        unavailable: null,
+      })),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh, p2tr, publicKey: "02aa" },
+      network: "testnet",
+      kontorNetwork: "signet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.korAssets).toHaveLength(1));
+
+    // Only the source that failed last time goes back to the network...
+    expect(client.getKontorHoldings).toHaveBeenCalledTimes(1);
+    expect(client.getCounterpartyBalances).not.toHaveBeenCalled();
+    expect(client.getZeldBalances).not.toHaveBeenCalled();
+    // ...and the cached holdings survive the top-up.
+    expect(result.current.counterpartyAssets).toHaveLength(1);
+    expect(result.current.errors.kontor).toBeNull();
+
+    const entry = readBalancesCache<{ assets: unknown[]; stale: string[] }>(
+      cacheKey,
+      3_600_000,
+    );
+    expect(entry?.data.stale).toEqual([]);
+    expect(entry?.data.assets).toHaveLength(2);
+    // The topped-up entry keeps the ORIGINAL timestamp: a partial refresh must
+    // not extend the cached part's TTL (nor claim the data is newer than it is).
+    expect(entry?.fetchedAt).toBe(fetchedAt);
+    expect(result.current.lastFetchedAt).toBe(fetchedAt);
+  });
+
+  it("keeps a source `loading` until its own read settles, seeded or not", async () => {
+    const p2wpkh = "bc1qinflight";
+    const p2tr = "bc1pinflight";
+    const cacheKey = balancesCacheKey("testnet", [p2wpkh, p2tr]);
+    writeBalancesCache(cacheKey, { assets: [], stale: ["kontor"] });
+
+    const gate = deferred<{ kor: null; nfts: []; unavailable: null }>();
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(),
+      getZeldBalances: vi.fn(),
+      getKontorHoldings: vi.fn(() => gate.promise),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh, p2tr, publicKey: "02aa" },
+      network: "testnet",
+      kontorNetwork: "signet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+
+    // Seeding paints immediately (`lastFetchedAt` is set, so nothing renders a
+    // spinner), and the Kontor group is empty — but its read is still in the
+    // air. Reporting it as `ok` here would flash "No Kontor holdings yet." for
+    // the length of the request: the very claim this hook must not make.
+    await waitFor(() => expect(result.current.lastFetchedAt).not.toBeNull());
+    expect(result.current.sources.kontor).toEqual({ status: "loading" });
+    // The sources that came from the cache already have their answer.
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+
+    await act(async () => {
+      gate.resolve({ kor: null, nfts: [], unavailable: null });
+      await gate.promise;
+    });
+    expect(result.current.sources.kontor).toEqual({ status: "ok" });
+  });
+
+  it("reports a source this app never reads as `unread`, not as empty", async () => {
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(async () => []),
+      getZeldBalances: vi.fn(async () => []),
+      getKontorHoldings: vi.fn(),
+    };
+    // No `ordApiBaseUrl` and Kontor off this network: neither source is ever
+    // asked, so neither empty list is evidence the wallet holds none of them.
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh: "bc1qunread", p2tr: "bc1punread", publicKey: "02aa" },
+      network: "mainnet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.lastFetchedAt).not.toBeNull());
+
+    expect(result.current.sources.ordinals.status).toBe("unread");
+    expect(result.current.sources.kontor.status).toBe("unread");
+    // Not a failure — it must stay out of `errors`, which blanks the headline
+    // KOR/XCP/ZELD amounts and feeds the sell form's error list.
+    expect(result.current.errors).toEqual({
+      counterparty: null,
+      zeld: null,
+      ordinals: null,
+      kontor: null,
+    });
+    expect(client.getKontorHoldings).not.toHaveBeenCalled();
+    // Counterparty and ZELD were read and really are empty.
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
     expect(result.current.isEmpty).toBe(true);
   });
 
@@ -394,31 +617,35 @@ describe("useAssets", () => {
     const network = "mainnet";
     const cacheKey = balancesCacheKey(network, [p2wpkh, p2tr]);
     // One of every AssetOption type → exercises every regroup() branch on read.
-    const fetchedAt = writeBalancesCache(cacheKey, [
-      {
-        type: "counterparty",
-        assetName: "XCP",
-        address: p2wpkh,
-        balance: 777n,
-        quantityNormalized: "0.00000777",
-        divisible: true,
-      },
-      {
-        type: "zeld",
-        address: p2wpkh,
-        balance: 5n,
-        quantityNormalized: "0.00000005",
-        divisible: true,
-      },
-      { type: "kor", address: "tb1pkor", amount: "3" },
-      {
-        type: "kontor-nft",
-        nftId: "n1",
-        contractAddress: "c@1.0",
-        address: "tb1pnft",
-      },
-      { type: "ordinal", inscriptionId: "i1", utxoId: "u:0", address: p2tr },
-    ]);
+    // `stale: []` — every source answered, so nothing needs re-fetching.
+    const fetchedAt = writeBalancesCache(cacheKey, {
+      assets: [
+        {
+          type: "counterparty",
+          assetName: "XCP",
+          address: p2wpkh,
+          balance: 777n,
+          quantityNormalized: "0.00000777",
+          divisible: true,
+        },
+        {
+          type: "zeld",
+          address: p2wpkh,
+          balance: 5n,
+          quantityNormalized: "0.00000005",
+          divisible: true,
+        },
+        { type: "kor", address: "tb1pkor", amount: "3" },
+        {
+          type: "kontor-nft",
+          nftId: "n1",
+          contractAddress: "c@1.0",
+          address: "tb1pnft",
+        },
+        { type: "ordinal", inscriptionId: "i1", utxoId: "u:0", address: p2tr },
+      ],
+      stale: [],
+    });
 
     const client: LooseClient = {
       getCounterpartyBalances: vi.fn(),

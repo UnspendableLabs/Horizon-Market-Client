@@ -9,6 +9,7 @@ export type {
   KontorBalance,
   KontorNftHolding,
   KontorHoldings,
+  KontorUnavailableReason,
 } from "./client.js";
 
 // Unified send / withdraw (all asset types)

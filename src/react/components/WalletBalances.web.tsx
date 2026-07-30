@@ -14,10 +14,13 @@ import { webTokens } from "../theme.js";
 import { NoImageIcon } from "../internal/icons.web.js";
 import {
   TokenMark,
+  tokenAmountText,
+  tokenAmountTitle,
   type TokenLine,
 } from "../internal/walletBalances.web.js";
 import {
   ACTION_LABEL,
+  emptyGroupNotice,
   otherLabel,
   tokenDepositType,
   useWalletBalancesController,
@@ -692,6 +695,8 @@ export function WalletBalances({
     openDepositForAsset,
   } = useWalletBalancesController({ onDeposit, onWithdraw });
 
+  const activeNotice = emptyGroupNotice(activeGroup);
+
   return (
     <div
       className={cx(classNames?.root, className)}
@@ -733,11 +738,23 @@ export function WalletBalances({
         <div style={balanceInfo}>
           <TokenMark line={btc} size={44} />
           <div style={{ minWidth: 0 }}>
-            <div>
-              <span style={btcAmount}>{btc.amount ?? "…"}</span>{" "}
+            <div title={tokenAmountTitle(btc)}>
+              <span
+                style={
+                  btc.error ? { ...btcAmount, color: webTokens.error } : btcAmount
+                }
+              >
+                {tokenAmountText(btc)}
+              </span>{" "}
               <span style={btcUnit}>BTC</span>
             </div>
-            {usd && <div style={btcUsdText}>{usd}</div>}
+            {btc.error ? (
+              <div style={ws.errorText}>
+                Couldn&apos;t load your BTC balance: {btc.error.message}
+              </div>
+            ) : (
+              usd && <div style={btcUsdText}>{usd}</div>
+            )}
           </div>
         </div>
         <div style={{ ...actionRow, marginLeft: "auto" }}>
@@ -777,21 +794,48 @@ export function WalletBalances({
               style={ws.metaTab(group.label === activeLabel)}
             >
               {group.label}
+              {/* A failed group is empty, so it never wins the "first non-empty
+                  tab" default — without a marker its failure would be invisible
+                  unless the user happened to click it. Only failures get one:
+                  an unread or still-loading source is not something to alarm
+                  the user about. */}
+              {group.state.status === "error" && (
+                <span style={ws.errorText} title={group.state.error.message}>
+                  {" "}
+                  !
+                </span>
+              )}
             </button>
           ))}
         </div>
-        {activeGroup.options.length === 0 ? (
+        {activeNotice && (
           <div style={emptyOthers}>
-            <span style={ws.mutedText}>
-              No {activeGroup.label} holdings yet.
-            </span>
-            <LabeledAction
-              kind="deposit"
-              onClick={() =>
-                openDeposit(activeGroup.depositSymbol, activeGroup.depositType)
+            <span
+              style={
+                activeNotice.tone === "error" ? ws.errorText : ws.mutedText
               }
-            />
+            >
+              {activeNotice.message}
+            </span>
           </div>
+        )}
+        {activeGroup.options.length === 0 ? (
+          // Only claim the wallet holds nothing when the read actually
+          // SUCCEEDED — a failed, unconfigured or in-flight read yields the same
+          // empty list, and `activeNotice` has already said which it was.
+          !activeNotice && (
+            <div style={emptyOthers}>
+              <span style={ws.mutedText}>
+                No {activeGroup.label} holdings yet.
+              </span>
+              <LabeledAction
+                kind="deposit"
+                onClick={() =>
+                  openDeposit(activeGroup.depositSymbol, activeGroup.depositType)
+                }
+              />
+            </div>
+          )
         ) : (
           <div style={{ ...othersGrid, marginTop: 0 }}>
             {activeGroup.options.map((a) => (
@@ -882,10 +926,20 @@ function TokenCell({
   const sellAsset = line.sellAsset;
   return (
     <div className={className} style={tokenCell}>
-      <div style={balanceInfo} title={`${line.amount ?? "…"} ${line.symbol}`}>
+      <div style={balanceInfo} title={tokenAmountTitle(line)}>
         <TokenMark line={line} size={38} />
         <div style={{ minWidth: 0 }}>
-          <div style={tokenAmount}>{line.amount ?? "…"}</div>
+          {/* "—" (not "0") when the read failed — the balance is unknown, and
+              the tooltip carries the reason. */}
+          <div
+            style={
+              line.error
+                ? { ...tokenAmount, color: webTokens.error }
+                : tokenAmount
+            }
+          >
+            {tokenAmountText(line)}
+          </div>
           <div style={tokenSymbol}>{line.symbol}</div>
         </div>
       </div>

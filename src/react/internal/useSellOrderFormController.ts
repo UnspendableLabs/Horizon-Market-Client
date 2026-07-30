@@ -117,13 +117,6 @@ export function useSellOrderFormController(
   const maxQuantity =
     selected && showQuantity ? assetBalanceLabel(selected) || null : null;
 
-  const assetPlaceholder =
-    assets.isFetching && !assets.allAssets.length
-      ? "Loading your assets…"
-      : assets.isEmpty
-        ? "No assets to sell"
-        : "Select an asset…";
-
   const nonFatalErrors = [
     assets.errors.counterparty &&
       `Counterparty: ${assets.errors.counterparty.message}`,
@@ -131,6 +124,19 @@ export function useSellOrderFormController(
     assets.errors.ordinals && `Ordinals: ${assets.errors.ordinals.message}`,
     assets.errors.kontor && `Kontor: ${assets.errors.kontor.message}`,
   ].filter((m): m is string => Boolean(m));
+
+  // `isEmpty` is now false when a source failed, so "No assets to sell" can only
+  // be said of a wallet we actually read. An empty picker for a wallet we
+  // couldn't read gets its own wording instead — the reasons are listed just
+  // below it in `nonFatalErrors`.
+  const assetPlaceholder =
+    assets.isFetching && !assets.allAssets.length
+      ? "Loading your assets…"
+      : assets.isEmpty
+        ? "No assets to sell"
+        : !assets.allAssets.length && nonFatalErrors.length
+          ? "Couldn't load your assets"
+          : "Select an asset…";
 
   // Grouped + ordered sellable assets, non-empty groups only. Hoisted here so the
   // group labels and the XCP-first / KOR-first ordering live in one place; the

@@ -4,7 +4,11 @@ import { makeCtx, renderHook, act, type CtxRef } from "../hook-test-utils.js";
 import type { AssetOption } from "../hooks/useAssets.js";
 import type { UseAssetsResult } from "../hooks/useAssets.js";
 import type { UseBtcBalanceResult } from "../hooks/useBtcBalance.js";
-import { useWalletTokenSummary } from "./useWalletTokenSummary.js";
+import {
+  tokenAmountText,
+  tokenAmountTitle,
+  useWalletTokenSummary,
+} from "./useWalletTokenSummary.js";
 
 const { ctxRef, assetsRef, btcRef } = vi.hoisted(() => ({
   ctxRef: { current: null } as CtxRef,
@@ -27,6 +31,12 @@ function makeAssets(o: Partial<UseAssetsResult> = {}): UseAssetsResult {
     allAssets: [],
     isEmpty: false,
     errors: { counterparty: null, zeld: null, ordinals: null, kontor: null },
+    sources: {
+      counterparty: { status: "ok" },
+      zeld: { status: "ok" },
+      ordinals: { status: "ok" },
+      kontor: { status: "ok" },
+    },
     lastFetchedAt: null,
     isFetching: false,
     refresh: vi.fn(),
@@ -187,6 +197,66 @@ describe("useWalletTokenSummary", () => {
 
     expect(result.current.loading).toBe(true);
     expect(result.current.isFetching).toBe(true);
+  });
+
+  it("blanks a headline amount whose source failed instead of showing 0", () => {
+    const cpError = new Error("indexer down");
+    const kontorError = new Error("kontor down");
+    assetsRef.current = makeAssets({
+      // A failed source contributes NO options, so the computed amount would be
+      // a "0" that means "we couldn't look" — exactly the claim to avoid.
+      errors: {
+        counterparty: cpError,
+        zeld: null,
+        ordinals: null,
+        kontor: kontorError,
+      },
+    });
+    btcRef.current = makeBtc({ sats: 1n });
+
+    const { result } = renderHook(() => useWalletTokenSummary());
+    const bySymbol = Object.fromEntries(
+      result.current.tokens.map((l) => [l.symbol, l]),
+    );
+
+    expect(bySymbol.XCP.amount).toBeNull();
+    expect(bySymbol.XCP.error).toBe(cpError);
+    expect(bySymbol.KOR.amount).toBeNull();
+    expect(bySymbol.KOR.error).toBe(kontorError);
+    // Sources that answered keep their real "0" — it means the wallet holds none.
+    expect(bySymbol.ZELD.amount).toBe("0");
+    expect(bySymbol.ZELD.error).toBeNull();
+    expect(bySymbol.BTC.error).toBeNull();
+  });
+
+  it("carries the BTC read's own failure on the BTC line", () => {
+    const btcError = new Error("mempool unreachable");
+    btcRef.current = makeBtc({ sats: null, error: btcError });
+
+    const { result } = renderHook(() => useWalletTokenSummary());
+
+    expect(result.current.btc.error).toBe(btcError);
+    expect(result.current.btc.amount).toBeNull();
+  });
+
+  it("renders a failed amount as an em dash, a pending one as an ellipsis", () => {
+    const line = {
+      symbol: "XCP" as const,
+      amount: null,
+      error: new Error("indexer down"),
+      asset: null,
+      sellAsset: null,
+    };
+
+    expect(tokenAmountText(line)).toBe("—");
+    expect(tokenAmountTitle(line)).toBe(
+      "Couldn't load your XCP balance: indexer down",
+    );
+    expect(tokenAmountText({ ...line, error: null })).toBe("…");
+    expect(tokenAmountText({ ...line, amount: "0", error: null })).toBe("0");
+    expect(tokenAmountTitle({ ...line, amount: "0", error: null })).toBe(
+      "0 XCP",
+    );
   });
 
   it("refresh() re-fetches both BTC and owned balances", () => {

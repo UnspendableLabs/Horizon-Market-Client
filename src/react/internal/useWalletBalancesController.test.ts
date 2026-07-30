@@ -7,10 +7,12 @@ import {
   useWalletBalancesController,
   depositTargetFor,
   assetDepositLabel,
+  emptyGroupNotice,
   otherLabel,
   withdrawTitle,
   withdrawKey,
   tokenDepositType,
+  type OtherGroup,
 } from "./useWalletBalancesController.js";
 import type { WalletTokenSummary } from "./useWalletTokenSummary.js";
 
@@ -50,6 +52,7 @@ function makeSummary(o: Partial<WalletTokenSummary> = {}): WalletTokenSummary {
   const btcLine = {
     symbol: "BTC" as const,
     amount: null,
+    error: null,
     asset: null,
     sellAsset: null,
   };
@@ -59,6 +62,13 @@ function makeSummary(o: Partial<WalletTokenSummary> = {}): WalletTokenSummary {
     primary: [],
     tokens: [btcLine],
     others: [],
+    errors: { counterparty: null, zeld: null, ordinals: null, kontor: null },
+    sources: {
+      counterparty: { status: "ok" },
+      zeld: { status: "ok" },
+      ordinals: { status: "ok" },
+      kontor: { status: "ok" },
+    },
     loading: false,
     isFetching: false,
     lastFetchedAt: null,
@@ -119,6 +129,62 @@ describe("useWalletBalancesController", () => {
     expect(result.current.otherGroups[2].options).toEqual([ORD]);
     expect(result.current.activeLabel).toBe("Counterparty");
     expect(result.current.activeGroup.label).toBe("Counterparty");
+  });
+
+  it("attaches each source's read state to its tab", () => {
+    const kontorErr = new Error("kontor down");
+    summaryRef.current = makeSummary({
+      others: [PEPE],
+      sources: {
+        counterparty: { status: "ok" },
+        zeld: { status: "ok" },
+        ordinals: { status: "loading" },
+        kontor: { status: "error", error: kontorErr },
+      },
+    });
+
+    const { result } = renderHook(() => useWalletBalancesController());
+    const byLabel = Object.fromEntries(
+      result.current.otherGroups.map((g) => [g.label, g]),
+    );
+
+    expect(byLabel.Kontor.state).toEqual({ status: "error", error: kontorErr });
+    // A failed group is empty, so it can never win the "first non-empty tab"
+    // default — the renderers mark the tab instead.
+    expect(byLabel.Kontor.options).toEqual([]);
+    expect(result.current.activeLabel).toBe("Counterparty");
+    expect(byLabel.Counterparty.state).toEqual({ status: "ok" });
+    expect(byLabel.Ordinals.state).toEqual({ status: "loading" });
+  });
+
+  it("only lets an `ok` tab claim the wallet holds nothing", () => {
+    const err = new Error("ord api down");
+    const notice = (state: OtherGroup["state"]) =>
+      emptyGroupNotice({
+        label: "Ordinals",
+        depositType: "ordinal",
+        depositSymbol: "Ordinals",
+        options: [],
+        state,
+      });
+
+    // Only `ok` yields no notice — i.e. only there does the renderer fall
+    // through to "No Ordinals holdings yet." + the deposit affordance.
+    expect(notice({ status: "ok" })).toBeNull();
+    expect(notice({ status: "error", error: err })).toEqual({
+      tone: "error",
+      message: "Couldn't load your Ordinals holdings: ord api down",
+    });
+    // Not configured is not a failure: muted wording, no error styling, and
+    // (in the renderers) no "!" marker on the tab.
+    expect(notice({ status: "unread", reason: "not set up here" })).toEqual({
+      tone: "muted",
+      message: "not set up here",
+    });
+    expect(notice({ status: "loading" })).toEqual({
+      tone: "muted",
+      message: "Loading your Ordinals holdings…",
+    });
   });
 
   it("defaults active tab to the first non-empty group when Counterparty is empty", () => {

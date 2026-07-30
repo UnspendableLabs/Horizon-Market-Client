@@ -7,6 +7,8 @@ import { type TokenLine } from "./useWalletTokenSummary.js";
 // re-export it here so existing web imports (`./walletBalances.web.js`) keep working.
 export {
   useWalletTokenSummary,
+  tokenAmountText,
+  tokenAmountTitle,
   type TokenSymbol,
   type TokenLine,
   type WalletTokenSummary,

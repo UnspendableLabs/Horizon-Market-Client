@@ -132,11 +132,46 @@ export interface KontorNftHolding {
   address: string;
 }
 
+/**
+ * Why a Kontor read produced nothing WITHOUT ever reaching the chain.
+ *
+ * - `runtime` — no `@kontor/sdk` backend could load in this environment.
+ * - `network` — Kontor is configured for a network the SDK can't talk to.
+ * - `wallet-key` — the connected wallet exposes no usable taproot x-only key,
+ *   so the holder can't be identified (some wallets report none at all).
+ */
+export type KontorUnavailableReason = "runtime" | "network" | "wallet-key";
+
 /** Result of `getKontorHoldings` — KOR balance + owned NFTs (empty when unset). */
 export interface KontorHoldings {
   kor: KontorBalance | null;
   nfts: KontorNftHolding[];
+  /**
+   * Set when the read never actually ran, so `kor`/`nfts` being empty means "we
+   * couldn't look", NOT "the wallet holds nothing". These paths deliberately
+   * degrade instead of throwing (a Kontor outage must not break the whole
+   * balances read), which used to make them indistinguishable from an empty
+   * wallet — every UI then rendered a confident, wrong "no holdings".
+   *
+   * Null both when the read succeeded AND when Kontor is simply not configured
+   * (no `kontorNetwork` / no signer) — there is nothing to report in that case.
+   */
+  unavailable: KontorUnavailableReason | null;
 }
+
+/** Empty holdings that never reached the chain, tagged with the reason. */
+function unavailableHoldings(
+  reason: KontorUnavailableReason,
+): KontorHoldings {
+  return { kor: null, nfts: [], unavailable: reason };
+}
+
+/** Empty holdings because Kontor isn't configured at all — not a failure. */
+const KONTOR_NOT_CONFIGURED: KontorHoldings = {
+  kor: null,
+  nfts: [],
+  unavailable: null,
+};
 
 // `list_nfts_by_holder` clamps `limit` to 100 per call; page with `offset` up to
 // this many NFTs per holder candidate to bound the work.
@@ -321,11 +356,11 @@ export class HorizonMarketClient {
    */
   async getKontorHoldings(): Promise<KontorHoldings> {
     const signer = this.signer;
-    if (!signer || !this.kontorNetwork) return { kor: null, nfts: [] };
+    if (!signer || !this.kontorNetwork) return KONTOR_NOT_CONFIGURED;
 
     // No Kontor backend can load here — degrade to empty holdings rather than
     // crashing the wallet balances read that calls this.
-    if (!kontorRuntimeAvailable()) return { kor: null, nfts: [] };
+    if (!kontorRuntimeAvailable()) return unavailableHoldings("runtime");
 
     let kontorMods;
     try {
@@ -339,7 +374,7 @@ export class HorizonMarketClient {
       // The Kontor backend failed to load despite the guard passing — e.g. a
       // React Native build that did not link `@kontor/sdk-native`. Degrade to
       // empty holdings rather than crash the balances read.
-      return { kor: null, nfts: [] };
+      return unavailableHoldings("runtime");
     }
     const [
       { resolveKontorChain },
@@ -349,12 +384,12 @@ export class HorizonMarketClient {
     ] = kontorMods;
 
     const chain = resolveKontorChain(this.kontorNetwork);
-    if (!chain || this.network !== "testnet") return { kor: null, nfts: [] };
+    if (!chain || this.network !== "testnet") return unavailableHoldings("network");
 
     const addresses = signer.getAddresses();
     const xOnly = addresses.xOnlyPubkey;
     const taprootAddress = addresses.p2tr;
-    if (!xOnly || !taprootAddress) return { kor: null, nfts: [] };
+    if (!xOnly || !taprootAddress) return unavailableHoldings("wallet-key");
 
     const session = makeKontorReadSession({
       chain,
@@ -427,7 +462,7 @@ export class HorizonMarketClient {
         }
       }
 
-      return { kor, nfts };
+      return { kor, nfts, unavailable: null };
     } finally {
       session.close();
     }

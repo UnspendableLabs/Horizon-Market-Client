@@ -342,7 +342,17 @@ Read the connected wallet's real holdings (used by `SellOrderForm` / `useAssets`
 
 - `getCounterpartyBalances(addresses)` — XCP + Counterparty assets per address (mainnet; excludes ZELD)
 - `getZeldBalances(addresses)` — ZELD balance per address from the ZeldHash API (its own protocol; mainnet only)
-- `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`)
+- `getKontorHoldings()` — KOR token balance + owned Kontor NFTs (signet; NFTs require `kontorNftContractAddress`). It degrades to empty holdings instead of throwing when it can't read at all, so check `unavailable` (`"runtime" | "network" | "wallet-key"`, else null) before treating an empty result as "this wallet holds nothing"
+
+Each of these is read independently and a failure is non-fatal, so **an empty
+group is not evidence of an empty wallet**. `useAssets()` publishes why, per
+source, as `sources: Record<SourceKey, SourceState>` — `{ status: "loading" }`,
+`{ status: "ok" }`, `{ status: "error", error }`, or `{ status: "unread", reason }`
+when this app never asks for that source at all (no `ordApiBaseUrl`, Kontor off
+this network). Only `ok` licenses a "you hold none of these" empty state; the
+built-in `WalletBalances` follows that rule. `errors` remains the failure-only
+slice (an `unread` source is not a failure), and `isEmpty` is true only once
+every source has been read successfully.
 
 ### Send / Withdraw
 
