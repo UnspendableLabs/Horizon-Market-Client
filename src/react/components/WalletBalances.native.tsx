@@ -31,6 +31,7 @@ import {
 } from "../internal/walletBalances.native.js";
 import {
   ACTION_LABEL,
+  emptyGroupNotice,
   otherLabel,
   tokenDepositType,
   useWalletBalancesController,
@@ -487,6 +488,8 @@ export function WalletBalances({
     openDepositForAsset,
   } = useWalletBalancesController({ onDeposit, onWithdraw });
 
+  const activeNotice = emptyGroupNotice(activeGroup);
+
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
       <ListHeader
@@ -577,25 +580,33 @@ export function WalletBalances({
                   {group.label}
                   {/* A failed group is empty, so it never wins the "first
                       non-empty tab" default — without a marker its failure would
-                      be invisible unless the user happened to tap it. */}
-                  {group.error && <Text style={sheet.errorText}> !</Text>}
+                      be invisible unless the user happened to tap it. Only
+                      failures get one: an unread or still-loading source is not
+                      something to alarm the user about. */}
+                  {group.state.status === "error" && (
+                    <Text style={sheet.errorText}> !</Text>
+                  )}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-        {activeGroup.error && (
+        {activeNotice && (
           <View style={sheet.emptyOthers}>
-            <Text style={sheet.errorText}>
-              Couldn&apos;t load your {activeGroup.label} holdings: {activeGroup.error.message}
+            <Text
+              style={
+                activeNotice.tone === "error" ? sheet.errorText : sheet.emptyText
+              }
+            >
+              {activeNotice.message}
             </Text>
           </View>
         )}
         {activeGroup.options.length === 0 ? (
           // Only claim the wallet holds nothing when the read actually SUCCEEDED
-          // — a failed read yields the same empty list, and saying "no holdings
-          // yet" there states something we don't know to be true.
-          !activeGroup.error && (
+          // — a failed, unconfigured or in-flight read yields the same empty
+          // list, and `activeNotice` has already said which it was.
+          !activeNotice && (
             <View style={sheet.emptyOthers}>
               <Text style={sheet.emptyText}>No {activeGroup.label} holdings yet.</Text>
               <LabeledAction

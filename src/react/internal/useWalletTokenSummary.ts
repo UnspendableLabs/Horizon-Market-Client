@@ -75,9 +75,15 @@ export interface WalletTokenSummary {
    * Per-source fetch failures, passed straight through from `useAssets`. A
    * rejected source yields NO holdings rather than an error, so a renderer that
    * ignores this shows an empty list that is indistinguishable from "you own
-   * nothing" — see `OtherGroup.error`.
+   * nothing" — see `OtherGroup.state`.
    */
   errors: UseAssetsResult["errors"];
+  /**
+   * Per-source read state, passed straight through from `useAssets` — the
+   * superset of `errors` that also distinguishes "still loading" and "this app
+   * never reads that source" from a genuinely empty group.
+   */
+  sources: UseAssetsResult["sources"];
   /** True until BTC and the owned-asset groups have first resolved. */
   loading: boolean;
   /** True while a balance refresh (BTC or assets) is in flight. */
@@ -206,6 +212,7 @@ export function useWalletTokenSummary(): WalletTokenSummary {
       tokens: [btcLine, ...primary],
       others,
       errors: assets.errors,
+      sources: assets.sources,
       loading: btc.loading || (!assets.lastFetchedAt && assets.isFetching),
       isFetching: assets.isFetching || btc.loading,
       lastFetchedAt: assets.lastFetchedAt,

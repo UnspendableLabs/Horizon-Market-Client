@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
-import type { AssetOption } from "../hooks/useAssets.js";
+import type { AssetOption, SourceState } from "../hooks/useAssets.js";
 import { usePrices } from "../hooks/usePrices.js";
 import type { WithdrawTarget } from "../hooks/useWithdraw.js";
 import { assetKey, formatUsd, truncate } from "./format.js";
@@ -72,13 +72,46 @@ export interface OtherGroup {
   depositSymbol: string;
   options: AssetOption[];
   /**
-   * The failure that produced this tab's (necessarily empty) `options`, or null
-   * when the read succeeded. `useAssets` resolves a rejected source to an empty
-   * list and records the reason here, so WITHOUT this an unreachable indexer, an
-   * unsupported wallet key, or a down API is indistinguishable from "this wallet
-   * holds nothing" — the renderers must not claim the latter when it's the former.
+   * Why this tab's `options` are empty, when they are. `useAssets` resolves a
+   * rejected source to an empty list, doesn't fetch one it isn't configured for,
+   * and starts out with all of them empty — so WITHOUT this an unreachable
+   * indexer, an unsupported wallet key, a missing ord endpoint and a read still
+   * in flight are all indistinguishable from "this wallet holds nothing". Only
+   * `ok` licenses the renderers to say the latter.
    */
-  error: Error | null;
+  state: SourceState;
+}
+
+/**
+ * What to say in place of a tab's tiles when it has none, or null when the
+ * "No {label} holdings yet." empty state (with its deposit affordance) is the
+ * honest answer — i.e. only when the read actually SUCCEEDED. Shared by both
+ * renderers so a failed, unconfigured or still-loading source can't read as an
+ * empty wallet on one platform and as a notice on the other.
+ */
+export function emptyGroupNotice(
+  group: OtherGroup,
+): { tone: "error" | "muted"; message: string } | null {
+  switch (group.state.status) {
+    case "error":
+      return {
+        tone: "error",
+        message: `Couldn't load your ${group.label} holdings: ${group.state.error.message}`,
+      };
+    case "unread":
+      return { tone: "muted", message: group.state.reason };
+    case "loading":
+      return { tone: "muted", message: `Loading your ${group.label} holdings…` };
+    case "ok":
+      return null;
+    default: {
+      // A new `SourceState` variant has to decide what the tab says. Without
+      // this the switch would fall through to `undefined`, which is falsy — so
+      // the renderers would go right back to claiming "No {group} holdings yet."
+      const exhaustive: never = group.state;
+      return exhaustive;
+    }
+  }
 }
 
 /**
@@ -198,7 +231,7 @@ export function useWalletBalancesController(
   callbacks?: WalletBalancesCallbacks,
 ): UseWalletBalancesControllerResult {
   const summary = useWalletTokenSummary();
-  const { btcSats, others, errors } = summary;
+  const { btcSats, others, sources } = summary;
   const { btcUsd } = usePrices();
   const { addresses } = useHorizonMarket();
 
@@ -234,24 +267,24 @@ export function useWalletBalancesController(
         depositType: "counterparty",
         depositSymbol: "Counterparty assets",
         options: others.filter((a) => a.type === "counterparty"),
-        error: errors.counterparty,
+        state: sources.counterparty,
       },
       {
         label: "Kontor",
         depositType: "kontor-nft",
         depositSymbol: "Kontor NFTs",
         options: others.filter((a) => a.type === "kontor-nft"),
-        error: errors.kontor,
+        state: sources.kontor,
       },
       {
         label: "Ordinals",
         depositType: "ordinal",
         depositSymbol: "Ordinals",
         options: others.filter((a) => a.type === "ordinal"),
-        error: errors.ordinals,
+        state: sources.ordinals,
       },
     ],
-    [others, errors],
+    [others, sources],
   );
 
   // Active other-holdings tab: user choice, else the first group that has any

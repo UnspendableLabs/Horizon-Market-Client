@@ -6,7 +6,12 @@ export type {
   UseLoginPanelResult,
 } from "./useLoginPanel.js";
 export { useAssets } from "./useAssets.js";
-export type { AssetOption, UseAssetsResult } from "./useAssets.js";
+export type {
+  AssetOption,
+  SourceKey,
+  SourceState,
+  UseAssetsResult,
+} from "./useAssets.js";
 export { useBtcBalance } from "./useBtcBalance.js";
 export type { UseBtcBalanceResult } from "./useBtcBalance.js";
 export { useSellOrder } from "./useSellOrder.js";

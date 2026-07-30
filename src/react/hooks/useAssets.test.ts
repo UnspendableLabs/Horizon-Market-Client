@@ -385,8 +385,19 @@ describe("useAssets", () => {
     expect(result.current.errors.ordinals).toBeNull(); // ord not configured → []
     expect(result.current.korAssets).toEqual([]);
     expect(result.current.kontorNfts).toEqual([]);
-    // Everything either failed or was empty → loaded but empty.
-    expect(result.current.isEmpty).toBe(true);
+    // Loaded, and every group is empty — but two of them are empty because the
+    // read FAILED, so this wallet is not known to hold nothing. `isEmpty` drives
+    // empty states ("No assets to sell"), which must not be shown here.
+    expect(result.current.isEmpty).toBe(false);
+    expect(result.current.sources.kontor).toEqual({
+      status: "error",
+      error: result.current.errors.kontor,
+    });
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+    // No ord endpoint in this context: never read, so its empty list is not
+    // evidence of anything — and it is NOT reported as a failure either.
+    expect(result.current.sources.ordinals.status).toBe("unread");
+    expect(result.current.errors.ordinals).toBeNull();
   });
 
   it("surfaces an unavailable kontor read as an error, not as an empty wallet", async () => {
@@ -526,6 +537,78 @@ describe("useAssets", () => {
     // not extend the cached part's TTL (nor claim the data is newer than it is).
     expect(entry?.fetchedAt).toBe(fetchedAt);
     expect(result.current.lastFetchedAt).toBe(fetchedAt);
+  });
+
+  it("keeps a source `loading` until its own read settles, seeded or not", async () => {
+    const p2wpkh = "bc1qinflight";
+    const p2tr = "bc1pinflight";
+    const cacheKey = balancesCacheKey("testnet", [p2wpkh, p2tr]);
+    writeBalancesCache(cacheKey, { assets: [], stale: ["kontor"] });
+
+    const gate = deferred<{ kor: null; nfts: []; unavailable: null }>();
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(),
+      getZeldBalances: vi.fn(),
+      getKontorHoldings: vi.fn(() => gate.promise),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh, p2tr, publicKey: "02aa" },
+      network: "testnet",
+      kontorNetwork: "signet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+
+    // Seeding paints immediately (`lastFetchedAt` is set, so nothing renders a
+    // spinner), and the Kontor group is empty — but its read is still in the
+    // air. Reporting it as `ok` here would flash "No Kontor holdings yet." for
+    // the length of the request: the very claim this hook must not make.
+    await waitFor(() => expect(result.current.lastFetchedAt).not.toBeNull());
+    expect(result.current.sources.kontor).toEqual({ status: "loading" });
+    // The sources that came from the cache already have their answer.
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+
+    await act(async () => {
+      gate.resolve({ kor: null, nfts: [], unavailable: null });
+      await gate.promise;
+    });
+    expect(result.current.sources.kontor).toEqual({ status: "ok" });
+  });
+
+  it("reports a source this app never reads as `unread`, not as empty", async () => {
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(async () => []),
+      getZeldBalances: vi.fn(async () => []),
+      getKontorHoldings: vi.fn(),
+    };
+    // No `ordApiBaseUrl` and Kontor off this network: neither source is ever
+    // asked, so neither empty list is evidence the wallet holds none of them.
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh: "bc1qunread", p2tr: "bc1punread", publicKey: "02aa" },
+      network: "mainnet",
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.lastFetchedAt).not.toBeNull());
+
+    expect(result.current.sources.ordinals.status).toBe("unread");
+    expect(result.current.sources.kontor.status).toBe("unread");
+    // Not a failure — it must stay out of `errors`, which blanks the headline
+    // KOR/XCP/ZELD amounts and feeds the sell form's error list.
+    expect(result.current.errors).toEqual({
+      counterparty: null,
+      zeld: null,
+      ordinals: null,
+      kontor: null,
+    });
+    expect(client.getKontorHoldings).not.toHaveBeenCalled();
+    // Counterparty and ZELD were read and really are empty.
+    expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+    expect(result.current.isEmpty).toBe(true);
   });
 
   it("seeds from a fresh balances-cache entry without hitting the network", async () => {

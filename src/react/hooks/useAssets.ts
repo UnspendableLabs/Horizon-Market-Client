@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
 import type {
   CounterpartyBalance,
@@ -64,6 +64,27 @@ const EMPTY_GROUPS: AssetGroups = {
   kontorNfts: [],
 };
 
+/** The independent reads behind the groups — one error slot, one cache slot each. */
+export type SourceKey = "counterparty" | "zeld" | "ordinals" | "kontor";
+
+/**
+ * Why a source contributed no holdings. An empty list on its own says nothing:
+ * only `ok` licenses a renderer to claim the wallet holds none of that kind.
+ *
+ * - `loading` — the read is in flight (or hasn't started).
+ * - `ok` — the read succeeded; an empty group really is an empty group.
+ * - `error` — the read failed. Also surfaced in {@link UseAssetsResult.errors}.
+ * - `unread` — this app never asks for that source (no `ordApiBaseUrl`, Kontor
+ *   off this network). NOT a failure — nothing went wrong and there is nothing
+ *   to retry — so it stays out of `errors`, which drives the headline amounts
+ *   and the sell form's error list.
+ */
+export type SourceState =
+  | { status: "loading" }
+  | { status: "ok" }
+  | { status: "error"; error: Error }
+  | { status: "unread"; reason: string };
+
 export interface UseAssetsResult {
   /** XCP + Counterparty assets the wallet holds (mainnet). */
   counterpartyAssets: AssetOption[];
@@ -77,7 +98,14 @@ export interface UseAssetsResult {
   kontorNfts: AssetOption[];
   /** All owned options, flattened (Counterparty → ZELD → KOR → NFTs → Ordinals). */
   allAssets: AssetOption[];
-  /** True once every group has loaded and none has any holdings. */
+  /**
+   * True once every source that was read has answered, and none has any
+   * holdings. A FAILED read yields an empty list too, so it doesn't count:
+   * "empty + an error" is "we couldn't look", not an empty wallet, and a
+   * consumer rendering an empty state off this must not be handed the former.
+   * An `unread` source doesn't block it — Kontor off mainnet is not a gap in
+   * what we know, so it must not keep a genuinely empty wallet from saying so.
+   */
   isEmpty: boolean;
   /** Any non-fatal per-group fetch errors (e.g. ZELD >500 UTXOs). */
   errors: {
@@ -86,6 +114,13 @@ export interface UseAssetsResult {
     ordinals: Error | null;
     kontor: Error | null;
   };
+  /**
+   * Per-source read state — the full picture behind an empty group, of which
+   * {@link UseAssetsResult.errors} is only the "it failed" slice. A renderer
+   * showing "you hold no X" must check this first: the same empty list also
+   * means "still loading" and "this app never reads X".
+   */
+  sources: Record<SourceKey, SourceState>;
   /**
    * Epoch ms of the snapshot currently in the groups — the network read, or the
    * cache entry it was seeded from (a partial refresh keeps the seeded
@@ -163,6 +198,14 @@ const KONTOR_UNAVAILABLE_MESSAGE: Record<KontorUnavailableReason, string> = {
     "This wallet did not expose a Taproot public key, so your Kontor holdings could not be looked up. Reconnecting the wallet — or using one that reports a Taproot address — should fix it.",
 };
 
+/**
+ * Wording for a source this app simply never reads — the counterpart of
+ * {@link KONTOR_UNAVAILABLE_MESSAGE}, for the case where nothing failed. Kontor
+ * reuses its `network` line, which already says exactly this.
+ */
+const ORDINALS_UNREAD_MESSAGE =
+  "This app isn't configured to read ordinals, so your inscriptions weren't looked up.";
+
 type GroupErrors = UseAssetsResult["errors"];
 
 const NO_ERRORS: GroupErrors = {
@@ -171,9 +214,6 @@ const NO_ERRORS: GroupErrors = {
   ordinals: null,
   kontor: null,
 };
-
-/** The independent reads behind the groups — one error slot, one cache slot each. */
-type SourceKey = keyof GroupErrors;
 
 const SOURCE_KEYS: SourceKey[] = ["counterparty", "zeld", "ordinals", "kontor"];
 
@@ -225,6 +265,10 @@ export function useAssets(): UseAssetsResult {
 
   const [groups, setGroups] = useState<AssetGroups>(EMPTY_GROUPS);
   const [errors, setErrors] = useState<GroupErrors>(NO_ERRORS);
+  // Which sources have a read in flight. Starts as "all of them": before the
+  // first fetch settles, every group is empty for want of an answer, and a
+  // renderer must not read that as "this wallet holds nothing".
+  const [loadingSources, setLoadingSources] = useState<SourceKey[]>(SOURCE_KEYS);
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
   const [isFetching, setIsFetching] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -244,6 +288,8 @@ export function useAssets(): UseAssetsResult {
         setIsFetching(false);
         setGroups(EMPTY_GROUPS);
         setErrors(NO_ERRORS);
+        // Back to knowing nothing about any source, same as before the first fetch.
+        setLoadingSources(SOURCE_KEYS);
         setLastFetchedAt(null);
         setLoadedOnce(false);
         return;
@@ -257,7 +303,7 @@ export function useAssets(): UseAssetsResult {
       // painted immediately and tops itself up by re-fetching only what's stale.
       let seeded: AssetGroups | null = null;
       let seededAt: number | null = null;
-      let sources = SOURCE_KEYS;
+      let toFetch = SOURCE_KEYS;
       if (!opts.force) {
         const snapshot = readSnapshot(cacheKey, ttlMs);
         if (snapshot) {
@@ -270,16 +316,20 @@ export function useAssets(): UseAssetsResult {
           setLoadedOnce(true);
           if (snapshot.stale.length === 0) {
             setIsFetching(false);
+            setLoadingSources([]);
             return;
           }
           seeded = snapshot.groups;
           seededAt = snapshot.fetchedAt;
-          sources = snapshot.stale;
+          toFetch = snapshot.stale;
         }
       }
 
       const seq = ++seqRef.current;
       setIsFetching(true);
+      // Only the sources actually going to the network are "loading" — the ones
+      // seeded from cache already have their answer, so their tab can speak.
+      setLoadingSources(toFetch);
 
       const nextErrors: GroupErrors = {
         counterparty: null,
@@ -334,7 +384,7 @@ export function useAssets(): UseAssetsResult {
       // Only the stale sources are hit on a partial refresh; the rest keep the
       // values they were seeded with. The empty placeholders are never read —
       // each source's result is consumed only when it was actually wanted.
-      const wanted = (s: SourceKey) => sources.includes(s);
+      const wanted = (s: SourceKey) => toFetch.includes(s);
 
       const [cpResult, zeldResult, ordResult, kontorResult] =
         await Promise.allSettled([
@@ -462,6 +512,7 @@ export function useAssets(): UseAssetsResult {
       );
       setGroups(next);
       setErrors(nextErrors);
+      setLoadingSources([]);
       setLastFetchedAt(fetchedAt);
       setLoadedOnce(true);
       setIsFetching(false);
@@ -488,8 +539,36 @@ export function useAssets(): UseAssetsResult {
     void fetchAll({ force: true });
   }, [fetchAll]);
 
+  // Why each source's group is empty, in one place. `unread` is decided from
+  // configuration alone (not from the fetch), so it also covers a group seeded
+  // from a cache entry written before the host dropped that endpoint.
+  const sources = useMemo<Record<SourceKey, SourceState>>(() => {
+    const stateOf = (k: SourceKey): SourceState => {
+      if (k === "ordinals" && !ordApiBaseUrl) {
+        return { status: "unread", reason: ORDINALS_UNREAD_MESSAGE };
+      }
+      if (k === "kontor" && kontorNetwork !== "signet") {
+        return { status: "unread", reason: KONTOR_UNAVAILABLE_MESSAGE.network };
+      }
+      const error = errors[k];
+      if (error) return { status: "error", error };
+      if (loadingSources.includes(k)) return { status: "loading" };
+      return { status: "ok" };
+    };
+    return {
+      counterparty: stateOf("counterparty"),
+      zeld: stateOf("zeld"),
+      ordinals: stateOf("ordinals"),
+      kontor: stateOf("kontor"),
+    };
+  }, [errors, loadingSources, ordApiBaseUrl, kontorNetwork]);
+
   const allAssets = flatten(groups);
-  const isEmpty = loadedOnce && allAssets.length === 0;
+  // A failed source contributes no holdings, so an all-empty result with an
+  // error in it is "we couldn't look" — not an empty wallet. Callers render an
+  // empty state off this, so it must never conflate the two.
+  const anyFailed = SOURCE_KEYS.some((k) => errors[k] !== null);
+  const isEmpty = loadedOnce && !anyFailed && allAssets.length === 0;
 
   return {
     counterpartyAssets: groups.counterparty,
@@ -500,6 +579,7 @@ export function useAssets(): UseAssetsResult {
     allAssets,
     isEmpty,
     errors,
+    sources,
     lastFetchedAt,
     isFetching,
     refresh,

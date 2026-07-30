@@ -20,6 +20,7 @@ import {
 } from "../internal/walletBalances.web.js";
 import {
   ACTION_LABEL,
+  emptyGroupNotice,
   otherLabel,
   tokenDepositType,
   useWalletBalancesController,
@@ -694,6 +695,8 @@ export function WalletBalances({
     openDepositForAsset,
   } = useWalletBalancesController({ onDeposit, onWithdraw });
 
+  const activeNotice = emptyGroupNotice(activeGroup);
+
   return (
     <div
       className={cx(classNames?.root, className)}
@@ -793,9 +796,11 @@ export function WalletBalances({
               {group.label}
               {/* A failed group is empty, so it never wins the "first non-empty
                   tab" default — without a marker its failure would be invisible
-                  unless the user happened to click it. */}
-              {group.error && (
-                <span style={ws.errorText} title={group.error.message}>
+                  unless the user happened to click it. Only failures get one:
+                  an unread or still-loading source is not something to alarm
+                  the user about. */}
+              {group.state.status === "error" && (
+                <span style={ws.errorText} title={group.state.error.message}>
                   {" "}
                   !
                 </span>
@@ -803,19 +808,22 @@ export function WalletBalances({
             </button>
           ))}
         </div>
-        {activeGroup.error && (
+        {activeNotice && (
           <div style={emptyOthers}>
-            <span style={ws.errorText}>
-              Couldn&apos;t load your {activeGroup.label} holdings:{" "}
-              {activeGroup.error.message}
+            <span
+              style={
+                activeNotice.tone === "error" ? ws.errorText : ws.mutedText
+              }
+            >
+              {activeNotice.message}
             </span>
           </div>
         )}
         {activeGroup.options.length === 0 ? (
           // Only claim the wallet holds nothing when the read actually
-          // SUCCEEDED — a failed read yields the same empty list, and saying
-          // "no holdings yet" there states something we don't know to be true.
-          !activeGroup.error && (
+          // SUCCEEDED — a failed, unconfigured or in-flight read yields the same
+          // empty list, and `activeNotice` has already said which it was.
+          !activeNotice && (
             <div style={emptyOthers}>
               <span style={ws.mutedText}>
                 No {activeGroup.label} holdings yet.
