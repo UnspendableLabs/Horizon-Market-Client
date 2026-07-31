@@ -70,16 +70,26 @@ function resolveLocal(fromFile: string, spec: string): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
-/** Every bare (non-relative) specifier statically reachable from `entry`. */
-function staticBareImports(entry: string): Map<string, string[]> {
+/**
+ * Walk the static import graph from `entry`.
+ *
+ * Returns both halves of it, because both are asserted below: `bare` maps every
+ * bare (non-relative) specifier to the files importing it, and `files` is the
+ * set of local modules actually visited — which is what says whether a module
+ * is still *reachable*, since a relative specifier never lands in `bare`.
+ */
+function staticImportGraph(entry: string): {
+  bare: Map<string, string[]>;
+  files: Set<string>;
+} {
   const bare = new Map<string, string[]>();
-  const seen = new Set<string>();
+  const files = new Set<string>();
   const queue = [entry];
 
   while (queue.length > 0) {
     const file = queue.pop()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
+    if (files.has(file)) continue;
+    files.add(file);
 
     for (const spec of staticSpecifiers(readFileSync(file, "utf8"))) {
       if (spec.startsWith(".")) {
@@ -95,7 +105,7 @@ function staticBareImports(entry: string): Map<string, string[]> {
       bare.set(spec, importers);
     }
   }
-  return bare;
+  return { bare, files };
 }
 
 describe.each([
@@ -103,7 +113,7 @@ describe.each([
   ["native", resolve(SRC, "react/index.native.ts")],
 ])("%s React entry", (_platform, entry) => {
   it("never statically imports the Kontor backend", () => {
-    const bare = staticBareImports(entry);
+    const { bare } = staticImportGraph(entry);
     const offenders = [...bare.entries()].filter(([spec]) =>
       spec.startsWith("@kontor/"),
     );
@@ -116,13 +126,29 @@ describe.each([
   });
 
   it("still reaches the Kontor gas arithmetic (it is the point of gas.ts)", () => {
-    // Guards the other direction: if the Max affordance's pricing ever moved
-    // behind a module that does pull `@kontor/sdk`, the test above would still
-    // pass while the React layer silently lost its ability to price gas.
-    const graph = staticBareImports(entry);
-    expect(graph.has("@kontor/sdk")).toBe(false);
+    // Guards the other direction. The test above only says the entry doesn't
+    // reach the backend — a graph that reached *nothing* would satisfy it just
+    // as well. So assert the pricing is still in there: if the Max affordance's
+    // arithmetic ever moved behind a module that does pull `@kontor/sdk`, it
+    // would have to leave this graph to keep the test above green, and that is
+    // the React layer silently losing its ability to price gas at all.
     const gasFile = resolve(SRC, "kontor/gas.ts");
-    expect(existsSync(gasFile)).toBe(true);
-    expect(readFileSync(gasFile, "utf8")).not.toMatch(/from ["']@kontor\//);
+    const { files } = staticImportGraph(entry);
+    expect(
+      files.has(gasFile),
+      "the entry no longer statically reaches kontor/gas.ts — the React layer " +
+        "can't price gas without pulling the Kontor backend",
+    ).toBe(true);
+
+    // And that the file it reaches is still on this side of the line. Read with
+    // the same walker the graph uses, so both directions agree on what counts:
+    // a bare `import "@kontor/sdk"` is caught, an erased `import type` is not.
+    const kontorImports = staticSpecifiers(
+      readFileSync(gasFile, "utf8"),
+    ).filter((spec) => spec.startsWith("@kontor/"));
+    expect(
+      kontorImports,
+      `kontor/gas.ts must stay free of the Kontor backend, but imports: ${kontorImports.join(", ")}`,
+    ).toEqual([]);
   });
 });
