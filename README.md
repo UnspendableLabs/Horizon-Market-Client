@@ -133,12 +133,13 @@ function App() {
 | `useSellOrderForm` | The packaged `SellOrderForm`'s controller: grouped asset picker, gas-aware "Max", submit validity, result messaging. Wraps `useSellOrder` + `useAssets` — use it *instead of* them |
 | `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
+| `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
 | `SellOrderForm` | Multi-step sell listing from the wallet's owned balances (pick asset, confirm, progress) |
 | `SwapConfirmation` | Buy or delist a swap with progress UI |
-| `WithdrawForm`, `WalletBalances`, `WalletBalanceSummary` | Wallet UI: send/withdraw any asset, full balances view, compact summary |
+| `WithdrawForm`, `WalletBalances`, `WalletBalanceSummary` | Wallet UI: send/withdraw any asset, full balances view, compact summary. `WalletBalances` takes a `renderTokenAction(line)` slot to add a host control to the XCP/KOR/ZELD rows (`WalletTokenLine`) |
 | `WorkflowProgress`, `Modal` | Standalone progress list and the shared overlay modal |
 | `defaultTheme`, `resolveTheme` | Theme helpers (plus `themeToCssVars` / `webTokens` on web) |
 

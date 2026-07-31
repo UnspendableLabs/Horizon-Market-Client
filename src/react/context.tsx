@@ -181,6 +181,12 @@ export interface HorizonMarketProviderProps {
    * `${baseUrl}/api/kontor-indexer` to avoid CORS.
    */
   kontorIndexerUrl?: string;
+  /**
+   * Signet KOR faucet endpoint behind `useKontorFaucet()`. Defaults to
+   * `${baseUrl}/api/kontor-faucet` (horizon.market's proxy in front of the
+   * Portal faucet, which sets no CORS headers of its own).
+   */
+  kontorFaucetUrl?: string;
   ordApiBaseUrl?: string;
   /** Counterparty API v2 base URL (owned balances). Defaults to the public API. */
   counterpartyApiBaseUrl?: string;
@@ -230,6 +236,7 @@ export function HorizonMarketProvider({
   baseUrl,
   kontorNetwork,
   kontorIndexerUrl,
+  kontorFaucetUrl,
   ordApiBaseUrl,
   counterpartyApiBaseUrl,
   zeldApiBaseUrl,
@@ -281,6 +288,7 @@ export function HorizonMarketProvider({
         baseUrl,
         kontorNetwork,
         kontorIndexerUrl,
+        kontorFaucetUrl,
         counterpartyApiBaseUrl,
         zeldApiBaseUrl,
         kontorNftContractAddress,
@@ -291,6 +299,7 @@ export function HorizonMarketProvider({
       baseUrl,
       kontorNetwork,
       kontorIndexerUrl,
+      kontorFaucetUrl,
       counterpartyApiBaseUrl,
       zeldApiBaseUrl,
       kontorNftContractAddress,
@@ -307,6 +316,7 @@ export function HorizonMarketProvider({
             baseUrl,
             kontorNetwork,
             kontorIndexerUrl,
+            kontorFaucetUrl,
             counterpartyApiBaseUrl,
             zeldApiBaseUrl,
             kontorNftContractAddress,
@@ -322,6 +332,7 @@ export function HorizonMarketProvider({
       baseUrl,
       kontorNetwork,
       kontorIndexerUrl,
+      kontorFaucetUrl,
       counterpartyApiBaseUrl,
       zeldApiBaseUrl,
       kontorNftContractAddress,

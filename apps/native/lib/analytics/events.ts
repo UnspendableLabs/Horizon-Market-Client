@@ -76,6 +76,16 @@ export function trackWalletWithdrawCompleted(
   );
 }
 
+// Same two event names the web wallet page uses for its faucet, so the funnel
+// (opened → completed, with the outcome) is one chart across web and mobile.
+export function trackWalletFaucetOpened(): void {
+  void track("wallet_faucet_opened", withPlatform(SURFACE.wallet));
+}
+
+export function trackWalletFaucetCompleted(status: "success" | "error"): void {
+  void track("wallet_faucet_completed", withPlatform(SURFACE.wallet, { status }));
+}
+
 export function trackWalletSellAssetClicked(assetType: string): void {
   void track(
     "wallet_sell_asset_clicked",

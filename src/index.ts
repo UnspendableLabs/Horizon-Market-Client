@@ -63,6 +63,18 @@ export type {
   KontorListingPreflightParams,
 } from "./kontor/preflight.js";
 export type { KontorListingFeePreview } from "./api/kontor.js";
+// The signet KOR faucet — the way out of the "no gas, so no way to get gas"
+// deadlock the pre-flights above report. `client.requestKontorFaucet()` is the
+// ergonomic form (it knows the wallet's key and the configured endpoint); this
+// is the bare wire call, for a caller holding a recipient key and nothing else.
+export {
+  requestKontorFaucet,
+  KONTOR_FAUCET_AMOUNT_KOR,
+} from "./kontor/faucet.js";
+export type {
+  KontorFaucetResult,
+  RequestKontorFaucetParams,
+} from "./kontor/faucet.js";
 export type {
   PsbtSellOrderParams,
   SellBroadcastTx,

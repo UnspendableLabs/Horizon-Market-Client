@@ -5,6 +5,7 @@ import {
   WalletBalances,
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
+import { KorFaucetAction } from "../../components/KorFaucetAction.js";
 import { useSellIntent } from "../../lib/sell-intent.js";
 import { logout as web3authLogout } from "../../lib/web3auth.js";
 import { clearMnemonicSession } from "../../lib/mnemonic-session.js";
@@ -96,6 +97,12 @@ export default function WalletTab() {
             onWithdraw={({ target }) => trackWalletWithdrawOpened(target.type)}
             onWithdrawComplete={({ target, txid }) =>
               trackWalletWithdrawCompleted(target.type, txid)
+            }
+            // Kontor pays gas in KOR and drops the op of an account holding
+            // none, so an empty KOR balance blocks every Kontor flow. The faucet
+            // sits in the KOR row itself; it renders nothing off signet.
+            renderTokenAction={(line) =>
+              line.symbol === "KOR" ? <KorFaucetAction /> : null
             }
           />
           <CreditsRow />

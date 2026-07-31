@@ -73,6 +73,14 @@ export interface HorizonMarketClientOptions {
    */
   kontorIndexerUrl?: string;
   /**
+   * Signet KOR faucet endpoint used by `requestKontorFaucet()`. Defaults to
+   * `${baseUrl}/api/kontor-faucet` — horizon.market's proxy in front of the
+   * Portal faucet, which is where a browser app must go anyway (the Portal sets
+   * no CORS headers). Point it straight at `{portal}/api/faucet` for a Node or
+   * React Native consumer that would rather not depend on the market's origin.
+   */
+  kontorFaucetUrl?: string;
+  /**
    * Counterparty API v2 base URL for reading the connected wallet's owned XCP +
    * Counterparty asset balances. Defaults to `https://api.counterparty.io:4000`
    * on mainnet. On other networks it's used only when set (so balances aren't

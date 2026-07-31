@@ -252,3 +252,85 @@ describe("HorizonMarketClient.purchaseSwaps", () => {
     ).toThrow("P2WPKH");
   });
 });
+
+describe("HorizonMarketClient.requestKontorFaucet", () => {
+  const signetSigner = () =>
+    makeSigner({ p2tr: "tb1pwallet", xOnlyPubkey: "ab".repeat(32) });
+
+  it("posts to `${baseUrl}/api/kontor-faucet` with the wallet's taproot key", async () => {
+    const fetchFn = makeFetch(200, {
+      commit_txid: "aa11",
+      reveal_txid: "bb22",
+    });
+    const client = new HorizonMarketClient({
+      signer: signetSigner(),
+      network: "testnet",
+      kontorNetwork: "signet",
+      // Trailing slash on purpose: the endpoint must not come out doubled.
+      baseUrl: "https://signet.horizon.market/",
+      fetch: fetchFn,
+    });
+
+    await expect(client.requestKontorFaucet()).resolves.toEqual({
+      commitTxid: "aa11",
+      revealTxid: "bb22",
+    });
+
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("https://signet.horizon.market/api/kontor-faucet");
+    expect(JSON.parse(String(init.body))).toEqual({
+      recipient: "ab".repeat(32),
+      amount: 10,
+    });
+  });
+
+  it("uses an explicit kontorFaucetUrl (Portal direct, no market origin)", async () => {
+    const fetchFn = makeFetch(200, { commit_txid: "", reveal_txid: "cc33" });
+    const client = new HorizonMarketClient({
+      signer: signetSigner(),
+      network: "testnet",
+      kontorNetwork: "signet",
+      kontorFaucetUrl: "https://portal.horizon.market/api/faucet",
+      fetch: fetchFn,
+    });
+
+    await client.requestKontorFaucet({ amount: 2 });
+
+    const [url, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("https://portal.horizon.market/api/faucet");
+    expect(JSON.parse(String(init.body)).amount).toBe(2);
+  });
+
+  // Mainnet has no faucet: asking would hit an endpoint that 404s (or worse,
+  // one that exists on another origin), so refuse before making the request.
+  it("refuses off Kontor signet without calling anything", async () => {
+    const fetchFn = makeFetch(200, {});
+    const client = new HorizonMarketClient({
+      signer: signetSigner(),
+      network: "mainnet",
+      fetch: fetchFn,
+    });
+
+    await expect(client.requestKontorFaucet()).rejects.toThrow("signet only");
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wallet with no taproot key for the faucet to credit", async () => {
+    const fetchFn = makeFetch(200, {});
+    const client = new HorizonMarketClient({
+      signer: makeSigner(),
+      network: "testnet",
+      kontorNetwork: "signet",
+      fetch: fetchFn,
+    });
+
+    await expect(client.requestKontorFaucet()).rejects.toThrow("xOnlyPubkey");
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});

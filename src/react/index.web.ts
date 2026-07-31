@@ -24,6 +24,7 @@ export {
   WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
   useSwapList,
+  useKontorFaucet,
   usePrices,
   useFeeEstimates,
   SORT_OPTIONS,
@@ -60,6 +61,8 @@ export type {
   SwapConfirmationStatus,
   UseSwapConfirmationOptions,
   UseSwapConfirmationResult,
+  KontorFaucetStatus,
+  UseKontorFaucetResult,
   UsePricesResult,
   FeeEstimates,
   UseFeeEstimatesResult,
@@ -120,6 +123,11 @@ export {
   KONTOR_ACCEPT_GAS_LIMIT,
   KONTOR_DETACH_GAS_LIMIT,
 } from "../kontor/gas.js";
+// The signet KOR faucet `useKontorFaucet()` calls: the amount one request
+// grants, and the two txids it returns. Plain HTTP — no `@kontor/sdk` behind it,
+// so funding an account works in a bundle built without the Kontor backend.
+export { KONTOR_FAUCET_AMOUNT_KOR } from "../kontor/faucet.js";
+export type { KontorFaucetResult } from "../kontor/faucet.js";
 export type {
   KontorPreflightTarget,
   KontorPreflightNotice,
@@ -187,6 +195,8 @@ export type {
   WalletWithdrawEvent,
   WalletWithdrawCompleteEvent,
 } from "./components/WalletBalances.web.js";
+// The headline-token shape `renderTokenAction` is called with (XCP/KOR/ZELD).
+export type { TokenLine as WalletTokenLine } from "./internal/walletBalances.web.js";
 
 export { WalletBalanceSummary } from "./components/WalletBalanceSummary.web.js";
 export type {
