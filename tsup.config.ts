@@ -33,7 +33,16 @@ export default defineConfig([
     entry: { "react/index": "src/react/index.web.ts" },
     format: ["esm", "cjs"],
     dts: true,
-    splitting: false,
+    // Code-splitting for the same reason as the native entry below: the client
+    // reaches every Kontor module through a dynamic `import()` so the
+    // WebAssembly-backed `@kontor/sdk` never evaluates at startup, and without
+    // splitting esbuild inlines them and hoists their top-level
+    // `import … from "@kontor/sdk"` into this entry. That silently undid the
+    // isolation on web — importing `/react` at all compiled the Kontor WASM,
+    // in apps that never touch Kontor, and it is what `kontor/gas.ts` exists to
+    // stay clear of. Hermes crashes on it; a browser "only" pays for it, which
+    // is why it went unnoticed here and not on native.
+    splitting: true,
     sourcemap: true,
     target: "es2020",
     external: ["react"],
