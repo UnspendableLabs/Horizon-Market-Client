@@ -27,7 +27,7 @@ import { AssetAvatar } from "../internal/icons.native.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { SellReview } from "../internal/SellReview.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
-import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
+import { useSellOrderForm } from "../hooks/useSellOrderForm.js";
 import { useSellReview } from "../internal/useSellReview.js";
 import type { ResolvedTheme } from "../theme.js";
 import { Modal } from "./Modal.native.js";
@@ -298,7 +298,7 @@ export function SellOrderForm({
     nonFatalErrors,
     assetGroups,
     resultView,
-  } = useSellOrderFormController({ defaultSatsPerVbyte, initialAsset, onSuccess, onError });
+  } = useSellOrderForm({ defaultSatsPerVbyte, initialAsset, onSuccess, onError });
 
   // Fee rate + cost preview + live price for the review screen. Idle until the
   // confirm step is shown.

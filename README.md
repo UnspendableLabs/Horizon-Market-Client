@@ -130,7 +130,10 @@ function App() {
 | `HorizonMarketProvider` | Context: client, addresses, `initialize` / `initializeWithMnemonic` / `initializeWithSigner` / `logout`, theme |
 | `useHorizonMarket`, `useTheme` | Access provider state and resolved theme |
 | `useLoginPanel`, `useAssets`, `useSellOrder`, `useSwapConfirmation`, `useSwapList` | Headless hooks (build your own UI) |
+| `useSellOrderForm` | The packaged `SellOrderForm`'s controller: grouped asset picker, gas-aware "Max", submit validity, result messaging. Wraps `useSellOrder` + `useAssets` — use it *instead of* them |
+| `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
+| `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
 | `SellOrderForm` | Multi-step sell listing from the wallet's owned balances (pick asset, confirm, progress) |
