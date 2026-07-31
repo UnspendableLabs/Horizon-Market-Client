@@ -103,6 +103,24 @@ vi.mock("@kontor/sdk", () => {
   };
 });
 
+// The Kontor pre-flight reads chain state through the (mocked) SDK session; it
+// is covered by `kontor/preflight.test.ts` and stubbed here so this file stays
+// about one thing: the private key never leaving the client. It makes no
+// Horizon HTTP call, so the request assertions below are unaffected.
+const passing = vi.fn(async () => ({
+  ok: true,
+  error: null,
+  balanceKor: "1",
+  requiredKor: "0.0001",
+  gasLimit: 100_000,
+  signerId: 16,
+}));
+vi.mock("../kontor/preflight.js", () => ({
+  preflightKontorListing: passing,
+  preflightKontorPurchase: passing,
+  preflightKontorDelist: passing,
+}));
+
 import { HorizonMarketClient } from "../client.js";
 import { LocalSigner } from "../crypto/signer.js";
 

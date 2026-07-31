@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
+import {
+  useKontorPreflight,
+  type UseKontorPreflightResult,
+} from "../internal/useKontorPreflight.js";
 import type {
+  AtomicSwap,
   PendingSale,
   WorkflowProgressEvent,
 } from "../../types/index.js";
@@ -23,6 +28,13 @@ export interface UseSwapConfirmationOptions {
   swapId: string;
   /** Which flow this instance drives — selects the unified status/steps/message. */
   mode: "buy" | "sell";
+  /**
+   * The swap itself, when the caller already has it. Only used to gate a Kontor
+   * **delist** on chain state before the button is offered (see
+   * {@link UseSwapConfirmationResult.preflight}) — everything else works off
+   * `swapId` alone, so omitting it costs only that early warning.
+   */
+  swap?: AtomicSwap;
   defaultSatsPerVbyte?: number;
   onBuySuccess?: (sales: PendingSale[]) => void;
   onDelistSuccess?: () => void;
@@ -57,6 +69,18 @@ export interface UseSwapConfirmationResult {
   sales: PendingSale[] | null;
   error: Error | null;
   isSubmitting: boolean;
+  /**
+   * Chain-state gate for a Kontor **delist**: can the seller pay the `detach`'s
+   * gas. Idle unless `swap` was passed, the listing is Kontor, and `mode` is
+   * `"sell"`.
+   *
+   * The most consequential of the three Kontor pre-flights, and the reason this
+   * hook takes the swap at all: a revoke *spends the escrow UTXO*, so a `detach`
+   * dropped for want of gas can never be retried and strands the asset.
+   * `delistSwap` refuses to broadcast in that case — this surfaces it before the
+   * seller clicks, with `blockedReason` saying what to fund.
+   */
+  preflight: UseKontorPreflightResult;
   confirmPurchase: (extra?: Partial<FillSwapsParams>) => Promise<void>;
   delist: () => Promise<void>;
   retry: () => void;
@@ -85,7 +109,7 @@ export function useSwapConfirmation(
   options: UseSwapConfirmationOptions,
 ): UseSwapConfirmationResult {
   const { client, network, kontorNetwork } = useHorizonMarket();
-  const { swapId, defaultSatsPerVbyte, mode } = options;
+  const { swapId, defaultSatsPerVbyte, mode, swap } = options;
 
   const optsRef = useRef(options);
   optsRef.current = options;
@@ -122,6 +146,15 @@ export function useSwapConfirmation(
     idleSwapState.recordRetry,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Only while the delist is still being offered: once the workflow is running
+  // or finished, re-reading the chain answers a question nobody is asking, and
+  // a refusal arriving mid-progress would contradict the screen.
+  const preflight = useKontorPreflight(
+    swap && mode === "sell" && step === "confirm" && swap.listingType === "kontor"
+      ? { flow: "delist", swap }
+      : null,
+  );
 
   const submittingRef = useRef(false);
 
@@ -373,6 +406,7 @@ export function useSwapConfirmation(
     sales,
     error,
     isSubmitting,
+    preflight,
     confirmPurchase,
     delist,
     retry,

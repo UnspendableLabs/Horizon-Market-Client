@@ -58,6 +58,11 @@ const STEP_MESSAGES: AllStepMessages = {
       complete: "Listing created",
       error: "Listing creation failed",
     },
+    preflightKontor: {
+      start: "Checking Kontor gas balance and asset…",
+      complete: "Kontor account and asset ready",
+      error: "Kontor pre-flight check failed",
+    },
     reserveKontorFee: {
       start: "Reserving Kontor listing fee…",
       complete: "Kontor listing fee reserved",
@@ -90,6 +95,11 @@ const STEP_MESSAGES: AllStepMessages = {
       complete: "Purchase submitted",
       error: "Purchase submission failed",
     },
+    preflightKontor: {
+      start: "Checking Kontor gas balance and escrow…",
+      complete: "Kontor account and escrow verified",
+      error: "Kontor pre-flight check failed",
+    },
     inspectKontorOffer: {
       start: "Inspecting Kontor offer…",
       complete: "Kontor offer valid",
@@ -116,6 +126,11 @@ const STEP_MESSAGES: AllStepMessages = {
       start: "Confirming delist…",
       complete: "Delist confirmed",
       error: "Delist confirmation failed",
+    },
+    preflightKontor: {
+      start: "Checking Kontor gas balance…",
+      complete: "Kontor account ready",
+      error: "Kontor pre-flight check failed",
     },
     revokeKontorOffer: {
       start: "Revoking Kontor offer and reclaiming asset…",
@@ -187,7 +202,31 @@ export class WorkflowProgressReporter<W extends WorkflowName> {
     }
   }
 
+  /**
+   * Notify the host, and **never** let its callback break the workflow.
+   *
+   * `onProgress` is arbitrary host code — a React `setState`, a CLI spinner, an
+   * analytics call. A throw from it used to propagate out of `runAsync` as if
+   * the *step* had failed, which is wrong twice over: the step succeeded, and
+   * the throw lands between the step's work and whatever the caller does with
+   * its result. On `acceptKontorOffer` that meant an already-broadcast swap
+   * reveal surfacing as a raw callback error instead of
+   * `KontorPurchaseNotRecordedError`, losing the txid the recovery needs; on the
+   * pre-flight step it meant the Kontor session escaping its `try/finally`
+   * unclosed. Progress reporting is telemetry, so it is contained here.
+   */
   private emit(step: WorkflowStepFor<W>, phase: WorkflowProgressPhase): void {
+    try {
+      this.emitUnguarded(step, phase);
+    } catch {
+      // A broken progress listener is the host's problem, not the workflow's.
+    }
+  }
+
+  private emitUnguarded(
+    step: WorkflowStepFor<W>,
+    phase: WorkflowProgressPhase,
+  ): void {
     if (!this.onProgress) return;
 
     const messages = STEP_MESSAGES[this.workflow][step];

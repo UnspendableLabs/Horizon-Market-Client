@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { globalArgs } from "../context.js";
-import { CliError, runCommand } from "../lib/output.js";
+import { CliError, note, runCommand } from "../lib/output.js";
 import { getNetworkConfig, mempoolApiBase, mempoolTxUrl } from "../lib/networks.js";
 import { requireKeystore } from "../lib/keystore.js";
 import { unlockWallet } from "../lib/wallet.js";
@@ -62,6 +62,20 @@ export const buyCommand = defineCommand({
         const btcUsd = await fetchBtcUsd(fetch);
         renderBuyReview(`Buy ${swap.listingType} swap ${swap.id}`, cost, btcUsd);
       }
+
+      // Ask the chain *before* asking the user. `fillSwaps` runs this same check
+      // and refuses to broadcast when it fails — running it here too means an
+      // unbacked listing, or a wallet that can't pay Kontor gas, is turned away
+      // without ever prompting for a purchase that was never going to deliver.
+      if (swap.listingType === "kontor") {
+        const verdict = await client.preflightKontorPurchase(swap);
+        if (verdict.error) throw verdict.error;
+        note(
+          cli,
+          `Kontor gas ≈ ${verdict.requiredKor} KOR (account holds ${verdict.balanceKor} KOR)`,
+        );
+      }
+
       await confirmAction(cli, "Confirm this purchase?");
 
       const sales = await client.fillSwaps(

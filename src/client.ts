@@ -39,6 +39,13 @@ import {
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
 import type { KontorContext } from "./kontor/context.js";
+// Type-only: erased at compile time, so neither `@kontor/sdk` nor the Kontor
+// pre-flight chunk is pulled into a bundle that never calls these.
+import type { KontorSession } from "@kontor/sdk";
+import type {
+  KontorListingPreflightParams,
+  KontorPreflightResult,
+} from "./kontor/preflight.js";
 // Loading `@kontor/sdk` is eager and heavy (a WASM component on web/Node, a
 // native JSI crate on React Native). All Kontor modules below are therefore
 // imported *dynamically* at their use sites so no backend evaluates at startup;
@@ -301,7 +308,143 @@ export class HorizonMarketClient {
       chain,
       indexerUrl: this.kontorIndexerUrl,
       btcNetwork: this.btcNetwork,
+      fetch: this.fetch,
     };
+  }
+
+  /**
+   * Run `fn` against a **read-only** KontorSession bound to the connected
+   * wallet's Kontor identity, and close it afterwards.
+   *
+   * Read-only on purpose: a pre-flight must not need funding UTXOs and must not
+   * prompt an external wallet to sign anything — it only makes `view` calls.
+   * The identity still matches the one that would sign, because both are
+   * derived from the same `getAddresses().xOnlyPubkey`: the pre-flight would
+   * prove nothing if it checked a different account than the one that pays.
+   */
+  private async withKontorReadSession<T>(
+    fn: (session: KontorSession) => Promise<T>,
+  ): Promise<T> {
+    const signer = this.assertSigner();
+    const ctx = await this.resolveKontorCtx();
+    const xOnly = signer.getAddresses().xOnlyPubkey;
+    if (!xOnly) {
+      throw new Error(
+        "Kontor pre-flight requires a wallet exposing its taproot x-only public " +
+          "key via getAddresses() (xOnlyPubkey).",
+      );
+    }
+    const { makeKontorReadSession } = await import("./kontor/session.js");
+    const session = makeKontorReadSession({
+      chain: ctx.chain,
+      xOnlyPubkey: xOnly,
+      indexerUrl: this.kontorIndexerUrl,
+      fetch: this.fetch,
+    });
+    try {
+      return await fn(session);
+    } finally {
+      session.close();
+    }
+  }
+
+  /**
+   * Resolve a swap the caller may already hold, without a needless round-trip.
+   * Review screens have the whole `AtomicSwap`; scripts often have only an id.
+   */
+  private async resolveSwapArg(swap: AtomicSwap | string): Promise<AtomicSwap> {
+    return typeof swap === "string" ? this.getSwap(swap) : swap;
+  }
+
+  // ─── Kontor pre-flight (read-only; check before committing) ──────────────────
+
+  /**
+   * Would a Kontor listing execute, if submitted right now?
+   *
+   * `openSellOrder` runs this same check and refuses to broadcast when it
+   * fails — this is the reporting form, for asking *before* the user confirms
+   * rather than after. Every read is a `view` call: no signature, no wallet
+   * prompt, no transaction, nothing spent.
+   *
+   * Resolves to `{ ok: false, error }` for the three refusals a wallet can fix
+   * (no KOR for gas, doesn't hold the asset), and **throws** when the check
+   * itself couldn't be made — an unreachable indexer must never read as "you
+   * have no KOR". `balanceKor` / `requiredKor` are filled in either way, so a
+   * review screen can print the gas cost next to the balance it just read.
+   */
+  async preflightKontorListing(
+    params: KontorListingPreflightParams,
+  ): Promise<KontorPreflightResult> {
+    const { preflightKontorListing } = await import("./kontor/preflight.js");
+    return this.withKontorReadSession((session) =>
+      preflightKontorListing({
+        session,
+        indexerUrl: this.kontorIndexerUrl,
+        fetch: this.fetch,
+        assetKind: params.kontorAssetKind,
+        nftId: params.kontorAssetKind === "nft" ? params.nftId : null,
+        contractAddress:
+          params.kontorAssetKind === "nft" ? params.nftContractAddress : null,
+        korAmount: params.kontorAssetKind === "token" ? params.korAmount : null,
+      }),
+    );
+  }
+
+  /**
+   * Would buying this Kontor listing execute, if submitted right now? Checks
+   * the buyer's gas **and** that the listing's escrow really holds the
+   * advertised asset — the unbacked-listing case a buyer cannot otherwise see.
+   *
+   * The same check `fillSwaps` enforces; see {@link preflightKontorListing} for
+   * the resolve-vs-throw contract. Pass the `AtomicSwap` you already have to
+   * skip the lookup, or its id.
+   */
+  async preflightKontorPurchase(
+    swap: AtomicSwap | string,
+  ): Promise<KontorPreflightResult> {
+    const target = await this.resolveSwapArg(swap);
+    const { preflightKontorPurchase } = await import("./kontor/preflight.js");
+    return this.withKontorReadSession((session) =>
+      preflightKontorPurchase({
+        session,
+        indexerUrl: this.kontorIndexerUrl,
+        fetch: this.fetch,
+        escrowOutpoint: target.assetUtxoId,
+        assetKind: target.kontorAssetKind,
+        nftId: target.kontorNftId,
+        contractAddress: target.kontorContractAddress,
+        korAmount: target.kontorAmount,
+      }),
+    );
+  }
+
+  /**
+   * Would delisting this Kontor listing execute, if submitted right now?
+   *
+   * The one most worth asking early: a revoke spends the escrow UTXO, so a
+   * `detach` dropped for want of gas can never be retried and strands the
+   * asset. The same check `delistSwap` enforces; see
+   * {@link preflightKontorListing} for the resolve-vs-throw contract.
+   */
+  async preflightKontorDelist(
+    swap: AtomicSwap | string,
+  ): Promise<KontorPreflightResult> {
+    const target = await this.resolveSwapArg(swap);
+    if (!target.kontorOfferBlob) {
+      throw new Error(
+        `Swap ${target.id} is a Kontor swap but has no offer blob`,
+      );
+    }
+    const { preflightKontorDelist } = await import("./kontor/preflight.js");
+    const offerBlob = target.kontorOfferBlob;
+    return this.withKontorReadSession((session) =>
+      preflightKontorDelist({
+        session,
+        indexerUrl: this.kontorIndexerUrl,
+        fetch: this.fetch,
+        offerBlob,
+      }),
+    );
   }
 
   // ─── Owned-balance reads (public protocol APIs) ──────────────────────────────

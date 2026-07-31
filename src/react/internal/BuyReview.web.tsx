@@ -11,6 +11,7 @@ import {
   type FeeOption,
   type UseBuyReviewResult,
 } from "./useBuyReview.js";
+import { kontorPreflightNotice } from "./useKontorPreflight.js";
 import * as ws from "./styles.web.js";
 
 export interface BuyReviewClassNames {
@@ -289,9 +290,13 @@ export function BuyReview({
     minerFeePending,
     previewError,
     canConfirm,
+    preflight,
   } = review;
 
   const buying = buyingDisplay(swap);
+  // Kontor only: why the chain says this purchase wouldn't execute (button
+  // disabled), or that it couldn't be checked (button still enabled).
+  const notice = kontorPreflightNotice(preflight);
 
   const feeSelect = (
     <select
@@ -398,6 +403,15 @@ export function BuyReview({
         {previewError && !isKontor && (
           <span style={ws.errorText}>
             Couldn&apos;t estimate the cost: {previewError.message}
+          </span>
+        )}
+
+        {notice && (
+          <span
+            role={notice.tone === "blocked" ? "alert" : undefined}
+            style={notice.tone === "blocked" ? ws.errorText : ws.mutedText}
+          >
+            {notice.text}
           </span>
         )}
       </div>

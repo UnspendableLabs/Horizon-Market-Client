@@ -255,6 +255,110 @@ describe("useSwapConfirmation — buy", () => {
   });
 });
 
+describe("useSwapConfirmation — Kontor delist pre-flight", () => {
+  /**
+   * The most consequential of the three Kontor gates: a revoke *spends the
+   * escrow UTXO*, so a `detach` dropped for want of gas can never be retried and
+   * strands the asset. `delistSwap` refuses to broadcast in that case — this
+   * surfaces the refusal before the seller ever clicks Delist.
+   */
+  const kontorSwap = {
+    id: "swap-del-kontor",
+    listingType: "kontor",
+  } as unknown as NonNullable<UseSwapConfirmationOptions["swap"]>;
+
+  function kontorCtx(preflightKontorDelist: unknown) {
+    return ctxWith(
+      { delistSwap: vi.fn(), preflightKontorDelist },
+      { network: "testnet", kontorNetwork: "signet" },
+    );
+  }
+
+  it("reports the refusal, with the swap it was handed", async () => {
+    const error = new Error("Not enough KOR to pay Kontor network gas. …");
+    const preflightKontorDelist = vi.fn(async () => ({
+      ok: false,
+      error,
+      balanceKor: "0",
+      requiredKor: "0.0001",
+      gasLimit: 100_000,
+      signerId: null,
+    }));
+    ctxRef.current = kontorCtx(preflightKontorDelist);
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({
+        swapId: kontorSwap.id,
+        mode: "sell",
+        swap: kontorSwap,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(result.current.preflight.blockedReason).toBe(error.message),
+    );
+    expect(result.current.preflight.canSubmit).toBe(false);
+    expect(preflightKontorDelist).toHaveBeenCalledWith(kontorSwap);
+  });
+
+  it("stays idle for a buy, for a PSBT listing, and without the swap", async () => {
+    const preflightKontorDelist = vi.fn();
+    ctxRef.current = kontorCtx(preflightKontorDelist);
+
+    // Buying a Kontor listing: the *purchase* pre-flight belongs to the buy
+    // review, not here.
+    renderHook(() =>
+      useSwapConfirmation({ swapId: "s", mode: "buy", swap: kontorSwap }),
+    );
+    // A PSBT delist has no Kontor gas to pay.
+    renderHook(() =>
+      useSwapConfirmation({
+        swapId: "s",
+        mode: "sell",
+        swap: { id: "s", listingType: "counterparty" } as typeof kontorSwap,
+      }),
+    );
+    // `swap` omitted — the hook still works off `swapId`, just without the
+    // early warning.
+    renderHook(() => useSwapConfirmation({ swapId: "s", mode: "sell" }));
+
+    await act(async () => {});
+    expect(preflightKontorDelist).not.toHaveBeenCalled();
+  });
+
+  it("stops asking once the delist is running", async () => {
+    // A refusal arriving mid-progress would contradict the screen.
+    const preflightKontorDelist = vi.fn(async () => ({
+      ok: true,
+      error: null,
+      balanceKor: "1",
+      requiredKor: "0.0001",
+      gasLimit: 100_000,
+      signerId: 16,
+    }));
+    ctxRef.current = ctxWith(
+      { delistSwap: vi.fn(async () => undefined), preflightKontorDelist },
+      { network: "testnet", kontorNetwork: "signet" },
+    );
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({
+        swapId: kontorSwap.id,
+        mode: "sell",
+        swap: kontorSwap,
+      }),
+    );
+    await waitFor(() => expect(preflightKontorDelist).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.delist();
+    });
+
+    expect(result.current.step).toBe("result");
+    expect(preflightKontorDelist).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("useSwapConfirmation — delist", () => {
   it("drives a successful delist through progress → result", async () => {
     const delistSwap = vi.fn().mockImplementation(async (_id, opts) => {

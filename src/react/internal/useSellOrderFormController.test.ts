@@ -169,6 +169,29 @@ describe("useSellOrderFormController", () => {
     expect(result.current.maxQuantity).toBe("10");
   });
 
+  it("holds back the attach's gas from KOR's maxQuantity", () => {
+    // KOR escrows from the same balance the listing's own gas is held against,
+    // and the hold lands first — a Max that offered the raw balance would be a
+    // button whose only outcome is a pre-flight refusal.
+    sellOrderRef.current = makeSellOrder({
+      formValues: { asset: KOR_OPT, quantity: "", priceSats: "" },
+    });
+    const { result } = renderHook(() => useSellOrderFormController());
+    expect(result.current.maxQuantity).toBe("2.9999");
+  });
+
+  it("drops the KOR Max entirely when the balance can't even cover the gas", () => {
+    sellOrderRef.current = makeSellOrder({
+      formValues: {
+        asset: { type: "kor", address: "bc1pwallet", amount: "0.00005" },
+        quantity: "",
+        priceSats: "",
+      },
+    });
+    const { result } = renderHook(() => useSellOrderFormController());
+    expect(result.current.maxQuantity).toBeNull();
+  });
+
   it("has no maxQuantity for a 1-of-1 asset, a blank balance, or no selection", () => {
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: ORD, quantity: "", priceSats: "" },

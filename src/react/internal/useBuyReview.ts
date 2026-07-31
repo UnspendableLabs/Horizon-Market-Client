@@ -2,6 +2,10 @@ import { useState } from "react";
 import { usePrices } from "../hooks/usePrices.js";
 import { useFeeEstimates, type FeeEstimates } from "../hooks/useFeeEstimates.js";
 import { useBuyQuotePreview } from "./useBuyQuotePreview.js";
+import {
+  useKontorPreflight,
+  type UseKontorPreflightResult,
+} from "./useKontorPreflight.js";
 import { formatSats, formatUsd } from "./format.js";
 import { type FeeOption, rateForOption } from "./feeRate.js";
 import type { AtomicSwap } from "../../types/index.js";
@@ -62,9 +66,20 @@ export interface UseBuyReviewResult {
   /**
    * False when the quote couldn't be composed (e.g. insufficient BTC to fund the
    * purchase) — confirming would fail the same way, so the "Confirm" button stays
-   * disabled until it recovers. Always true for Kontor (no preview).
+   * disabled until it recovers. For Kontor (no preview) it instead follows the
+   * pre-flight below: the chain says whether the purchase would execute.
    */
   canConfirm: boolean;
+  /**
+   * Chain-state gate for a Kontor purchase: the buyer's gas, and the listing's
+   * escrow really holding the asset. Idle for every other listing type.
+   *
+   * `fillSwaps` runs this same check and refuses to broadcast, so this changes
+   * *when* the buyer learns — before committing rather than on the result
+   * screen. `blockedReason` is the only thing that disables the button; see
+   * {@link useKontorPreflight} for why a failed check does not.
+   */
+  preflight: UseKontorPreflightResult;
 }
 
 /**
@@ -89,6 +104,14 @@ export function useBuyReview({
   const isKontor = swap.listingType === "kontor";
   const preview = useBuyQuotePreview(swap, feeRate, active);
 
+  // A Kontor buy has no composable quote to fail on, so the equivalent early
+  // warning is the chain read: can the buyer pay the Sponsor's gas, and does the
+  // escrow actually hold what the listing advertises. Only asked while the
+  // confirm step is shown, and only for Kontor.
+  const preflight = useKontorPreflight(
+    active && isKontor ? { flow: "purchase", swap } : null,
+  );
+
   const priceSats = swap.price;
   const royaltySats = preview.royaltySats ?? swap.royalty;
   const minerFeeSats = preview.minerFeeSats;
@@ -99,8 +122,11 @@ export function useBuyReview({
 
   const totalUsd = totalSats != null ? formatUsd(totalSats, btcUsd) : null;
 
-  // A failed compose means the real purchase can't be composed either.
-  const canConfirm = isKontor ? true : preview.error == null;
+  // A failed compose means the real purchase can't be composed either; for
+  // Kontor, a pre-flight refusal means `fillSwaps` would throw the same refusal
+  // instead of broadcasting. Either way, offering the button would only spend
+  // the user's time.
+  const canConfirm = isKontor ? preflight.canSubmit : preview.error == null;
 
   const totalDisplay =
     totalSats != null
@@ -142,5 +168,6 @@ export function useBuyReview({
     previewLoading: preview.loading,
     previewError: preview.error,
     canConfirm,
+    preflight,
   };
 }

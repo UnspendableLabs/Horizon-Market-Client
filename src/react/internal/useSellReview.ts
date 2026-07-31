@@ -5,6 +5,10 @@ import { useFeeEstimates, type FeeEstimates } from "../hooks/useFeeEstimates.js"
 import { useSellQuotePreview, type SellCost } from "./useSellQuotePreview.js";
 import { useKontorListingFee } from "./useKontorListingFee.js";
 import { useKontorMinerFee } from "./useKontorMinerFee.js";
+import {
+  useKontorPreflight,
+  type UseKontorPreflightResult,
+} from "./useKontorPreflight.js";
 import { estimateKontorMinerFee } from "./kontorFeeEstimate.js";
 import { buildSellOrderParams } from "./sellFormValidation.js";
 import { type FeeOption, rateForOption } from "./feeRate.js";
@@ -62,9 +66,22 @@ export interface UseSellReviewResult {
   /**
    * False when the active fee preview failed — the cost couldn't be estimated
    * (e.g. insufficient BTC), so signing would compose an order guaranteed to
-   * fail. Drives the review's disabled "Sign" button.
+   * fail — or, for Kontor, when the pre-flight below says the listing would not
+   * execute. Drives the review's disabled "Sign" button.
    */
   canSign: boolean;
+  /**
+   * Chain-state gate for a Kontor listing: the seller's gas for the attach, and
+   * the wallet actually holding the NFT / KOR being escrowed. Idle for PSBT
+   * listings.
+   *
+   * `openSellOrder` runs this same check and refuses to broadcast, so this
+   * changes *when* the seller learns — before the fee is reserved and the
+   * listing credit spent, rather than on the result screen. `blockedReason` is
+   * the only thing that disables the button; see {@link useKontorPreflight} for
+   * why a failed check does not.
+   */
+  preflight: UseKontorPreflightResult;
   /** Kontor listing fee in sats (null until loaded). Only set for KOR/NFT. */
   kontorListingSats: number | null;
   kontorListingLoading: boolean;
@@ -112,6 +129,25 @@ export function useSellReview({
 
   const preview = useSellQuotePreview(params, feeRate, active && !isKontor);
 
+  // Chain-state gate for the Kontor half, asked off the very params about to be
+  // submitted. `params` is null until the form composes, so the check waits for
+  // a listing that is actually well-formed rather than probing a half-filled one.
+  const preflight = useKontorPreflight(
+    params?.listingType === "kontor"
+      ? {
+          flow: "listing",
+          params:
+            params.kontorAssetKind === "nft"
+              ? {
+                  kontorAssetKind: "nft",
+                  nftId: params.nftId,
+                  nftContractAddress: params.nftContractAddress,
+                }
+              : { kontorAssetKind: "token", korAmount: params.korAmount },
+        }
+      : null,
+  );
+
   // Kontor has no sell-quote; read its listing fee via the dedicated preview.
   const kontorAddress =
     asset && (asset.type === "kor" || asset.type === "kontor-nft")
@@ -137,7 +173,12 @@ export function useSellReview({
   // Block signing whenever the relevant fee preview failed: a failed estimate
   // (e.g. insufficient BTC to compose the transfer) means the real order can't
   // be composed either, so the "Sign" button stays disabled until it recovers.
-  const canSign = isKontor ? kontorFee.error == null : preview.error == null;
+  // A Kontor listing has a second way to be doomed that costs more to discover
+  // late — `openSellOrder` reserves the listing fee before it would find out —
+  // so a pre-flight refusal disables the button too.
+  const canSign = isKontor
+    ? kontorFee.error == null && preflight.canSubmit
+    : preview.error == null;
 
   // The platform listing fee is waived when the server covered it via the
   // account's credit / subscription. PSBT listings report it on the sell-quote;
@@ -160,6 +201,7 @@ export function useSellReview({
     previewLoading: preview.loading,
     previewError: preview.error,
     canSign,
+    preflight,
     kontorListingSats: kontorFee.listingSats,
     kontorListingLoading: kontorFee.loading,
     kontorListingError: kontorFee.error,

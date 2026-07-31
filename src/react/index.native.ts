@@ -92,6 +92,23 @@ export type { SellCost } from "./internal/useSellQuotePreview.js";
 // its arg/result types are re-exported here — FEE_HINTS/FEE_OPTIONS/FEE_LABELS/
 // FeeOption are already exported via the useSellReview block above.
 export { useBuyReview } from "./internal/useBuyReview.js";
+
+// The Kontor chain-state gate behind all three review screens: can this wallet
+// pay the op's gas, does it hold what it is listing, does the listing's escrow
+// hold what it advertises. Already wired into `useBuyReview` / `useSellReview` /
+// `useSwapConfirmation` (each exposes it as `preflight`), and exported here so an
+// app rendering its OWN review UI can gate the same way instead of discovering
+// the refusal after the user commits. `kontorPreflightNotice` is the shared
+// wording the packaged renderers show, so a custom screen can match them.
+export {
+  useKontorPreflight,
+  kontorPreflightNotice,
+} from "./internal/useKontorPreflight.js";
+export type {
+  KontorPreflightTarget,
+  KontorPreflightNotice,
+  UseKontorPreflightResult,
+} from "./internal/useKontorPreflight.js";
 export type {
   UseBuyReviewArgs,
   UseBuyReviewResult,

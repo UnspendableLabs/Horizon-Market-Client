@@ -91,9 +91,9 @@ Each step emits `phase: "start"` before work begins and `phase: "complete"` when
 
 | Workflow | Steps (PSBT listings) | Steps (Kontor listings) |
 |----------|-----------------------|-------------------------|
-| `openSellOrder` | `validateParams` → `requestSellQuote` → `signPrepPsbt`* → `finalizePrepPsbt`* → `signSwapPsbt` → `signFeePsbt`* → `createSwap` | `validateParams` → `reserveKontorFee` → `composeKontorOffer` → `createSwap` |
-| `fillSwaps` | `validateParams` → `requestBuyQuote` → `signBuyerPsbt` → `submitPurchase` | `validateParams` → `inspectKontorOffer` → `acceptKontorOffer` → `submitPurchase` |
-| `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` | `revokeKontorOffer` → `startDelist` → `signDelistMessage` → `confirmDelist` |
+| `openSellOrder` | `validateParams` → `requestSellQuote` → `signPrepPsbt`* → `finalizePrepPsbt`* → `signSwapPsbt` → `signFeePsbt`* → `createSwap` | `validateParams` → `preflightKontor` → `reserveKontorFee` → `composeKontorOffer` → `createSwap` |
+| `fillSwaps` | `validateParams` → `requestBuyQuote` → `signBuyerPsbt` → `submitPurchase` | `validateParams` → `preflightKontor` → `inspectKontorOffer` → `acceptKontorOffer` → `submitPurchase` |
+| `delistSwap` | `startDelist` → `signDelistMessage` → `confirmDelist` | `preflightKontor` → `revokeKontorOffer` → `startDelist` → `signDelistMessage` → `confirmDelist` |
 
 \* omitted when not applicable (no prep PSBT / no fee PSBT). For PSBT listings, `totalSteps` is `null` on the first `openSellOrder` events until the sell quote is received and the step plan is known; Kontor workflows know their step count up front.
 
@@ -241,6 +241,78 @@ client auto-fetches your confirmed taproot UTXOs from Horizon (only your public 
 sent). To supply them yourself — or use a dedicated funding address — pass `fundingUtxos`
 on sell, `kontorFundingUtxos` on buy, or `fundingUtxos` in `delistSwap` options (a
 `KontorUtxoInput[]` or a `() => Promise<KontorUtxoInput[]>` fetcher).
+
+**Pre-flight (`preflightKontor`).** Every Kontor contract call is gas-metered: the node
+holds `gas_limit × 1e-9` KOR from the op's payer *before* dispatching it, and drops the op
+when the payer can't cover that — leaving **no result row anywhere**, while the Bitcoin
+transaction carrying it still confirms. A listing whose asset was never escrowed, a
+purchase that pays the seller and delivers nothing, a delist that spends the escrow UTXO
+and strands the asset: all silent, all reported as success by every API. So each flow's
+first step reads chain state with `view` calls only — no signature, no transaction,
+nothing spent — and refuses to broadcast:
+
+- `openSellOrder` — the seller can pay the attach's gas, and actually holds the NFT / KOR
+  being listed (KOR: the amount **plus** its own gas, which is held first out of the same
+  balance). Runs before the fee quote, so a blocked listing never burns a listing credit.
+- `fillSwaps` — the buyer can pay the `Sponsor`'s gas, **and the listing's escrow really
+  holds the advertised asset**. `IncomingOffer.inspect()` only validates the offer blob's
+  structure, so an unbacked listing is otherwise indistinguishable from a good one until
+  the buyer has paid.
+- `delistSwap` — the seller can pay the `detach`'s gas (read from the offer blob). The
+  only one of the three whose failure is unrecoverable: the revoke spends the escrow, so
+  it can never be retried.
+
+The refusals are `KontorInsufficientGasError` (carries `requiredKor` / `availableKor` /
+`operation`), `KontorAssetUnavailableError` and `KontorEscrowNotFundedError` — all
+exported, all raised before signing, so the user can fund the account and retry with
+nothing lost. `isKontorPreflightRefusal(err)` tells those three apart from a real
+failure without importing the classes. An indexer failure during the check surfaces as
+an error, never as "you have no KOR". `korCostForGas(gasLimit)`,
+`maxListableKor(balance)` and the `KONTOR_*_GAS_LIMIT` constants are exported for
+pricing this in your own UI.
+
+**Checking early.** The same checks are available as ordinary reads, so a review screen
+can refuse *before* asking the user to confirm rather than after. They resolve with a
+verdict instead of throwing, and are read-only — `view` calls against a read-only
+session, so no funding UTXOs and no wallet signing prompt:
+
+```ts
+const verdict = await client.preflightKontorListing({
+  kontorAssetKind: "token",
+  korAmount: "100",
+});
+// { ok, error, balanceKor, requiredKor, gasLimit, signerId }
+if (!verdict.ok) showBlocker(verdict.error.message); // else enable the Confirm button
+
+await client.preflightKontorPurchase(swap); // an AtomicSwap, or its id
+await client.preflightKontorDelist(swap);
+```
+
+`ok: false` carries one of the three refusals above — something the wallet can fix. A
+failure to *check* (unreachable indexer, Kontor not configured) **throws** instead: it
+is not a verdict, and reporting it as one would tell a funded user to go fund their
+account. `balanceKor` / `requiredKor` are filled in either way, so you can print the gas
+cost next to the balance you just read. The workflows call these very functions, so what
+a review screen reports and what the broadcast enforces cannot drift apart.
+
+The packaged React screens already do this, on web and native alike — `<BuyReview/>`,
+`<SellReview/>` and `<SwapConfirmation/>`'s delist step disable their button and show the
+reason instead of letting the user commit to a flow that would be refused. Each exposes
+the verdict as `preflight`, and the hook behind them is exported for a custom UI:
+
+```tsx
+import { useKontorPreflight, kontorPreflightNotice } from "…/react";
+
+const preflight = useKontorPreflight({ flow: "purchase", swap });
+const notice = kontorPreflightNotice(preflight); // { tone, text } | null
+
+<button disabled={!preflight.canSubmit}>Buy</button>;
+```
+
+**A failed check never blocks.** A refusal disables the button; an indexer that didn't
+answer shows a note (`tone: "warning"`) and leaves it enabled. Blocking there would
+strand a perfectly funded user behind a transient outage, and would buy nothing: the
+workflow runs the same check again before it signs or broadcasts anything.
 
 **Orphan protection.** Kontor transactions are broadcast on-chain *before* the
 corresponding server-side record. If the recording POST fails after the broadcast,

@@ -5,6 +5,7 @@ import type { Signer } from "../crypto/signer.js";
 import { resolveKontorFunding } from "../kontor/funding.js";
 import { makeKontorSession } from "../kontor/session.js";
 import { getKontorSigning } from "../kontor/signing.js";
+import { preflightKontorDelist } from "../kontor/preflight.js";
 import type { KontorContext } from "../kontor/context.js";
 import type {
   AtomicSwap,
@@ -40,12 +41,22 @@ export class KontorDelistNotRecordedError extends Error {
 }
 
 /**
- * delistKontorSwap — revoke offer on-chain (reclaim escrow) → BIP322 delist.
+ * delistKontorSwap — preflight → revoke offer on-chain (reclaim escrow) →
+ * BIP322 delist.
  *
  * Step 1 reclaims the escrowed asset via the SDK's `Offer.revoke()` (composed,
  * signed, broadcast locally — key never leaves the client). Step 2 marks the
  * listing delisted with a BIP322 signature over the delist request id, signed
  * with the seller's taproot address — identical to the PSBT delist flow.
+ *
+ * The preflight is the most consequential of the three Kontor flows'. A revoke
+ * *spends the escrow UTXO* and carries the seller's pre-signed `detach`, which
+ * — with no Sponsor riding a revoke — the seller pays for themselves. A seller
+ * who cannot cover that gas has the detach dropped before execution while the
+ * Bitcoin transaction still confirms: the escrow output is gone, so `revoke()`
+ * can never be retried, and the asset stays credited to a UTXO that no longer
+ * exists. Unlike a bad listing or a bad purchase, that is unrecoverable — hence
+ * a `view`-only gas check before anything is signed. See `kontor/preflight.ts`.
  *
  * If the revoke succeeds but the server-side delist fails, a
  * {@link KontorDelistNotRecordedError} is thrown so the caller knows the
@@ -62,7 +73,7 @@ export async function delistKontorSwap(
   const progress = new WorkflowProgressReporter(
     "delistSwap",
     options?.onProgress,
-    4,
+    5,
   );
 
   const offerBlob = swap.kontorOfferBlob;
@@ -70,7 +81,12 @@ export async function delistKontorSwap(
     throw new Error(`Swap ${swap.id} is a Kontor swap but has no offer blob`);
   }
 
-  await progress.runAsync("revokeKontorOffer", async () => {
+  // The session is built inside the pre-flight step — so a signing/funding
+  // failure still reports as a failed step — and handed to the revoke: the
+  // check has to run against the same identity that will sign, or it proves
+  // nothing. It owns its own close on the way out of a failed check, since the
+  // caller's `finally` below only starts once it has one.
+  const session = await progress.runAsync("preflightKontor", async () => {
     const signing = await getKontorSigning(signer, ctx.chain);
     const funding = resolveKontorFunding(
       http,
@@ -78,19 +94,38 @@ export async function delistKontorSwap(
       ctx.btcNetwork,
       params.fundingUtxos,
     );
-    const session = makeKontorSession({
+    const built = makeKontorSession({
       chain: ctx.chain,
       signing,
       funding,
       indexerUrl: ctx.indexerUrl,
     });
     try {
+      // The same call `client.preflightKontorDelist()` exposes — one gate, so
+      // what a review screen reported and what the broadcast enforces cannot
+      // drift apart.
+      const verdict = await preflightKontorDelist({
+        session: built,
+        indexerUrl: ctx.indexerUrl,
+        fetch: ctx.fetch,
+        offerBlob,
+      });
+      if (verdict.error) throw verdict.error;
+    } catch (err) {
+      built.close();
+      throw err;
+    }
+    return built;
+  });
+
+  try {
+    await progress.runAsync("revokeKontorOffer", async () => {
       const offer = new Offer(session, JSON.parse(offerBlob));
       await offer.revoke();
-    } finally {
-      session.close();
-    }
-  });
+    });
+  } finally {
+    session.close();
+  }
 
   // The escrow is reclaimed on-chain now. A failure past this point leaves the
   // listing unfulfillable but possibly still active server-side, so surface it

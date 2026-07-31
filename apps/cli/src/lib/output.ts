@@ -12,6 +12,34 @@ export class CliError extends Error {
   }
 }
 
+/**
+ * Machine-readable codes for the SDK errors a script has to branch on.
+ *
+ * The SDK identifies them by `name` (it has no CLI code vocabulary), and the
+ * pre-flight ones especially need to be distinguishable from a generic failure:
+ * "you need KOR before you can list" is a *fund-and-retry*, whereas the
+ * `…NotRecordedError`s mean the chain already moved and retrying the command
+ * would double-spend the attempt. Without a code, `--json` consumers would have
+ * to grep the message.
+ */
+const SDK_ERROR_CODES: Record<string, string> = {
+  KontorInsufficientGasError: "KONTOR_INSUFFICIENT_GAS",
+  KontorAssetUnavailableError: "KONTOR_ASSET_UNAVAILABLE",
+  KontorEscrowNotFundedError: "KONTOR_ESCROW_NOT_FUNDED",
+  KontorListingNotRecordedError: "KONTOR_LISTING_NOT_RECORDED",
+  KontorPurchaseNotRecordedError: "KONTOR_PURCHASE_NOT_RECORDED",
+  KontorDelistNotRecordedError: "KONTOR_DELIST_NOT_RECORDED",
+  KontorUnavailableError: "KONTOR_UNAVAILABLE",
+  ZeldTooManyUtxosError: "ZELD_TOO_MANY_UTXOS",
+};
+
+/** The `--json` error code for a thrown value, or undefined when it has none. */
+export function errorCode(err: unknown): string | undefined {
+  if (err instanceof CliError) return err.code;
+  if (err instanceof Error) return SDK_ERROR_CODES[err.name];
+  return undefined;
+}
+
 /** JSON.stringify replacer: serialize bigint → decimal string (lossless). */
 export function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === "bigint" ? value.toString() : value;
@@ -56,7 +84,7 @@ export async function runCommand(
 
 function fail(json: boolean, err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
-  const code = err instanceof CliError ? err.code : undefined;
+  const code = errorCode(err);
   const line = json
     ? JSON.stringify({ error: code ? { message, code } : { message } }, bigintReplacer) + "\n"
     : pc.red(`✖ ${message}`) + "\n";

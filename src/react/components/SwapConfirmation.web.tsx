@@ -11,6 +11,7 @@ import {
 } from "../internal/format.js";
 import { BuyReview } from "../internal/BuyReview.web.js";
 import { useBuyReview } from "../internal/useBuyReview.js";
+import { kontorPreflightNotice } from "../internal/useKontorPreflight.js";
 import { ResultActions } from "../internal/ResultActions.web.js";
 import { SummaryRow } from "../internal/SummaryRow.web.js";
 import * as ws from "../internal/styles.web.js";
@@ -85,11 +86,16 @@ export function SwapConfirmation({
     confirmPurchase,
     delist,
     isSubmitting,
+    preflight,
     retry,
     reset,
   } = useSwapConfirmation({
     swapId: swap.id,
     mode,
+    // Gates a Kontor delist on chain state before the button is offered — a
+    // revoke spends the escrow, so a `detach` dropped for want of gas can never
+    // be retried.
+    swap,
     defaultSatsPerVbyte,
     onBuySuccess,
     onDelistSuccess,
@@ -110,6 +116,11 @@ export function SwapConfirmation({
   const { addresses } = useHorizonMarket();
   const buyerTaprootAddress =
     swap.listingType === "ordinal" ? addresses?.p2tr : undefined;
+
+  // Kontor delist only: why the revoke wouldn't execute (button disabled), or
+  // that it couldn't be checked (button still enabled).
+  const delistNotice = kontorPreflightNotice(preflight);
+  const delistDisabled = isSubmitting || preflight.blockedReason !== null;
 
   const root = { ...rootStyle, ...style };
 
@@ -178,12 +189,22 @@ export function SwapConfirmation({
             />
           )}
         </div>
+        {delistNotice && (
+          <span
+            role={delistNotice.tone === "blocked" ? "alert" : undefined}
+            style={
+              delistNotice.tone === "blocked" ? ws.errorText : ws.mutedText
+            }
+          >
+            {delistNotice.text}
+          </span>
+        )}
         <button
           type="button"
-          disabled={isSubmitting}
+          disabled={delistDisabled}
           onClick={() => void delist()}
           className={classNames?.button}
-          style={ws.withDisabled(ws.primaryButton, isSubmitting)}
+          style={ws.withDisabled(ws.primaryButton, delistDisabled)}
         >
           {isSubmitting ? "Delisting…" : "Delist"}
         </button>

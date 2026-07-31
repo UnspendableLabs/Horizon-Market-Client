@@ -41,6 +41,27 @@ export {
 // Thrown by every Kontor operation when the client was not constructed with
 // `kontorNetwork` — exported so consumers can `instanceof` it.
 export { KontorUnavailableError } from "./kontor/runtime.js";
+// Pre-flight failures — thrown before anything is signed, broadcast, or paid,
+// so a caller catching these can surface a fix ("fund your Kontor account with
+// KOR", "connect the owning wallet") and let the user retry safely.
+export {
+  KontorInsufficientGasError,
+  KontorAssetUnavailableError,
+  KontorEscrowNotFundedError,
+  isKontorPreflightRefusal,
+  korCostForGas,
+  detachGasLimitFromBlob,
+  maxListableKor,
+  KONTOR_ATTACH_GAS_LIMIT,
+  KONTOR_ACCEPT_GAS_LIMIT,
+  KONTOR_DETACH_GAS_LIMIT,
+} from "./kontor/preflight.js";
+export type {
+  KontorGasOperation,
+  KontorPreflightRefusal,
+  KontorPreflightResult,
+  KontorListingPreflightParams,
+} from "./kontor/preflight.js";
 export type { KontorListingFeePreview } from "./api/kontor.js";
 export type {
   PsbtSellOrderParams,

@@ -20,6 +20,7 @@ import {
 } from "../internal/format.js";
 import { BuyReview } from "../internal/BuyReview.native.js";
 import { useBuyReview } from "../internal/useBuyReview.js";
+import { kontorPreflightNotice } from "../internal/useKontorPreflight.js";
 import { ResultActions } from "../internal/ResultActions.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
 import { SummaryRow } from "../internal/SummaryRow.native.js";
@@ -97,11 +98,16 @@ export function SwapConfirmation({
     confirmPurchase,
     delist,
     isSubmitting,
+    preflight,
     retry,
     reset,
   } = useSwapConfirmation({
     swapId: swap.id,
     mode,
+    // Gates a Kontor delist on chain state before the button is offered — a
+    // revoke spends the escrow, so a `detach` dropped for want of gas can never
+    // be retried.
+    swap,
     defaultSatsPerVbyte,
     onBuySuccess,
     onDelistSuccess,
@@ -122,6 +128,11 @@ export function SwapConfirmation({
   const { addresses } = useHorizonMarket();
   const buyerTaprootAddress =
     swap.listingType === "ordinal" ? addresses?.p2tr : undefined;
+
+  // Kontor delist only: why the revoke wouldn't execute (button disabled), or
+  // that it couldn't be checked (button still enabled).
+  const delistNotice = kontorPreflightNotice(preflight);
+  const delistDisabled = isSubmitting || preflight.blockedReason !== null;
 
   if (step === "confirm" && mode === "buy") {
     return (
@@ -196,12 +207,24 @@ export function SwapConfirmation({
             />
           )}
         </View>
+        {delistNotice ? (
+          <Text
+            accessibilityRole={
+              delistNotice.tone === "blocked" ? "alert" : undefined
+            }
+            style={
+              delistNotice.tone === "blocked" ? common.error : common.muted
+            }
+          >
+            {delistNotice.text}
+          </Text>
+        ) : null}
         <Pressable
-          disabled={isSubmitting}
+          disabled={delistDisabled}
           onPress={() => void delist()}
           style={[
             common.button,
-            isSubmitting && common.buttonDisabled,
+            delistDisabled && common.buttonDisabled,
             stylesProp?.button,
           ]}
         >

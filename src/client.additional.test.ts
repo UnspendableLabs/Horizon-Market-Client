@@ -36,6 +36,24 @@ vi.mock("./kontor/holders.js", () => ({
   holderCandidates: vi.fn(() => ["holderA", "holderB"]),
   resolveSignerId: vi.fn(async () => null),
 }));
+// The pre-flight checks themselves are covered in `kontor/preflight.test.ts`;
+// here we only care that the client wires them to a read-only session bound to
+// the connected wallet, and hands back what they report.
+const { preflightVerdict } = vi.hoisted(() => ({
+  preflightVerdict: {
+    ok: true,
+    error: null,
+    balanceKor: "1.25",
+    requiredKor: "0.0001",
+    gasLimit: 100_000,
+    signerId: 16,
+  },
+}));
+vi.mock("./kontor/preflight.js", () => ({
+  preflightKontorListing: vi.fn(async () => preflightVerdict),
+  preflightKontorPurchase: vi.fn(async () => preflightVerdict),
+  preflightKontorDelist: vi.fn(async () => preflightVerdict),
+}));
 
 import { HorizonMarketClient } from "./client.js";
 import {
@@ -54,6 +72,12 @@ import { prepareSend as sendPrepareSend, sendAsset } from "./send/index.js";
 import { openKontorSellOrder } from "./workflows/sell-kontor.js";
 import { fillKontorSwap } from "./workflows/buy-kontor.js";
 import { delistKontorSwap } from "./workflows/delist-kontor.js";
+import { makeKontorReadSession } from "./kontor/session.js";
+import {
+  preflightKontorListing,
+  preflightKontorPurchase,
+  preflightKontorDelist,
+} from "./kontor/preflight.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -878,5 +902,126 @@ describe("HorizonMarketClient.delistSwap", () => {
     await client.delistSwap("swap_1");
     expect(workflowDelistSwap).toHaveBeenCalledTimes(1);
     expect(delistKontorSwap).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Kontor pre-flight (public, read-only) ────────────────────────────────────
+
+describe("HorizonMarketClient.preflightKontor*", () => {
+  const kontorClient = (fetchFn?: typeof fetch) =>
+    new HorizonMarketClient({
+      signer: makeSigner({ p2tr: "bc1ptaproot", xOnlyPubkey: "deadbeef" }),
+      network: "testnet",
+      kontorNetwork: "signet",
+      ...(fetchFn ? { fetch: fetchFn } : {}),
+    });
+
+  it("checks a listing against a read-only session bound to the wallet", async () => {
+    // Read-only on purpose: a pre-flight must not need funding UTXOs and must
+    // not prompt an external wallet to sign — and it must check the identity
+    // that would actually pay, or it proves nothing.
+    const client = kontorClient();
+
+    await expect(
+      client.preflightKontorListing({
+        kontorAssetKind: "token",
+        korAmount: "100",
+      }),
+    ).resolves.toEqual(preflightVerdict);
+
+    expect(makeKontorReadSession).toHaveBeenCalledWith(
+      expect.objectContaining({ xOnlyPubkey: "deadbeef" }),
+    );
+    expect(preflightKontorListing).toHaveBeenCalledWith(
+      expect.objectContaining({ assetKind: "token", korAmount: "100" }),
+    );
+  });
+
+  it("passes an NFT listing's id and contract, and nulls the KOR amount", async () => {
+    await kontorClient().preflightKontorListing({
+      kontorAssetKind: "nft",
+      nftId: "nft-1",
+      nftContractAddress: "nft@0.0",
+    });
+
+    expect(preflightKontorListing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetKind: "nft",
+        nftId: "nft-1",
+        contractAddress: "nft@0.0",
+        korAmount: null,
+      }),
+    );
+  });
+
+  it("takes a swap the caller already has, without re-fetching it", async () => {
+    const fetchFn = makeFetch(200, { data: wireSwap("kontor") });
+    const client = kontorClient(fetchFn);
+    const swap = await client.getSwap("swap_1");
+    vi.mocked(fetchFn).mockClear();
+
+    await client.preflightKontorPurchase(swap);
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(preflightKontorPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ escrowOutpoint: "utxo:0" }),
+    );
+  });
+
+  it("looks a swap up when given only its id", async () => {
+    const fetchFn = makeFetch(200, { data: wireSwap("kontor") });
+    await kontorClient(fetchFn).preflightKontorPurchase("swap_1");
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(preflightKontorPurchase).toHaveBeenCalled();
+  });
+
+  it("prices a delist from the listing's own offer blob", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { ...wireSwap("kontor"), kontor_offer_blob: '{"v":1}' },
+    });
+    await kontorClient(fetchFn).preflightKontorDelist("swap_1");
+
+    expect(preflightKontorDelist).toHaveBeenCalledWith(
+      expect.objectContaining({ offerBlob: '{"v":1}' }),
+    );
+  });
+
+  it("refuses to pre-flight a delist for a listing with no offer blob", async () => {
+    const fetchFn = makeFetch(200, { data: wireSwap("kontor") });
+    await expect(
+      kontorClient(fetchFn).preflightKontorDelist("swap_1"),
+    ).rejects.toThrow(/no offer blob/);
+    expect(preflightKontorDelist).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the wallet exposes no taproot x-only key to check", async () => {
+    const client = new HorizonMarketClient({
+      signer: makeSigner(), // no p2tr / xOnlyPubkey
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    await expect(
+      client.preflightKontorListing({ kontorAssetKind: "token", korAmount: "1" }),
+    ).rejects.toThrow(/xOnlyPubkey/);
+  });
+
+  it("closes the read session even when the check throws", async () => {
+    const close = vi.fn();
+    vi.mocked(makeKontorReadSession).mockReturnValueOnce({
+      identity: { xOnlyPubKey: "deadbeef" },
+      close,
+    } as never);
+    vi.mocked(preflightKontorListing).mockRejectedValueOnce(
+      new Error("Kontor signer lookup failed"),
+    );
+
+    await expect(
+      kontorClient().preflightKontorListing({
+        kontorAssetKind: "token",
+        korAmount: "1",
+      }),
+    ).rejects.toThrow(/signer lookup failed/);
+    expect(close).toHaveBeenCalled();
   });
 });

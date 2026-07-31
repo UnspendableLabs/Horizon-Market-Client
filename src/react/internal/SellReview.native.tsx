@@ -22,6 +22,7 @@ import {
   FEE_OPTIONS,
   type UseSellReviewResult,
 } from "./useSellReview.js";
+import { kontorPreflightNotice } from "./useKontorPreflight.js";
 
 export interface SellReviewStyles {
   button?: StyleProp<ViewStyle>;
@@ -205,8 +206,10 @@ export function SellReview({
     kontorListingError,
     kontorMinerFeeSats,
     kontorTotalSats,
+    preflight,
   } = review;
 
+  const notice = kontorPreflightNotice(preflight);
   const selling = sellingDisplay(asset, quantity);
   const imageUrl = assetImageUrl(baseUrl, asset);
   const priceUsd = formatUsd(priceSats, btcUsd);
@@ -314,6 +317,20 @@ export function SellReview({
             {kontorListingError ? (
               <Text style={sheet.error}>
                 Couldn&apos;t estimate fees: {kontorListingError.message}
+              </Text>
+            ) : null}
+            {/* Why the chain says this listing wouldn't execute (Sign disabled),
+                or that it couldn't be checked (Sign still enabled). Worth
+                knowing here: signing reserves the listing fee before the
+                workflow's own gate would find out. */}
+            {notice ? (
+              <Text
+                accessibilityRole={
+                  notice.tone === "blocked" ? "alert" : undefined
+                }
+                style={notice.tone === "blocked" ? sheet.error : sheet.muted}
+              >
+                {notice.text}
               </Text>
             ) : null}
           </>

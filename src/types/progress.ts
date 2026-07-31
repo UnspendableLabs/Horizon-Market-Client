@@ -14,6 +14,7 @@ export type OpenSellOrderStep =
   | "signFeePsbt"
   | "createSwap"
   // Kontor (listingType: "kontor")
+  | "preflightKontor"
   | "reserveKontorFee"
   | "composeKontorOffer";
 
@@ -24,6 +25,7 @@ export type FillSwapsStep =
   | "signBuyerPsbt"
   | "submitPurchase"
   // Kontor
+  | "preflightKontor"
   | "inspectKontorOffer"
   | "acceptKontorOffer";
 
@@ -33,6 +35,7 @@ export type DelistSwapStep =
   | "signDelistMessage"
   | "confirmDelist"
   // Kontor
+  | "preflightKontor"
   | "revokeKontorOffer";
 
 export type WorkflowStep =

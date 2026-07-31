@@ -22,6 +22,7 @@ import {
   FEE_OPTIONS,
   type UseBuyReviewResult,
 } from "./useBuyReview.js";
+import { kontorPreflightNotice } from "./useKontorPreflight.js";
 
 export interface BuyReviewStyles {
   button?: StyleProp<ViewStyle>;
@@ -222,9 +223,11 @@ export function BuyReview({
     minerFeePending,
     previewError,
     canConfirm,
+    preflight,
   } = review;
 
   const buying = buyingDisplay(swap);
+  const notice = kontorPreflightNotice(preflight);
 
   const feeDropdown = (
     <Dropdown
@@ -320,6 +323,17 @@ export function BuyReview({
         {previewError && !isKontor ? (
           <Text style={sheet.error}>
             Couldn&apos;t estimate the cost: {previewError.message}
+          </Text>
+        ) : null}
+
+        {/* Kontor only: why the chain says this purchase wouldn't execute
+            (Confirm disabled), or that it couldn't be checked (still enabled). */}
+        {notice ? (
+          <Text
+            accessibilityRole={notice.tone === "blocked" ? "alert" : undefined}
+            style={notice.tone === "blocked" ? sheet.error : sheet.pendingNote}
+          >
+            {notice.text}
           </Text>
         ) : null}
       </View>
