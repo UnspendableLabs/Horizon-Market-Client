@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import pc from "picocolors";
 import type { OpenSellOrderParams } from "@unspendablelabs/horizon-market-client";
 import { globalArgs } from "../context.js";
-import { CliError, runCommand } from "../lib/output.js";
+import { CliError, note, runCommand } from "../lib/output.js";
 import { getNetworkConfig, mempoolApiBase, mempoolTxUrl } from "../lib/networks.js";
 import { requireKeystore } from "../lib/keystore.js";
 import { unlockWallet } from "../lib/wallet.js";
@@ -226,6 +226,20 @@ export const sellCommand = defineCommand({
           renderSellReview(heading, cost as SellCost, btcUsd);
         }
       }
+
+      // Ask the chain *before* asking the user. `openSellOrder` runs this same
+      // check and refuses to broadcast when it fails — running it here too means
+      // a wallet that can't pay Kontor gas is turned away without ever being
+      // prompted to confirm a listing that was never going to happen.
+      if (params.listingType === "kontor") {
+        const verdict = await client.preflightKontorListing(params);
+        if (verdict.error) throw verdict.error;
+        note(
+          cli,
+          `Kontor gas ≈ ${verdict.requiredKor} KOR (account holds ${verdict.balanceKor} KOR)`,
+        );
+      }
+
       await confirmAction(cli, "List this sell order?");
 
       const { swap, created, transactions } = await client.openSellOrder(params, {

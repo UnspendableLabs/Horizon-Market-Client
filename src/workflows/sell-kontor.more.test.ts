@@ -18,6 +18,7 @@ const {
   mockBindNft,
   mockAttachEscrow,
   mockNativeToken,
+  mockPreflight,
 } = vi.hoisted(() => ({
   mockMakeSession: vi.fn(),
   mockGetSigning: vi.fn(),
@@ -28,6 +29,7 @@ const {
   mockBindNft: vi.fn(),
   mockAttachEscrow: vi.fn(),
   mockNativeToken: vi.fn(),
+  mockPreflight: vi.fn(),
 }));
 
 vi.mock("../kontor/session.js", () => ({ makeKontorSession: mockMakeSession }));
@@ -48,6 +50,24 @@ vi.mock("../kontor/contracts.js", () => ({
 vi.mock("../kontor/chain.js", () => ({
   kontorNativeTokenAddress: mockNativeToken,
 }));
+// The pre-flight's chain reads have their own suite (`kontor/preflight.test.ts`);
+// stubbed here so these tests stay about the escrow/record flow — except in
+// "pre-flight gate" below, which drives it refusing.
+vi.mock("../kontor/preflight.js", () => ({
+  preflightKontorListing: mockPreflight,
+}));
+
+/** A pre-flight verdict, `ok` unless handed a refusal to report. */
+function verdict(error: Error | null = null) {
+  return {
+    ok: error === null,
+    error,
+    balanceKor: "1",
+    requiredKor: "0.0001",
+    gasLimit: 100_000,
+    signerId: 16,
+  };
+}
 
 import {
   openKontorSellOrder,
@@ -56,10 +76,14 @@ import {
 
 const P2TR = "tb1pseller";
 const ESCROW_TXID = "aa".repeat(32);
+// A distinguishable `fetch`: the pre-flight's signer lookup must go through
+// the client's, not `globalThis.fetch`.
+const ctxFetch = (() => Promise.reject(new Error("unused"))) as unknown as typeof globalThis.fetch;
 const ctx = {
   chain: "signet",
   indexerUrl: "https://ix",
   btcNetwork: {},
+  fetch: ctxFetch,
 } as unknown as KontorContext;
 const http = {} as unknown as HttpClient;
 
@@ -67,6 +91,14 @@ const tokenParams = {
   listingType: "kontor",
   kontorAssetKind: "token",
   korAmount: "100",
+  priceSats: 50000,
+} as unknown as KontorSellParams;
+
+const nftParams = {
+  listingType: "kontor",
+  kontorAssetKind: "nft",
+  nftId: "nft-1",
+  nftContractAddress: "nft@0.0",
   priceSats: 50000,
 } as unknown as KontorSellParams;
 
@@ -89,6 +121,94 @@ beforeEach(() => {
     attachment: () => ({ offer: async () => ({ serialize: () => "NFTBLOB" }) }),
   });
   mockAttachEscrow.mockReturnValue({ txid: ESCROW_TXID, value: 600 });
+  mockPreflight.mockResolvedValue(verdict());
+});
+
+describe("openKontorSellOrder pre-flight gate", () => {
+  it("asks the one shared pre-flight, with the asset it is about to escrow", async () => {
+    // Same call `client.preflightKontorListing()` makes: a review screen and the
+    // broadcast gate cannot disagree, because there is only one check.
+    mockCreateSwap.mockResolvedValue({ swap: { id: "s1" }, created: true });
+
+    await openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx);
+
+    expect(mockPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        indexerUrl: ctx.indexerUrl,
+        // The client's own `fetch` — see the equivalent assertion in
+        // buy-kontor.more.test.ts for why bypassing it would block the listing.
+        fetch: ctxFetch,
+        assetKind: "token",
+        korAmount: "100",
+        contractAddress: null,
+      }),
+    );
+  });
+
+  it("passes an NFT listing's id and contract through", async () => {
+    mockCreateSwap.mockResolvedValue({ swap: { id: "s1" }, created: true });
+
+    await openKontorSellOrder(nftParams, http, makeSigner({ p2tr: P2TR }), ctx);
+
+    expect(mockPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetKind: "nft",
+        nftId: "nft-1",
+        contractAddress: "nft@0.0",
+        korAmount: null,
+      }),
+    );
+  });
+
+  it("aborts before reserving the listing fee when the seller has no KOR", async () => {
+    const close = vi.fn();
+    mockMakeSession.mockReturnValue({ close });
+    mockPreflight.mockResolvedValue(
+      verdict(new Error("Not enough KOR to pay Kontor network gas")),
+    );
+
+    const events: Array<{ step: string; phase: string }> = [];
+    await expect(
+      openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx, {
+        onProgress: (e) => events.push(e),
+      }),
+    ).rejects.toThrow(/Not enough KOR/);
+
+    // No fee quote reserved, no credit burned, no attach reveal broadcast.
+    expect(mockFeeQuote).not.toHaveBeenCalled();
+    expect(mockBindToken).not.toHaveBeenCalled();
+    expect(mockCreateSwap).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+    expect(
+      events.some((e) => e.step === "preflightKontor" && e.phase === "error"),
+    ).toBe(true);
+  });
+
+  it("aborts when the wallet does not hold the asset being listed", async () => {
+    mockPreflight.mockResolvedValue(
+      verdict(
+        new Error("Cannot list this Kontor asset: not held by the connected wallet"),
+      ),
+    );
+
+    await expect(
+      openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx),
+    ).rejects.toThrow(/not held by the connected wallet/);
+    expect(mockFeeQuote).not.toHaveBeenCalled();
+    expect(mockCreateSwap).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failure to *check* — an unreadable indexer is not a verdict", async () => {
+    const close = vi.fn();
+    mockMakeSession.mockReturnValue({ close });
+    mockPreflight.mockRejectedValue(new Error("Kontor signer lookup failed"));
+
+    await expect(
+      openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx),
+    ).rejects.toThrow(/signer lookup failed/);
+    expect(mockFeeQuote).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+  });
 });
 
 describe("openKontorSellOrder parameter validation", () => {

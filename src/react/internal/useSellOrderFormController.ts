@@ -17,6 +17,9 @@ import {
   kontorKorFirst,
   mempoolTxUrl,
 } from "./format.js";
+// Pure gas arithmetic — `kontor/gas.js` deliberately imports no `@kontor/sdk`,
+// so this stays out of the WASM-free React bundle's way.
+import { maxListableKor } from "../../kontor/gas.js";
 
 /**
  * A labeled group of sellable assets (Counterparty / ZELD / Kontor / Ordinals),
@@ -114,8 +117,24 @@ export function useSellOrderFormController(
 
   const showQuantity = showQuantityForAsset(selected);
   const submitDisabled = !isSellFormValid(sellOrder.formValues);
+  // KOR is the one asset that pays for its own escrow: the listing's `attach`
+  // holds gas from the same balance, and the hold lands before the tokens move.
+  // Offering the raw balance as "Max" would be a listing the seller's own gas
+  // makes unaffordable, so it stops short of the gas (and disappears when the
+  // balance can't cover even that).
+  //
+  // Note this is *arithmetic on the displayed balance*, not a verdict: the
+  // balance sums every holder the wallet might use (including the bech32m-
+  // tweaked taproot key), while the gate reads only the signer-id the node
+  // draws gas from — so a wallet holding KOR under another holder can still see
+  // a Max the pre-flight refuses. The review step's `preflight` is what answers
+  // that authoritatively, before the seller commits.
   const maxQuantity =
-    selected && showQuantity ? assetBalanceLabel(selected) || null : null;
+    selected && showQuantity
+      ? selected.type === "kor"
+        ? maxListableKor(selected.amount)
+        : assetBalanceLabel(selected) || null
+      : null;
 
   const nonFatalErrors = [
     assets.errors.counterparty &&

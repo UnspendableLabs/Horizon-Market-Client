@@ -4,6 +4,7 @@ import { kontorBuy } from "../api/kontor.js";
 import { resolveKontorFunding } from "../kontor/funding.js";
 import { makeKontorSession } from "../kontor/session.js";
 import { getKontorSigning } from "../kontor/signing.js";
+import { preflightKontorPurchase } from "../kontor/preflight.js";
 import type { KontorContext } from "../kontor/context.js";
 import type {
   AtomicSwap,
@@ -41,11 +42,24 @@ export class KontorPurchaseNotRecordedError extends Error {
 }
 
 /**
- * fillKontorSwap — inspect offer → accept (broadcast swap reveal, client-side SDK) → record.
+ * fillKontorSwap — preflight → inspect offer → accept (broadcast swap reveal,
+ * client-side SDK) → record.
  *
  * The buyer's commit + swap reveal are composed, signed, and broadcast by the
  * Kontor SDK locally; the private key never leaves the client. Only the buyer
  * address and swap-reveal txid are sent to Horizon.
+ *
+ * `IncomingOffer.inspect()` is a *structural* check on the offer blob only — it
+ * says nothing about chain state. Two chain-state failures are unrecoverable
+ * once `accept()` broadcasts, because the swap reveal pays the seller whether
+ * or not the Kontor `detach` op executes:
+ *
+ *  - the buyer cannot pay the `Sponsor`'s gas → the detach is dropped silently
+ *    (no result row anywhere) and the buyer pays for nothing;
+ *  - the seller's `attach` never took effect → the escrow holds no asset, so
+ *    there is nothing to deliver.
+ *
+ * Both are cheap `view` calls, so both are checked before anything is signed.
  */
 export async function fillKontorSwap(
   swap: AtomicSwap,
@@ -58,7 +72,7 @@ export async function fillKontorSwap(
   const progress = new WorkflowProgressReporter(
     "fillSwaps",
     options?.onProgress,
-    4,
+    5,
   );
 
   const { offerBlob, buyerTaproot } = progress.runSync("validateParams", () => {
@@ -93,6 +107,25 @@ export async function fillKontorSwap(
   });
 
   try {
+    await progress.runAsync("preflightKontor", async () => {
+      // The same call `client.preflightKontorPurchase()` exposes — one gate, so
+      // what a review screen reported and what the broadcast enforces cannot
+      // drift apart. `assetUtxoId` is the attach reveal's output 0 for every
+      // Kontor listing; a listing without one predates the escrow convention
+      // and can't be verified, so it is left to `inspect()` alone.
+      const verdict = await preflightKontorPurchase({
+        session,
+        indexerUrl: ctx.indexerUrl,
+        fetch: ctx.fetch,
+        escrowOutpoint: swap.assetUtxoId,
+        assetKind: swap.kontorAssetKind,
+        nftId: swap.kontorNftId,
+        contractAddress: swap.kontorContractAddress,
+        korAmount: swap.kontorAmount,
+      });
+      if (verdict.error) throw verdict.error;
+    });
+
     const incoming = session.openOffer(offerBlob);
 
     await progress.runAsync("inspectKontorOffer", async () => {

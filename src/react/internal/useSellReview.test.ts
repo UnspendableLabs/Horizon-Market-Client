@@ -304,6 +304,87 @@ describe("useSellReview", () => {
     expect(requestSellQuote).not.toHaveBeenCalled();
   });
 
+  it("Kontor: a pre-flight refusal disables Sign before the fee is reserved", async () => {
+    // `openSellOrder` reserves the listing fee (and can burn a credit) before
+    // its own gate would find out, so this is the one worth asking early.
+    const error = new Error("Not enough KOR to pay Kontor network gas. …");
+    const preflightKontorListing = vi.fn(async () => ({
+      ok: false,
+      error,
+      balanceKor: "0",
+      requiredKor: "0.0001",
+      gasLimit: 100_000,
+      signerId: null,
+    }));
+    ctxRef.current = makeCtx({
+      client: {
+        previewKontorListingFee: vi
+          .fn()
+          .mockResolvedValue({ sats: 3000, feeWaived: false }),
+        listSwaps: vi.fn().mockResolvedValue({ atomicSwaps: [] }),
+        requestSellQuote: vi.fn(),
+        preflightKontorListing,
+      },
+      fetch: makeFetch(),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+
+    const { result } = renderHook(() =>
+      useSellReview({
+        formValues: { asset: korAsset, quantity: "50", priceSats: "8000" },
+        active: true,
+        defaultSatsPerVbyte: 7,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.canSign).toBe(false), {
+      timeout: 2000,
+    });
+    expect(result.current.preflight.blockedReason).toBe(error.message);
+    // Asked off the very params about to be submitted.
+    expect(preflightKontorListing).toHaveBeenCalledWith({
+      kontorAssetKind: "token",
+      korAmount: "50",
+    });
+  });
+
+  it("Kontor: an unreachable indexer warns but does not disable Sign", async () => {
+    // A failure to check is not a refusal — and blocking on it would buy
+    // nothing, since `openSellOrder` re-runs the same check before broadcasting.
+    ctxRef.current = makeCtx({
+      client: {
+        previewKontorListingFee: vi
+          .fn()
+          .mockResolvedValue({ sats: 3000, feeWaived: false }),
+        listSwaps: vi.fn().mockResolvedValue({ atomicSwaps: [] }),
+        requestSellQuote: vi.fn(),
+        preflightKontorListing: vi.fn(() =>
+          Promise.reject(new Error("Kontor signer lookup failed (HTTP 503).")),
+        ),
+      },
+      fetch: makeFetch(),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+
+    const { result } = renderHook(() =>
+      useSellReview({
+        formValues: { asset: korAsset, quantity: "50", priceSats: "8000" },
+        active: true,
+        defaultSatsPerVbyte: 7,
+      }),
+    );
+
+    await waitFor(
+      () => expect(result.current.preflight.checkError).not.toBeNull(),
+      { timeout: 2000 },
+    );
+    await waitFor(() => expect(result.current.canSign).toBe(true), {
+      timeout: 2000,
+    });
+  });
+
   it("Kontor NFT: waived listing fee → paid with credit, nft-kind estimate", async () => {
     const previewKontorListingFee = vi
       .fn()

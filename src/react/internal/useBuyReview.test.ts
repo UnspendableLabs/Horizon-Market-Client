@@ -191,6 +191,55 @@ describe("useBuyReview", () => {
     expect(requestBuyQuote).not.toHaveBeenCalled();
   });
 
+  it("Kontor listing: a pre-flight refusal disables Confirm before the buyer pays", async () => {
+    // `fillSwaps` runs this same check and refuses to broadcast. Asking here
+    // only changes *when* the buyer finds out — before committing, instead of
+    // on the result screen after watching a progress modal.
+    const error = new Error("This Kontor listing is not backed on-chain: …");
+    const preflightKontorPurchase = vi.fn(async () => ({
+      ok: false,
+      error,
+      balanceKor: "1",
+      requiredKor: "0.00005",
+      gasLimit: 50_000,
+      signerId: 12,
+    }));
+    ctxRef.current = makeCtx({
+      client: { requestBuyQuote: vi.fn(), preflightKontorPurchase },
+      fetch: makeFetch(),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    const swap = makeSwap({ id: "buy-kontor-unbacked", listingType: "kontor" });
+
+    const { result } = renderHook(() =>
+      useBuyReview({ swap, active: true, defaultSatsPerVbyte: 7 }),
+    );
+
+    await waitFor(() => expect(result.current.canConfirm).toBe(false));
+    expect(result.current.preflight.blockedReason).toBe(error.message);
+    expect(preflightKontorPurchase).toHaveBeenCalledWith(swap);
+  });
+
+  it("Kontor listing: doesn't ask the chain until the confirm step is shown", async () => {
+    const preflightKontorPurchase = vi.fn();
+    ctxRef.current = makeCtx({
+      client: { requestBuyQuote: vi.fn(), preflightKontorPurchase },
+      fetch: makeFetch(),
+      network: "testnet",
+      kontorNetwork: "signet",
+    });
+    const swap = makeSwap({ id: "buy-kontor-idle", listingType: "kontor" });
+
+    const { result } = renderHook(() =>
+      useBuyReview({ swap, active: false, defaultSatsPerVbyte: 7 }),
+    );
+    await waitFor(() => expect(result.current.feeRate).toBeDefined());
+
+    expect(preflightKontorPurchase).not.toHaveBeenCalled();
+    expect(result.current.canConfirm).toBe(true);
+  });
+
   it("shows loading placeholders while the quote composes", async () => {
     const requestBuyQuote = vi.fn().mockResolvedValue(buyQuote());
     ctxRef.current = makeCtx({

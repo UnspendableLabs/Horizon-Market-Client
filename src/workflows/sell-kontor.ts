@@ -1,3 +1,4 @@
+import type { KontorSession } from "@kontor/sdk";
 import type { HttpClient } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import {
@@ -13,6 +14,7 @@ import {
   attachRevealEscrowFromBlob,
   Decimal,
 } from "../kontor/contracts.js";
+import { preflightKontorListing } from "../kontor/preflight.js";
 import { kontorNativeTokenAddress } from "../kontor/chain.js";
 import { getKontorSigning } from "../kontor/signing.js";
 import type { KontorContext } from "../kontor/context.js";
@@ -99,11 +101,19 @@ function validateKontorSellParams(params: KontorSellParams): void {
 }
 
 /**
- * openKontorSellOrder — reserve fee → escrow + compose offer (client-side SDK) → record listing.
+ * openKontorSellOrder — preflight → reserve fee → escrow + compose offer
+ * (client-side SDK) → record listing.
  *
  * The Kontor SDK composes, signs, and broadcasts the attach reveal in one call;
  * the private key never leaves the client. Only the signed offer blob and
  * bookkeeping fields are sent to Horizon.
+ *
+ * The preflight step is not optional politeness: the attach reveal's `attach`
+ * op is gas-metered and self-paid by the seller, and a payer who cannot cover
+ * the gas has their op dropped *silently* (no result row, no error anywhere on
+ * chain) while the Bitcoin transaction still confirms and still pays the
+ * listing fee. That produces a live listing whose asset was never escrowed.
+ * See `kontor/preflight.ts`.
  */
 export async function openKontorSellOrder(
   params: KontorSellParams,
@@ -119,7 +129,7 @@ export async function openKontorSellOrder(
   const progress = new WorkflowProgressReporter(
     "openSellOrder",
     options?.onProgress,
-    4,
+    5,
   );
 
   const sellerAddress = progress.runSync("validateParams", () => {
@@ -134,6 +144,80 @@ export async function openKontorSellOrder(
     return addresses.p2tr;
   });
 
+  // Build the session first and gate on chain state: the wallet must be able to
+  // pay the attach's gas, and must actually hold what it is listing. Both are
+  // `view` calls — no signature, no transaction, nothing spent — and they run
+  // before the fee quote so a blocked listing never reserves a fee or burns a
+  // listing credit.
+  const session = await progress.runAsync("preflightKontor", async () => {
+    const signing = await getKontorSigning(signer, ctx.chain);
+    const funding = resolveKontorFunding(
+      http,
+      sellerAddress,
+      ctx.btcNetwork,
+      params.fundingUtxos,
+    );
+    const built = makeKontorSession({
+      chain: ctx.chain,
+      signing,
+      funding,
+      indexerUrl: ctx.indexerUrl,
+      feeRate: params.satsPerVbyte,
+    });
+    try {
+      // The same call `client.preflightKontorListing()` exposes — one gate, so
+      // what a review screen reported and what the broadcast enforces cannot
+      // drift apart.
+      const verdict = await preflightKontorListing({
+        session: built,
+        indexerUrl: ctx.indexerUrl,
+        fetch: ctx.fetch,
+        assetKind: params.kontorAssetKind,
+        nftId: params.kontorAssetKind === "nft" ? params.nftId : null,
+        contractAddress:
+          params.kontorAssetKind === "nft" ? params.nftContractAddress : null,
+        korAmount: params.kontorAssetKind === "token" ? params.korAmount : null,
+      });
+      if (verdict.error) throw verdict.error;
+    } catch (err) {
+      built.close();
+      throw err;
+    }
+    return built;
+  });
+
+  try {
+    return await escrowAndRecord(
+      params,
+      http,
+      ctx,
+      progress,
+      session,
+      sellerAddress,
+    );
+  } finally {
+    session.close();
+  }
+}
+
+/**
+ * The half of `openKontorSellOrder` that runs once the preflight has cleared:
+ * reserve the listing fee, broadcast the attach reveal + compose the offer, and
+ * record the listing. Split out so the session's lifetime is a single
+ * `try/finally` in the caller.
+ */
+async function escrowAndRecord(
+  params: KontorSellParams,
+  http: HttpClient,
+  ctx: KontorContext,
+  progress: WorkflowProgressReporter<"openSellOrder">,
+  session: KontorSession,
+  sellerAddress: string,
+): Promise<{
+  swap: AtomicSwap;
+  created: boolean;
+  transactions: SellBroadcastTx[];
+}> {
   const feeQuote = await progress.runAsync("reserveKontorFee", () =>
     createKontorFeeQuote(http, sellerAddress),
   );
@@ -155,55 +239,35 @@ export async function openKontorSellOrder(
 
   const { offerBlob, assetUtxoId, assetUtxoValue, contractAddress } =
     await progress.runAsync("composeKontorOffer", async () => {
-      const signing = await getKontorSigning(signer, ctx.chain);
-      const funding = resolveKontorFunding(
-        http,
-        sellerAddress,
-        ctx.btcNetwork,
-        params.fundingUtxos,
-      );
-      const session = makeKontorSession({
-        chain: ctx.chain,
-        signing,
-        funding,
-        indexerUrl: ctx.indexerUrl,
-        feeRate: params.satsPerVbyte,
-      });
+      let blob: string;
+      let resolvedContractAddress: string;
 
-      try {
-        let blob: string;
-        let resolvedContractAddress: string;
+      const offerOpts = extraOutputs.length
+        ? { price: BigInt(params.priceSats), extraOutputs }
+        : { price: BigInt(params.priceSats) };
 
-        const offerOpts = extraOutputs.length
-          ? { price: BigInt(params.priceSats), extraOutputs }
-          : { price: BigInt(params.priceSats) };
-
-        if (params.kontorAssetKind === "nft") {
-          resolvedContractAddress = params.nftContractAddress;
-          const offer = await bindKontorNft(session, resolvedContractAddress)
-            .attachment(params.nftId)
-            .offer(offerOpts);
-          blob = offer.serialize();
-        } else {
-          resolvedContractAddress = kontorNativeTokenAddress(ctx.chain);
-          const offer = await bindKontorToken(session)
-            .attachment(Decimal.from(params.korAmount))
-            .offer(offerOpts);
-          blob = offer.serialize();
-        }
-
-        const escrow = attachRevealEscrowFromBlob(blob);
-        return {
-          offerBlob: blob,
-          assetUtxoId: `${escrow.txid}:0`,
-          assetUtxoValue: escrow.value,
-          contractAddress: resolvedContractAddress,
-        };
-      } finally {
-        session.close();
+      if (params.kontorAssetKind === "nft") {
+        resolvedContractAddress = params.nftContractAddress;
+        const offer = await bindKontorNft(session, resolvedContractAddress)
+          .attachment(params.nftId)
+          .offer(offerOpts);
+        blob = offer.serialize();
+      } else {
+        resolvedContractAddress = kontorNativeTokenAddress(ctx.chain);
+        const offer = await bindKontorToken(session)
+          .attachment(Decimal.from(params.korAmount))
+          .offer(offerOpts);
+        blob = offer.serialize();
       }
-    },
-  );
+
+      const escrow = attachRevealEscrowFromBlob(blob);
+      return {
+        offerBlob: blob,
+        assetUtxoId: `${escrow.txid}:0`,
+        assetUtxoValue: escrow.value,
+        contractAddress: resolvedContractAddress,
+      };
+    });
 
   // The attach reveal is on-chain now. Capture the full create request so a failed
   // POST can be retried without re-broadcasting (orphan protection).
