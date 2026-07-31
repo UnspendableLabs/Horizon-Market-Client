@@ -46,6 +46,7 @@ import type {
   KontorListingPreflightParams,
   KontorPreflightResult,
 } from "./kontor/preflight.js";
+import type { KontorFaucetResult } from "./kontor/faucet.js";
 // Loading `@kontor/sdk` is eager and heavy (a WASM component on web/Node, a
 // native JSI crate on React Native). All Kontor modules below are therefore
 // imported *dynamically* at their use sites so no backend evaluates at startup;
@@ -206,6 +207,7 @@ export class HorizonMarketClient {
   private readonly btcNetwork: btc.Network;
   private readonly kontorNetwork?: "signet";
   private readonly kontorIndexerUrl: string;
+  private readonly kontorFaucetUrl: string;
   private readonly kontorNftContractAddress?: string;
   private readonly counterpartyApiBaseUrl: string | undefined;
   private readonly zeldApiBaseUrl: string | undefined;
@@ -224,6 +226,9 @@ export class HorizonMarketClient {
     this.kontorNetwork = options.kontorNetwork;
     this.kontorIndexerUrl =
       options.kontorIndexerUrl ?? DEFAULT_KONTOR_INDEXER_URL;
+    const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this.kontorFaucetUrl =
+      options.kontorFaucetUrl ?? `${baseUrl}/api/kontor-faucet`;
     this.kontorNftContractAddress = options.kontorNftContractAddress;
     // Default the public APIs only on mainnet; on other networks they're called
     // only when an explicit base URL is configured, so we never hit a mainnet
@@ -240,7 +245,7 @@ export class HorizonMarketClient {
     this.fetch = resolveFetch(options.fetch);
 
     this.http = new HttpClient({
-      baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
+      baseUrl,
       fetch: options.fetch,
       bearerToken: options.bearerToken,
     });
@@ -354,6 +359,49 @@ export class HorizonMarketClient {
    */
   private async resolveSwapArg(swap: AtomicSwap | string): Promise<AtomicSwap> {
     return typeof swap === "string" ? this.getSwap(swap) : swap;
+  }
+
+  // ─── Kontor faucet (signet) ─────────────────────────────────────────────────
+
+  /**
+   * Ask the signet faucet for KOR, credited to the connected wallet's taproot
+   * key. Resolves with the faucet's two txids; the balance moves once the reveal
+   * confirms, about a block later.
+   *
+   * This is the way out of the deadlock every Kontor pre-flight reports: gas is
+   * paid in KOR, an account holding none has its op dropped before execution, and
+   * you cannot buy KOR without gas to buy it with. Signet-only by nature — the
+   * coins are worthless test coins, and mainnet has no faucet — so this throws
+   * rather than calls when the client isn't configured for Kontor signet.
+   *
+   * Unlike every other Kontor call it needs **no** `@kontor/sdk` backend: it is a
+   * plain HTTP request, and it works in a WASM-free web bundle or a React Native
+   * build with no `@kontor/sdk-native` linked. Funding an account has to work
+   * before anything else does.
+   */
+  async requestKontorFaucet(options?: {
+    /** KOR to request. Defaults to the faucet's own per-request grant (10). */
+    amount?: number;
+  }): Promise<KontorFaucetResult> {
+    if (this.kontorNetwork !== "signet" || this.network !== "testnet") {
+      throw new Error(
+        'The KOR faucet exists on signet only. Configure the client with kontorNetwork: "signet" and network: "testnet".',
+      );
+    }
+    const xOnly = this.assertSigner().getAddresses().xOnlyPubkey;
+    if (!xOnly) {
+      throw new Error(
+        "The KOR faucet credits a taproot key: this wallet exposes no x-only " +
+          "public key via getAddresses() (xOnlyPubkey).",
+      );
+    }
+    const { requestKontorFaucet } = await import("./kontor/faucet.js");
+    return requestKontorFaucet({
+      url: this.kontorFaucetUrl,
+      recipient: xOnly,
+      amount: options?.amount,
+      fetch: this.fetch,
+    });
   }
 
   // ─── Kontor pre-flight (read-only; check before committing) ──────────────────

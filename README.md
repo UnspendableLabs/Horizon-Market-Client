@@ -133,6 +133,7 @@ function App() {
 | `useSellOrderForm` | The packaged `SellOrderForm`'s controller: grouped asset picker, gas-aware "Max", submit validity, result messaging. Wraps `useSellOrder` + `useAssets` — use it *instead of* them |
 | `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
+| `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |

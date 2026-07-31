@@ -48,6 +48,11 @@ export type {
   UseSwapConfirmationOptions,
   UseSwapConfirmationResult,
 } from "./useSwapConfirmation.js";
+export { useKontorFaucet } from "./useKontorFaucet.js";
+export type {
+  KontorFaucetStatus,
+  UseKontorFaucetResult,
+} from "./useKontorFaucet.js";
 export { usePrices } from "./usePrices.js";
 export type { UsePricesResult } from "./usePrices.js";
 export { useFeeEstimates } from "./useFeeEstimates.js";
