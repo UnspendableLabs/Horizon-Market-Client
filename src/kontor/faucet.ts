@@ -43,7 +43,19 @@ export interface RequestKontorFaucetParams {
 interface FaucetResponse {
   commit_txid?: string;
   reveal_txid?: string;
-  error?: { message?: string } | null;
+  /**
+   * The Portal wraps its refusal in an object; the market's proxy reports its
+   * *own* failure (it couldn't reach the Portal at all) as a bare string. Both
+   * shapes carry the only sentence worth showing the user, so both are read.
+   */
+  error?: { message?: string } | string | null;
+}
+
+/** The refusal message the faucet sent, whichever shape it used, else undefined. */
+function faucetError(data: FaucetResponse | null): string | undefined {
+  const err = data?.error;
+  if (!err) return undefined;
+  return typeof err === "string" ? err : (err.message ?? undefined);
 }
 
 /**
@@ -67,15 +79,16 @@ export async function requestKontorFaucet(
 
   // A faucet behind a proxy can answer with HTML (a 404 page, a gateway error),
   // so a body that isn't JSON must not mask the status the caller needs to see.
-  const data = (await res
-    .json()
-    .catch(() => null)) as FaucetResponse | null;
+  const data = (await res.json().catch(() => null)) as FaucetResponse | null;
 
+  const refusal = faucetError(data);
   if (!res.ok) {
-    throw new Error(
-      data?.error?.message ?? `Faucet request failed (HTTP ${res.status})`,
-    );
+    throw new Error(refusal ?? `Faucet request failed (HTTP ${res.status})`);
   }
+  // An error payload under a 200 is still a refusal — no grant was made — and
+  // reporting it as success would leave the user watching for KOR that is never
+  // coming, with two empty txids and nothing to explain why.
+  if (refusal) throw new Error(refusal);
 
   return {
     commitTxid: data?.commit_txid ?? "",

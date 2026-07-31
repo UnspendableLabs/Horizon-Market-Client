@@ -84,12 +84,18 @@ export function useKontorFaucet(): UseKontorFaucetResult {
       setError(err instanceof Error ? err : new Error(String(err)));
       setStatus("error");
     } finally {
-      pendingRef.current = false;
+      // Only the current generation owns the flag: an abandoned request settling
+      // after a reset() must not clear a *newer* request's in-flight guard.
+      if (seq === seqRef.current) pendingRef.current = false;
     }
   }, [client]);
 
   const reset = useCallback(() => {
     seqRef.current++;
+    // Releases the in-flight guard along with the state: the abandoned request
+    // is already dropped by the sequence check, so the next request() must be
+    // allowed to start rather than be swallowed until that response lands.
+    pendingRef.current = false;
     setStatus("idle");
     setResult(null);
     setError(null);

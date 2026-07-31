@@ -89,7 +89,10 @@ describe("useKontorFaucet", () => {
   });
 
   it("ignores a second request while one is in flight — one grant per click", async () => {
-    let release: (v: { commitTxid: string; revealTxid: string }) => void = () => {};
+    let release: (v: {
+      commitTxid: string;
+      revealTxid: string;
+    }) => void = () => {};
     const requestKontorFaucet = vi.fn().mockReturnValue(
       new Promise((resolve) => {
         release = resolve;
@@ -112,7 +115,10 @@ describe("useKontorFaucet", () => {
   });
 
   it("reset() clears the outcome and drops the in-flight response", async () => {
-    let release: (v: { commitTxid: string; revealTxid: string }) => void = () => {};
+    let release: (v: {
+      commitTxid: string;
+      revealTxid: string;
+    }) => void = () => {};
     const requestKontorFaucet = vi.fn().mockReturnValue(
       new Promise((resolve) => {
         release = resolve;
@@ -135,5 +141,51 @@ describe("useKontorFaucet", () => {
     });
     expect(result.current.status).toBe("idle");
     expect(result.current.result).toBeNull();
+  });
+
+  // The abandoned request can stay in flight for as long as the faucet takes to
+  // answer; if reset() left the in-flight guard up, the user who reopened the
+  // dialog would press a button that does nothing at all, with no error to show.
+  it("lets a request start again right after reset(), without waiting on the abandoned one", async () => {
+    let release: (v: {
+      commitTxid: string;
+      revealTxid: string;
+    }) => void = () => {};
+    const requestKontorFaucet = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockResolvedValue({ commitTxid: "cc33", revealTxid: "dd44" });
+    ctxRef.current = signetCtx({ requestKontorFaucet });
+
+    const { result } = renderHook(() => useKontorFaucet());
+    act(() => {
+      void result.current.request();
+    });
+    await waitFor(() => expect(result.current.status).toBe("requesting"));
+
+    act(() => result.current.reset());
+
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(requestKontorFaucet).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("success");
+    expect(result.current.result).toEqual({
+      commitTxid: "cc33",
+      revealTxid: "dd44",
+    });
+
+    // And the first, abandoned response still lands nowhere.
+    await act(async () => {
+      release({ commitTxid: "aa11", revealTxid: "bb22" });
+    });
+    expect(result.current.result).toEqual({
+      commitTxid: "cc33",
+      revealTxid: "dd44",
+    });
   });
 });
