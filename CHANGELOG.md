@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-07-31
+
+### Added
+
+- **`useSellOrderForm()` — the packaged sell form's controller, now public.** An app rendering its own sell UI had `useSellOrder` + `useAssets` and nothing else, so it re-derived by hand every rule sitting between them: the picker's grouping/order/labels, whether the selected asset shows a quantity field, whether the form is submittable, what "Max" means, what to say when one balance source fails rather than comes back empty, and what the result step reports for a listing that broadcast one, two or no transactions. Each of those has a way of being subtly wrong — and one of them *is* wrong when re-derived naively: **Max for KOR is not the balance.** Escrowing KOR and paying the `attach`'s gas draw on the same balance and the gas hold lands first, so "list everything" is always a listing whose own gas makes it unexecutable. The controller has priced that in since 0.2.5; hosts couldn't reach it. It also carries the selection reconciliation a hand-rolled form tends to miss: after a balance refresh the selected option is re-pointed at the fresh object (so Max and the balance cap use current numbers) or cleared when the wallet no longer holds it.
+  - Exported from `/react` as `useSellOrderForm` with `AssetGroup`, `SellTrackTx`, `SellResultView` and `UseSellOrderFormResult`. It wraps `useSellOrder` and `useAssets` and re-exposes both, so a host uses it *instead of* them, not alongside — one selection, one refresh cycle.
+  - Same hook the packaged `SellOrderForm` renders on both platforms (it moved from `react/internal/` to `react/hooks/` and was renamed from `useSellOrderFormController`; it was never exported, so nothing breaks). What a host builds and what the SDK ships now diverge only in markup.
+- **Kontor gas pricing re-exported from `/react`**: `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` and the three gas limits. They were reachable only from the main entry, which statically imports `@kontor/sdk` — so a React host wanting to print "gas ≈ 0.0001 KOR" next to a balance had to choose between duplicating the arithmetic and pulling the Kontor WASM backend into a bundle built to avoid it. `kontor/gas.ts` has no `@kontor/sdk` import precisely so it can sit on this side of that line.
+
+### Fixed
+
+- **The React entries' freedom from `@kontor/sdk` is now a test, not a manual check.** 0.2.5 fixed the web bundle eagerly compiling the Kontor WebAssembly and verified it by inspection — but the property is one accidental re-export away from breaking (a helper pulled from a module that happens to neighbour Kontor code is enough), and nothing about the failure is visible in normal use: the entry just gets heavier, and Hermes builds without `@kontor/sdk-native` linked start crashing on import. `react/bundle-purity.test.ts` walks the static import graph of both entries from source and fails on any `@kontor/*` specifier that survives compilation — following relative imports (erroring on one it can't resolve, so the test can't pass by not looking), and deliberately ignoring `import type` (erased) and `import()` (the mechanism that keeps Kontor out of the entry). A companion assertion pins the other direction: `kontor/gas.ts` stays free of `@kontor/sdk`, so the React layer keeps its ability to price gas at all.
+
 ## [0.2.5] - 2026-07-31
 
 ### Added

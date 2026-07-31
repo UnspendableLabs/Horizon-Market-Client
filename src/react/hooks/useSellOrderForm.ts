@@ -1,22 +1,26 @@
 import { useEffect, useMemo } from "react";
 import { useHorizonMarket } from "../context.js";
-import { useAssets, type AssetOption } from "../hooks/useAssets.js";
+import {
+  useAssets,
+  type AssetOption,
+  type UseAssetsResult,
+} from "./useAssets.js";
 import {
   useSellOrder,
   type UseSellOrderOptions,
   type UseSellOrderResult,
-} from "../hooks/useSellOrder.js";
+} from "./useSellOrder.js";
 import {
   isSellFormValid,
   showQuantityForAsset,
-} from "./sellFormValidation.js";
+} from "../internal/sellFormValidation.js";
 import {
   assetBalanceLabel,
   assetKey,
   counterpartyXcpFirst,
   kontorKorFirst,
   mempoolTxUrl,
-} from "./format.js";
+} from "../internal/format.js";
 // Pure gas arithmetic — `kontor/gas.js` deliberately imports no `@kontor/sdk`,
 // so this stays out of the WASM-free React bundle's way.
 import { maxListableKor } from "../../kontor/gas.js";
@@ -57,8 +61,8 @@ export interface SellResultView {
   successMessage: string | undefined;
 }
 
-export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
-  assets: ReturnType<typeof useAssets>;
+export interface UseSellOrderFormResult extends UseSellOrderResult {
+  assets: UseAssetsResult;
   showQuantity: boolean;
   submitDisabled: boolean;
   /** Normalized balance of the selected asset for the Max button (or null). */
@@ -80,14 +84,38 @@ export interface UseSellOrderFormControllerResult extends UseSellOrderResult {
 }
 
 /**
- * Shared controller for the platform-specific `SellOrderForm` components.
- * Wraps `useSellOrder` + `useAssets` and exposes the derived flags
- * (`showQuantity`, `submitDisabled`, `maxQuantity`) plus the balances
- * freshness/refresh controls used by both renderers.
+ * Everything a sell form needs, minus the pixels.
+ *
+ * This is the controller the packaged `SellOrderForm` renders (web and native
+ * alike), exported so an app building its **own** sell UI gets the same
+ * behaviour instead of re-deriving it. What it owns is rules, not layout, and
+ * each rule has a way of being subtly wrong when re-implemented:
+ *
+ * - `assetGroups` — the picker's grouping, order (XCP first, KOR first) and
+ *   labels, empty groups dropped.
+ * - `showQuantity` / `submitDisabled` — a 1-of-1 has no quantity field, and a
+ *   submit is enabled only for a quantity that survives the same base-unit
+ *   parse `openSellOrder` will do (so the form can't offer a submit the
+ *   workflow rejects).
+ * - `maxQuantity` — the "Max" affordance. Notably **not** the raw balance for
+ *   KOR: escrowing KOR and paying the `attach`'s gas draw on one balance and
+ *   the gas hold lands first, so a Max of "everything" is a listing that
+ *   cannot execute.
+ * - selection reconciliation — after a balance refresh the selected option is
+ *   re-pointed at the fresh object (so Max and the balance cap use current
+ *   numbers) or cleared if the wallet no longer holds it.
+ * - `resultView` / `nonFatalErrors` / `assetPlaceholder` — the messaging around
+ *   a listing that broadcast one, two or no transactions, and around a
+ *   balance source that failed rather than came back empty.
+ *
+ * It wraps `useSellOrder` and `useAssets` and re-exposes both, so a host uses
+ * this *instead of* them, not alongside. The review step's own data layer is
+ * `useSellReview` (also exported from `/react`), and the Kontor chain gate is
+ * its `preflight`.
  */
-export function useSellOrderFormController(
+export function useSellOrderForm(
   options?: UseSellOrderOptions,
-): UseSellOrderFormControllerResult {
+): UseSellOrderFormResult {
   const sellOrder = useSellOrder(options);
   const assets = useAssets();
   const { network, kontorNetwork } = useHorizonMarket();

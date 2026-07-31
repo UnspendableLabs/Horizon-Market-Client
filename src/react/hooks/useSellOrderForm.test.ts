@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCtx, renderHook, type CtxRef } from "../hook-test-utils.js";
-import type { AssetOption, UseAssetsResult } from "../hooks/useAssets.js";
-import type { UseSellOrderResult } from "../hooks/useSellOrder.js";
-import { useSellOrderFormController } from "./useSellOrderFormController.js";
+import type { AssetOption, UseAssetsResult } from "./useAssets.js";
+import type { UseSellOrderResult } from "./useSellOrder.js";
+import { useSellOrderForm } from "./useSellOrderForm.js";
 
 const { ctxRef, sellOrderRef, assetsRef } = vi.hoisted(() => ({
   ctxRef: { current: null } as CtxRef,
@@ -11,10 +11,10 @@ const { ctxRef, sellOrderRef, assetsRef } = vi.hoisted(() => ({
   assetsRef: { current: null } as { current: UseAssetsResult | null },
 }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
-vi.mock("../hooks/useSellOrder.js", () => ({
+vi.mock("./useSellOrder.js", () => ({
   useSellOrder: () => sellOrderRef.current,
 }));
-vi.mock("../hooks/useAssets.js", () => ({ useAssets: () => assetsRef.current }));
+vi.mock("./useAssets.js", () => ({ useAssets: () => assetsRef.current }));
 
 function makeAssets(o: Partial<UseAssetsResult> = {}): UseAssetsResult {
   return {
@@ -98,7 +98,7 @@ const ORD: AssetOption = {
   address: "bc1pwallet",
 };
 
-describe("useSellOrderFormController", () => {
+describe("useSellOrderForm", () => {
   beforeEach(() => {
     ctxRef.current = makeCtx();
     sellOrderRef.current = makeSellOrder();
@@ -119,7 +119,7 @@ describe("useSellOrderFormController", () => {
       refresh,
     });
 
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.step).toBe("confirm");
     expect(result.current.status).toBe("loading");
@@ -133,13 +133,13 @@ describe("useSellOrderFormController", () => {
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: xcp(50n), quantity: "", priceSats: "" },
     });
-    const { result: r1 } = renderHook(() => useSellOrderFormController());
+    const { result: r1 } = renderHook(() => useSellOrderForm());
     expect(r1.current.showQuantity).toBe(true);
 
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: NFT, quantity: "", priceSats: "" },
     });
-    const { result: r2 } = renderHook(() => useSellOrderFormController());
+    const { result: r2 } = renderHook(() => useSellOrderForm());
     expect(r2.current.showQuantity).toBe(false);
   });
 
@@ -147,7 +147,7 @@ describe("useSellOrderFormController", () => {
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: null, quantity: "", priceSats: "" },
     });
-    const { result: invalid } = renderHook(() => useSellOrderFormController());
+    const { result: invalid } = renderHook(() => useSellOrderForm());
     expect(invalid.current.submitDisabled).toBe(true);
 
     sellOrderRef.current = makeSellOrder({
@@ -157,7 +157,7 @@ describe("useSellOrderFormController", () => {
         priceSats: "1000",
       },
     });
-    const { result: valid } = renderHook(() => useSellOrderFormController());
+    const { result: valid } = renderHook(() => useSellOrderForm());
     expect(valid.current.submitDisabled).toBe(false);
   });
 
@@ -165,7 +165,7 @@ describe("useSellOrderFormController", () => {
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: xcp(50n, "10"), quantity: "", priceSats: "" },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.maxQuantity).toBe("10");
   });
 
@@ -176,7 +176,7 @@ describe("useSellOrderFormController", () => {
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: KOR_OPT, quantity: "", priceSats: "" },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.maxQuantity).toBe("2.9999");
   });
 
@@ -188,7 +188,7 @@ describe("useSellOrderFormController", () => {
         priceSats: "",
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.maxQuantity).toBeNull();
   });
 
@@ -197,21 +197,21 @@ describe("useSellOrderFormController", () => {
       formValues: { asset: ORD, quantity: "", priceSats: "" },
     });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current.maxQuantity,
+      renderHook(() => useSellOrderForm()).result.current.maxQuantity,
     ).toBeNull();
 
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: xcp(50n, ""), quantity: "", priceSats: "" },
     });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current.maxQuantity,
+      renderHook(() => useSellOrderForm()).result.current.maxQuantity,
     ).toBeNull();
 
     sellOrderRef.current = makeSellOrder({
       formValues: { asset: null, quantity: "", priceSats: "" },
     });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current.maxQuantity,
+      renderHook(() => useSellOrderForm()).result.current.maxQuantity,
     ).toBeNull();
   });
 
@@ -220,19 +220,19 @@ describe("useSellOrderFormController", () => {
   it("picks the asset placeholder for loading / empty / ready", () => {
     assetsRef.current = makeAssets({ isFetching: true, allAssets: [] });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current
+      renderHook(() => useSellOrderForm()).result.current
         .assetPlaceholder,
     ).toBe("Loading your assets…");
 
     assetsRef.current = makeAssets({ isFetching: false, isEmpty: true });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current
+      renderHook(() => useSellOrderForm()).result.current
         .assetPlaceholder,
     ).toBe("No assets to sell");
 
     assetsRef.current = makeAssets({ allAssets: [PEPE], isEmpty: false });
     expect(
-      renderHook(() => useSellOrderFormController()).result.current
+      renderHook(() => useSellOrderForm()).result.current
         .assetPlaceholder,
     ).toBe("Select an asset…");
   });
@@ -248,7 +248,7 @@ describe("useSellOrderFormController", () => {
         kontor: new Error("kor down"),
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.nonFatalErrors).toEqual([
       "Counterparty: cp down",
       "ZELD: zeld down",
@@ -258,7 +258,7 @@ describe("useSellOrderFormController", () => {
   });
 
   it("returns no non-fatal errors when all groups loaded cleanly", () => {
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.nonFatalErrors).toEqual([]);
   });
 
@@ -272,7 +272,7 @@ describe("useSellOrderFormController", () => {
       kontorNfts: [NFT],
       ordinals: [ORD],
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.assetGroups.map((g) => g.label)).toEqual([
       "Counterparty",
@@ -287,7 +287,7 @@ describe("useSellOrderFormController", () => {
   });
 
   it("returns no asset groups when nothing is owned", () => {
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.assetGroups).toEqual([]);
   });
 
@@ -304,7 +304,7 @@ describe("useSellOrderFormController", () => {
     });
     assetsRef.current = makeAssets({ allAssets: [fresh], lastFetchedAt: 1 });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).toHaveBeenCalledWith({ asset: fresh });
   });
 
@@ -318,7 +318,7 @@ describe("useSellOrderFormController", () => {
     });
     assetsRef.current = makeAssets({ allAssets: [selected], lastFetchedAt: 1 });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).not.toHaveBeenCalled();
   });
 
@@ -335,7 +335,7 @@ describe("useSellOrderFormController", () => {
       isFetching: false,
     });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).toHaveBeenCalledWith({ asset: null });
   });
 
@@ -348,7 +348,7 @@ describe("useSellOrderFormController", () => {
     });
     assetsRef.current = makeAssets({ allAssets: [], lastFetchedAt: null });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).not.toHaveBeenCalled();
   });
 
@@ -361,7 +361,7 @@ describe("useSellOrderFormController", () => {
     });
     assetsRef.current = makeAssets({ allAssets: [xcp(9n)], lastFetchedAt: 1 });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).not.toHaveBeenCalled();
   });
 
@@ -374,7 +374,7 @@ describe("useSellOrderFormController", () => {
     });
     assetsRef.current = makeAssets({ allAssets: [xcp(9n)], lastFetchedAt: 1 });
 
-    renderHook(() => useSellOrderFormController());
+    renderHook(() => useSellOrderForm());
     expect(setFormValues).not.toHaveBeenCalled();
   });
 
@@ -382,7 +382,7 @@ describe("useSellOrderFormController", () => {
 
   it("has an empty result view when not on a successful result", () => {
     sellOrderRef.current = makeSellOrder({ status: "idle", result: null });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.resultView).toEqual({
       pendingConfirmation: false,
@@ -403,7 +403,7 @@ describe("useSellOrderFormController", () => {
         ],
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.resultView.pendingConfirmation).toBe(true);
     expect(result.current.resultView.successMessage).toBe("Sell order submitted!");
@@ -418,7 +418,7 @@ describe("useSellOrderFormController", () => {
       status: "success",
       result: { swap: {} as never, created: true, transactions: [] },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.resultView.pendingConfirmation).toBe(false);
     expect(result.current.resultView.trackTxs).toEqual([]);
@@ -434,7 +434,7 @@ describe("useSellOrderFormController", () => {
         transactions: [{ txid: "ccc", kind: "fee" }],
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.resultView.pendingConfirmation).toBe(false);
     expect(result.current.resultView.successMessage).toBe("Your listing is live!");
@@ -452,7 +452,7 @@ describe("useSellOrderFormController", () => {
         transactions: [{ txid: "ddd", kind: "asset" }],
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     expect(result.current.resultView.pendingConfirmation).toBe(false);
     expect(result.current.resultView.successMessage).toBe(
@@ -473,7 +473,7 @@ describe("useSellOrderFormController", () => {
         ],
       },
     });
-    const { result } = renderHook(() => useSellOrderFormController());
+    const { result } = renderHook(() => useSellOrderForm());
 
     // An asset tx still exists (just unlinkable) → the listing is pending.
     expect(result.current.resultView.pendingConfirmation).toBe(true);

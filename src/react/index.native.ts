@@ -21,6 +21,7 @@ export {
   useAssets,
   useBtcBalance,
   useSellOrder,
+  useSellOrderForm,
   useWithdraw,
   WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
@@ -53,6 +54,10 @@ export type {
   SellOrderResult,
   UseSellOrderOptions,
   UseSellOrderResult,
+  AssetGroup,
+  SellTrackTx,
+  SellResultView,
+  UseSellOrderFormResult,
   SwapConfirmationStep,
   SwapConfirmationStatus,
   UseSwapConfirmationOptions,
@@ -104,6 +109,18 @@ export {
   useKontorPreflight,
   kontorPreflightNotice,
 } from "./internal/useKontorPreflight.js";
+// Kontor gas pricing — pure string/number arithmetic with no `@kontor/sdk`
+// import behind it, so it is safe in a Hermes bundle that hasn't linked the
+// native Kontor backend. `useSellOrderForm` already applies `maxListableKor` to
+// its Max affordance; these are for a host rendering its own numbers.
+export {
+  korCostForGas,
+  maxListableKor,
+  detachGasLimitFromBlob,
+  KONTOR_ATTACH_GAS_LIMIT,
+  KONTOR_ACCEPT_GAS_LIMIT,
+  KONTOR_DETACH_GAS_LIMIT,
+} from "../kontor/gas.js";
 export type {
   KontorPreflightTarget,
   KontorPreflightNotice,

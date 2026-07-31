@@ -7,7 +7,7 @@ import { ResultActions } from "../internal/ResultActions.web.js";
 import { SellReview } from "../internal/SellReview.web.js";
 import * as ws from "../internal/styles.web.js";
 import { webTokens } from "../theme.js";
-import { useSellOrderFormController } from "../internal/useSellOrderFormController.js";
+import { useSellOrderForm } from "../hooks/useSellOrderForm.js";
 import { useSellReview } from "../internal/useSellReview.js";
 import {
   WorkflowProgress,
@@ -130,7 +130,7 @@ export function SellOrderForm({
     nonFatalErrors,
     assetGroups,
     resultView,
-  } = useSellOrderFormController({
+  } = useSellOrderForm({
     defaultSatsPerVbyte,
     initialAsset,
     onSuccess,
