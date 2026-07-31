@@ -138,7 +138,7 @@ function App() {
 | `SwapList` | Browse, filter, buy, and delist swaps (orchestrates login + confirmation modals) |
 | `SellOrderForm` | Multi-step sell listing from the wallet's owned balances (pick asset, confirm, progress) |
 | `SwapConfirmation` | Buy or delist a swap with progress UI |
-| `WithdrawForm`, `WalletBalances`, `WalletBalanceSummary` | Wallet UI: send/withdraw any asset, full balances view, compact summary |
+| `WithdrawForm`, `WalletBalances`, `WalletBalanceSummary` | Wallet UI: send/withdraw any asset, full balances view, compact summary. `WalletBalances` takes a `renderTokenAction(line)` slot to add a host control to the XCP/KOR/ZELD rows (`WalletTokenLine`) |
 | `WorkflowProgress`, `Modal` | Standalone progress list and the shared overlay modal |
 | `defaultTheme`, `resolveTheme` | Theme helpers (plus `themeToCssVars` / `webTokens` on web) |
 

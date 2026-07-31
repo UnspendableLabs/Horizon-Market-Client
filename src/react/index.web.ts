@@ -187,6 +187,8 @@ export type {
   WalletWithdrawEvent,
   WalletWithdrawCompleteEvent,
 } from "./components/WalletBalances.web.js";
+// The headline-token shape `renderTokenAction` is called with (XCP/KOR/ZELD).
+export type { TokenLine as WalletTokenLine } from "./internal/walletBalances.web.js";
 
 export { WalletBalanceSummary } from "./components/WalletBalanceSummary.web.js";
 export type {

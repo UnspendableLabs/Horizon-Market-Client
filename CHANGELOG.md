@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-07-31
+
+### Added
+
+- **`renderTokenAction` on `WalletBalances` — a host slot in the XCP / KOR / ZELD action row (web + native).** The headline token rows ship a fixed set of controls (Deposit / Withdraw / Sell), so an app needing one more had to choose between forking the component and putting its button somewhere else on the page, away from the balance it acts on. The prop is called once per headline token with that row's line and its return value is rendered at the *start* of the action group, ahead of the SDK's own buttons; return `null` for the rows you don't extend.
+  - What it was built for: Kontor gas is paid in KOR and an account holding none has its operation dropped before execution, so a signet user with an empty KOR balance is stuck until they fund it. horizon.market now puts its faucet in the KOR row itself — `line.symbol === "KOR" ? <KorFaucet /> : null` — instead of in a separate corner of the wallet page.
+  - The row shape is exported as `WalletTokenLine` (`symbol`, `amount`, `error`, `asset`, `sellAsset`) so the callback can be typed and can branch on the same balance the row prints — including telling "the wallet holds none" from "the read failed", which `amount: null` plus `error` already keep apart.
+  - Same prop, same position, same type name on both entries, so a host that renders both platforms writes the branch once.
+
 ## [0.2.6] - 2026-07-31
 
 ### Added

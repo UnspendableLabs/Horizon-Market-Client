@@ -78,6 +78,13 @@ export interface WalletBalancesProps {
   onWithdraw?: (event: WalletWithdrawEvent) => void;
   /** Notified when a withdraw broadcasts successfully (funds have left). */
   onWithdrawComplete?: (event: WalletWithdrawCompleteEvent) => void;
+  /**
+   * Host-rendered extra control for a headline token row (XCP/KOR/ZELD), placed
+   * at the start of that row's action group, ahead of Deposit/Withdraw/Sell.
+   * Called once per token — return null for the ones you don't extend (e.g. a
+   * signet-only KOR faucet button).
+   */
+  renderTokenAction?: (line: TokenLine) => ReactNode;
   className?: string;
   classNames?: WalletBalancesClassNames;
   style?: CSSProperties;
@@ -666,6 +673,7 @@ export function WalletBalances({
   onDeposit,
   onWithdraw,
   onWithdrawComplete,
+  renderTokenAction,
   className,
   classNames,
   style,
@@ -777,6 +785,7 @@ export function WalletBalances({
             key={line.symbol}
             line={line}
             className={classNames?.token}
+            action={renderTokenAction?.(line)}
             onDeposit={openDeposit}
             onWithdraw={openWithdraw}
             onSell={onSellAsset ?? setSellAsset}
@@ -912,12 +921,14 @@ export function WalletBalances({
 function TokenCell({
   line,
   className,
+  action,
   onDeposit,
   onWithdraw,
   onSell,
 }: {
   line: TokenLine;
   className?: string;
+  action?: ReactNode;
   onDeposit: (symbol: string, type: DepositType) => void;
   onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
@@ -944,6 +955,7 @@ function TokenCell({
         </div>
       </div>
       <div style={actionRow}>
+        {action}
         <IconAction
           kind="deposit"
           onClick={() => onDeposit(line.symbol, depositType)}
