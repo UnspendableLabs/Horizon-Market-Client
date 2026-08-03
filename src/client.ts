@@ -594,7 +594,10 @@ export class HorizonMarketClient {
       // it has sponsored a Kontor tx — every buy/sell/mint does), or to an
       // `x-only-pubkey` holder: the internal signing key OR the bech32m-tweaked
       // taproot output key (they differ by the BIP341 tweak). Resolve the
-      // signer-id and query every plausible holder, summing balances across them.
+      // signer-id and query every plausible holder, summing balances across
+      // them. `holderCandidates` guarantees the candidates are DISJOINT ledger
+      // rows — the runtime aliases a registered x-only key to its signer-id, so
+      // querying both would count the same row twice.
       const internalXOnly = session.identity.xOnlyPubKey;
       let signerId = this.kontorSignerIdCache.get(internalXOnly);
       if (signerId === undefined) {
