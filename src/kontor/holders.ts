@@ -10,9 +10,11 @@ import { HolderRef } from "@kontor/sdk";
  *    tweaked taproot output key (they differ; both are queried), used for
  *    *unregistered* signers; or
  *  - a `signer-id` — a signer **registered on-chain**. A wallet gets a signer-id
- *    the first time it *sponsors* a Kontor tx (every buy/sell/mint does), and its
- *    holdings are then credited to `signer-id(N)`, NOT to any x-only key. This is
- *    why a bought KOR balance is invisible when only x-only holders are queried.
+ *    the first time it *sponsors* a Kontor tx (every buy/sell/mint does — and any
+ *    credit, e.g. a faucet transfer, creates the identity row too), and its
+ *    holdings are then credited to `signer-id(N)`. The runtime *canonicalizes*
+ *    an x-only holder-ref to its signer-id before reading the ledger, so
+ *    querying a registered key under both refs returns the same row twice.
  *
  * So we resolve the wallet's registered signer-id from the Kontor indexer
  * (`GET {indexerUrl}/signers/{x-only}`) and query it alongside the x-only
@@ -69,6 +71,17 @@ export function xOnlyFromTaprootAddress(address: string): string | null {
  *  - the session's internal signing key (`sessionXOnly`) and the bech32m-tweaked
  *    taproot output key derived from `taprootAddress`.
  * Deduplicated by x-only hex; the signer-id (when present) is always included first.
+ *
+ * **The candidates must be disjoint ledger rows, because callers SUM across
+ * them.** The Kontor runtime canonicalizes an `x-only-pubkey` holder-ref to its
+ * registered `signer-id` before touching the ledger (`Holder::from_holder_ref`,
+ * in view frames too), so once `signerId` is resolved — and it is resolved from
+ * `sessionXOnly` via the indexer's reverse index — `balance(sessionXOnly)` and
+ * `balance(signer-id(N))` read the SAME row. Querying both double-counted every
+ * registered wallet's KOR (a 10 KOR faucet grant displayed as 20), so the
+ * session key is a candidate only while there is no signer-id to alias to. It
+ * is still marked seen either way, so a taproot output key that happens to
+ * equal it cannot smuggle the aliased row back in.
  */
 export function holderCandidates(
   sessionXOnly: string,
@@ -76,7 +89,6 @@ export function holderCandidates(
   signerId?: number | null,
 ): HolderRef[] {
   const candidates: HolderRef[] = [];
-  if (signerId != null) candidates.push(HolderRef.signerId(BigInt(signerId)));
 
   const seen = new Set<string>();
   const addXOnly = (h: string | null | undefined) => {
@@ -87,7 +99,13 @@ export function holderCandidates(
     candidates.push(HolderRef.xOnlyPubkey(key));
   };
 
-  addXOnly(sessionXOnly);
+  if (signerId != null) {
+    candidates.push(HolderRef.signerId(BigInt(signerId)));
+    // The signer-id already covers the session key's ledger row (see above).
+    if (sessionXOnly) seen.add(sessionXOnly.toLowerCase());
+  } else {
+    addXOnly(sessionXOnly);
+  }
   if (taprootAddress) addXOnly(xOnlyFromTaprootAddress(taprootAddress));
 
   return candidates;

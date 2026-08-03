@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-08-03
+
+**A registered wallet's KOR balance displayed doubled.** Found dogfooding the 0.2.7 faucet: request 10 KOR, watch the wallet show +20. The chain was innocent — one transfer, 10 KOR on the ledger; the read was not.
+
+### Fixed
+
+- **`getKontorHoldings()` no longer counts the same ledger row twice.** The holdings read sums KOR across every plausible holder ref — the registered `signer-id`, the wallet's internal x-only key, the bech32m-tweaked output key — a union built when those were distinct rows on the ledger. They no longer are: the Kontor runtime now *canonicalizes* an `x-only-pubkey` holder-ref to its registered `signer-id` before touching the ledger (`Holder::from_holder_ref`, in view frames too), so `balance(x-only)` and `balance(signer-id)` answer from the same row, and summing both showed it twice.
+  - `holderCandidates` now drops the session key once a signer-id is resolved for it — the id came from that very key via the indexer's reverse index, so the alias is a certainty, not a heuristic. The key is still marked seen, so a taproot output key equal to it (wallets that expose the tweaked key as `xOnlyPubkey`) can't re-add the aliased row. A *different* tweaked key stays: that is a distinct identity with its own row, and summing it remains correct.
+  - This hit **every** wallet with a signer-id, not just faucet users — any credit creates the recipient's identity row (the faucet transfer itself does), after which the reverse lookup resolves and the double-count began. NFTs were never double-counted (deduplicated by `nftId`); the on-chain balance was always correct — display only.
+
 ## [0.2.7] - 2026-07-31
 
 **A faucet button in the wallet's KOR row.** A signet wallet holding no KOR is stuck: Kontor charges gas in KOR, an account with none has its operation dropped before execution, and buying KOR would itself cost gas. The pre-flights added in 0.2.5 report that deadlock accurately and leave the user with nowhere to go. This release ships the way out — the Portal's signet faucet, reachable from the wallet screen on web *and* mobile, next to the balance it fixes.
@@ -196,6 +206,12 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.2.8]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.7...v0.2.8
+[0.2.7]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.1.2...v0.2.0

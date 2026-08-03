@@ -99,12 +99,28 @@ describe("holderCandidates", () => {
     expect(holderCandidates("", undefined)).toEqual([]);
   });
 
-  it("prepends the registered signer-id ref before the x-only candidates", () => {
+  it("replaces the session key with the signer-id ref once one is resolved", () => {
     const candidates = holderCandidates(SESSION_XONLY, TEST_P2TR_ADDRESS, 4);
-    // signer-id + session key + tweaked key.
-    expect(candidates).toHaveLength(3);
+    // signer-id + tweaked key — NOT the session key: the runtime canonicalizes
+    // a registered x-only ref to its signer-id, so `balance(session key)` and
+    // `balance(signer-id(4))` are the same ledger row, and callers sum across
+    // candidates. Querying both showed a 10 KOR faucet grant as 20.
+    expect(candidates).toHaveLength(2);
     expect(candidates[0].toRaw()).toEqual({ kind: "signer-id", value: "4" });
+    expect(candidates[1].toRaw()).toEqual({
+      kind: "x-only-pubkey",
+      value: EXPECTED_XONLY,
+    });
     for (const c of candidates) expect(c).toBeInstanceOf(HolderRef);
+  });
+
+  it("drops a tweaked key equal to the session key when the signer-id covers it", () => {
+    // A wallet whose `xOnlyPubkey` is already the bech32m output key: with a
+    // signer-id resolved, that key aliases to the signer-id row, and re-adding
+    // it via the taproot-address derivation would double-count again.
+    const candidates = holderCandidates(EXPECTED_XONLY, TEST_P2TR_ADDRESS, 4);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].toRaw()).toEqual({ kind: "signer-id", value: "4" });
   });
 
   it("omits the signer-id ref when the wallet is unregistered", () => {
