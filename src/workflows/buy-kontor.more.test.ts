@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { HttpClient } from "../api/http.js";
 import type { KontorContext } from "../kontor/context.js";
 import type { AtomicSwap } from "../types/index.js";
@@ -13,12 +13,14 @@ const {
   mockGetSigning,
   mockResolveFunding,
   mockPreflight,
+  mockPendingTxIds,
 } = vi.hoisted(() => ({
   mockMakeSession: vi.fn(),
   mockKontorBuy: vi.fn(),
   mockGetSigning: vi.fn(),
   mockResolveFunding: vi.fn(),
   mockPreflight: vi.fn(),
+  mockPendingTxIds: vi.fn(),
 }));
 
 vi.mock("../kontor/session.js", () => ({ makeKontorSession: mockMakeSession }));
@@ -33,6 +35,9 @@ vi.mock("../kontor/preflight.js", () => ({
   preflightKontorPurchase: mockPreflight,
 }));
 vi.mock("../api/kontor.js", () => ({ kontorBuy: mockKontorBuy }));
+vi.mock("../api/atomic-swaps.js", () => ({
+  getPendingPurchaseTxIds: mockPendingTxIds,
+}));
 
 /** A pre-flight verdict, `ok` unless handed a refusal to report. */
 function verdict(error: Error | null = null) {
@@ -48,6 +53,7 @@ function verdict(error: Error | null = null) {
 
 
 import { fillKontorSwap, KontorPurchaseNotRecordedError } from "./buy-kontor.js";
+import { HorizonMarketApiError } from "../api/http.js";
 
 const TXID = "ab".repeat(32);
 // A distinguishable `fetch`: the pre-flight's signer lookup must go through
@@ -91,6 +97,8 @@ beforeEach(() => {
   mockGetSigning.mockResolvedValue({ identity: { address: "tb1pbuyeridentity" } });
   mockResolveFunding.mockReturnValue({ kind: "query" });
   mockPreflight.mockResolvedValue(verdict());
+  // Default: the server has no pending sale recorded for this purchase.
+  mockPendingTxIds.mockResolvedValue([]);
 });
 
 describe("fillKontorSwap guard throws", () => {
@@ -257,7 +265,9 @@ describe("fillKontorSwap recording failure", () => {
   it("wraps a failed purchase recording in KontorPurchaseNotRecordedError carrying the txid", async () => {
     const session = makeSession();
     mockMakeSession.mockReturnValue(session);
-    const cause = new Error("recording 500");
+    // A verdict, not a glitch: rejected without any retry (see the retry suite
+    // below for transient failures).
+    const cause = new HorizonMarketApiError(400, "Atomic swap already filled");
     mockKontorBuy.mockRejectedValue(cause);
 
     const err = await fillKontorSwap(
@@ -273,7 +283,129 @@ describe("fillKontorSwap recording failure", () => {
     expect(err.txId).toBe(TXID);
     expect(err.buyerAddress).toBe("tb1pbuyeridentity");
     expect(err.cause).toBe(cause);
+    expect(mockKontorBuy).toHaveBeenCalledTimes(1);
     expect(session.close).toHaveBeenCalled();
+  });
+});
+
+describe("fillKontorSwap recording retries", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries a transient recording failure until it succeeds", async () => {
+    vi.useFakeTimers();
+    const session = makeSession();
+    mockMakeSession.mockReturnValue(session);
+    // The electrs race: the server cannot see the just-broadcast reveal yet.
+    mockKontorBuy
+      .mockRejectedValueOnce(
+        new HorizonMarketApiError(
+          400,
+          `Invalid kontor swap transaction: swap transaction ${TXID} not found (electrs 404)`,
+        ),
+      )
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValue({
+        txId: TXID,
+        buyerAddress: "tb1pbuyeridentity",
+        atomicSwap: { id: "swap1" },
+      });
+
+    const pending = fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    );
+    await vi.advanceTimersByTimeAsync(3_000); // 1s + 2s backoff
+    const sales = await pending;
+
+    expect(sales[0].txId).toBe(TXID);
+    expect(mockKontorBuy).toHaveBeenCalledTimes(3);
+    expect(session.close).toHaveBeenCalled();
+  });
+
+  it("gives up after exhausting the backoff schedule", async () => {
+    vi.useFakeTimers();
+    const session = makeSession();
+    mockMakeSession.mockReturnValue(session);
+    const cause = new HorizonMarketApiError(503, "upstream down");
+    mockKontorBuy.mockRejectedValue(cause);
+
+    const pending = fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    ).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(31_000); // full 1+2+4+8+15s schedule
+    const err = await pending;
+
+    expect(err).toBeInstanceOf(KontorPurchaseNotRecordedError);
+    expect(err.cause).toBe(cause);
+    expect(mockKontorBuy).toHaveBeenCalledTimes(6); // initial + 5 retries
+  });
+
+  it("treats a purchase the server already holds as recorded", async () => {
+    const session = makeSession();
+    mockMakeSession.mockReturnValue(session);
+    // A previous POST landed but its response was lost: the server refuses the
+    // replay while the pending sale actually exists.
+    mockKontorBuy.mockRejectedValue(
+      new HorizonMarketApiError(
+        400,
+        "A purchase is already pending for this listing",
+      ),
+    );
+    mockPendingTxIds.mockResolvedValue([TXID]);
+
+    const sales = await fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    );
+
+    expect(sales).toEqual([
+      {
+        txId: TXID,
+        buyerAddress: "tb1pbuyeridentity",
+        atomicSwap: { id: "swap1" },
+      },
+    ]);
+    expect(mockKontorBuy).toHaveBeenCalledTimes(1);
+    expect(mockPendingTxIds).toHaveBeenCalledWith(
+      http,
+      "swap1",
+      "tb1pbuyeridentity",
+    );
+  });
+
+  it("does not mistake someone else's pending sale for ours", async () => {
+    const session = makeSession();
+    mockMakeSession.mockReturnValue(session);
+    const cause = new HorizonMarketApiError(
+      400,
+      "A purchase is already pending for this listing",
+    );
+    mockKontorBuy.mockRejectedValue(cause);
+    mockPendingTxIds.mockResolvedValue(["ff".repeat(32)]);
+
+    const err = await fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    ).catch((e) => e);
+
+    expect(err).toBeInstanceOf(KontorPurchaseNotRecordedError);
+    expect(err.cause).toBe(cause);
+    expect(mockKontorBuy).toHaveBeenCalledTimes(1);
   });
 });
 
