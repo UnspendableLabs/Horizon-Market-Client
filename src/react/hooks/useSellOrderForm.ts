@@ -14,6 +14,7 @@ import {
   isSellFormValid,
   showQuantityForAsset,
 } from "../internal/sellFormValidation.js";
+import { useProtocolVisibility } from "../internal/useProtocolVisibility.js";
 import {
   assetBalanceLabel,
   assetKey,
@@ -119,6 +120,7 @@ export function useSellOrderForm(
   const sellOrder = useSellOrder(options);
   const assets = useAssets();
   const { network, kontorNetwork } = useHorizonMarket();
+  const protocols = useProtocolVisibility();
 
   const selected = sellOrder.formValues.asset;
 
@@ -195,10 +197,14 @@ export function useSellOrderForm(
           label: "Counterparty",
           options: counterpartyXcpFirst(assets.counterpartyAssets),
         },
-        { label: "ZELD", options: assets.zeldAssets },
+        // A hidden protocol contributes no group even if the balances cache
+        // still holds options seeded before the host dropped its endpoint.
+        { label: "ZELD", options: protocols.zeld ? assets.zeldAssets : [] },
         {
           label: "Kontor",
-          options: kontorKorFirst([...assets.korAssets, ...assets.kontorNfts]),
+          options: protocols.kontor
+            ? kontorKorFirst([...assets.korAssets, ...assets.kontorNfts])
+            : [],
         },
         { label: "Ordinals", options: assets.ordinals },
       ].filter((g) => g.options.length > 0),
@@ -208,6 +214,7 @@ export function useSellOrderForm(
       assets.korAssets,
       assets.kontorNfts,
       assets.ordinals,
+      protocols,
     ],
   );
 

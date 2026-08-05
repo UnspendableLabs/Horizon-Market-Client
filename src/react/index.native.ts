@@ -101,6 +101,17 @@ export type { SellCost } from "./internal/useSellQuotePreview.js";
 // FeeOption are already exported via the useSellReview block above.
 export { useBuyReview } from "./internal/useBuyReview.js";
 
+// Which network-bound protocols this app shows at all (ZELD / Kontor), derived
+// from the provider config — the rule behind the packaged wallet rows, sell
+// groups and swap filter tabs. Exported so a host app can gate its OWN protocol
+// UI (a custom filter sidebar, a nav entry) off the same switch, and
+// `useSwapFilterTabs` is `FILTER_TABS` with that rule already applied.
+export {
+  useProtocolVisibility,
+  useSwapFilterTabs,
+} from "./internal/useProtocolVisibility.js";
+export type { ProtocolVisibility } from "./internal/useProtocolVisibility.js";
+
 // The Kontor chain-state gate behind all three review screens: can this wallet
 // pay the op's gas, does it hold what it is listing, does the listing's escrow
 // hold what it advertises. Already wired into `useBuyReview` / `useSellReview` /

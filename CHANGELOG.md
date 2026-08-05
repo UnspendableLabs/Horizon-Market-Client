@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-08-05
+
+**A protocol that isn't configured no longer renders as if it were merely empty.** The packaged surfaces showed every protocol everywhere: the wallet printed a KOR row on mainnet (where Kontor doesn't exist yet) and a ZELD row on signet (where ZELD has no API), and the swap filter offered a Kontor tab that could never return listings. The rule is now *configured ⇒ visible*: ZELD shows wherever a ZeldHash API resolves (mainnet by default, or an explicit `zeldApiBaseUrl`), Kontor wherever `kontorNetwork` is set — so lighting Kontor up on mainnet later is just configuring it there, no UI change.
+
+**And a completed purchase no longer strands in an error dialog.** Seen dogfooding /buy on signet: the swap reveal broadcasts, the NFT detaches to the buyer — and the drawer shows "Purchase failed" anyway, because the recording POST raced the server's electrs view of the chain and lost. The buyer owned the asset; the marketplace just didn't know yet, and the only way out was a manual Retry behind a developer-facing warning.
+
+### Added
+
+- **`useProtocolVisibility()`** (react) — `{ zeld, kontor }` booleans derived from the provider config, the single rule behind every protocol-scoped surface. Exported so a host app can gate its own protocol UI (a custom filter sidebar, a nav entry) off the same switch.
+- **`useSwapFilterTabs()`** (react) — `FILTER_TABS` with hidden protocols removed; what the packaged `<SwapList/>` now renders.
+- **`visibleFilterTabs(visibility)`** + **`ProtocolVisibility`** (`/swaps`, WASM-free) — the pure form, for non-React or SSR-side consumers.
+- The context now exposes the **resolved `zeldApiBaseUrl`** (the client's mainnet default applied), so hooks can tell "ZELD isn't read here" apart from "ZELD balance is 0".
+
+### Changed
+
+- **`WalletBalances` / `WalletBalanceSummary`**: the KOR and ZELD headline rows only render where their protocol is configured — a network the protocol doesn't run on gets no row at all, not a dead "0" inviting deposits nothing can read back. The "other holdings" **Kontor tab** likewise only exists where Kontor is configured (its "signet only" notice was a permanent dead tab everywhere else).
+- **`useSellOrderForm().assetGroups`**: a hidden protocol contributes no group, even if the persistent balances cache still holds options seeded before the host dropped that endpoint.
+- **`<SwapList/>`** (web + native) renders `useSwapFilterTabs()` instead of the static `FILTER_TABS`, which remains exported unchanged.
+- **`KontorPurchaseNotRecordedError`'s message is written for the end user.** UIs surface it verbatim, and the old text ("Do NOT retry fillSwaps — the offer is already consumed…") read as a warning aimed at whoever was holding the screen. It now says what the user needs: the purchase went through on-chain, only the bookkeeping is missing, and Retry re-records the same transaction without signing, broadcasting, or paying again. The guidance for SDK consumers moved to the class JSDoc; detection by `error.name` is unchanged.
+
+### Fixed
+
+- **An unconfigured ZELD source reported `ok` with an empty list** — a confident "0" about a balance that was never looked up. It now reports `unread` with a reason, like ordinals and Kontor already did.
+- **`fillSwaps` now retries the Kontor purchase recording itself** before surfacing anything. The reveal is already on-chain when the recording POST runs, so giving up on the first failure turns a done deal into an error dialog. Transient failures — a dropped response, a 5xx, or the server's verification not *finding* the just-broadcast reveal (or its commit/funding ancestors) yet — are retried on a ~30s backoff schedule (1s/2s/4s/8s/15s). Verdicts (already filled, buyer mismatch, wrong spender) still fail immediately: retrying cannot change them.
+- **A recording the server already holds counts as recorded.** When a POST lands but its response is lost, the replay is refused with "already pending" while the pending sale actually exists. Every failed attempt now checks the pending-sales read (the same authority the UI polls) for the carried txid and returns success when it is there — someone *else's* pending txid still fails.
+
 ## [0.2.8] - 2026-08-03
 
 **A registered wallet's KOR balance displayed doubled.** Found dogfooding the 0.2.7 faucet: request 10 KOR, watch the wallet show +20. The chain was innocent — one transfer, 10 KOR on the ledger; the read was not.

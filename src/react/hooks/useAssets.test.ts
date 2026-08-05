@@ -608,7 +608,31 @@ describe("useAssets", () => {
     expect(client.getKontorHoldings).not.toHaveBeenCalled();
     // Counterparty and ZELD were read and really are empty.
     expect(result.current.sources.counterparty).toEqual({ status: "ok" });
+    expect(result.current.sources.zeld).toEqual({ status: "ok" });
     expect(result.current.isEmpty).toBe(true);
+  });
+
+  it("reports ZELD as `unread` when no ZeldHash API resolves", async () => {
+    const client: LooseClient = {
+      getCounterpartyBalances: vi.fn(async () => []),
+      // The real client returns [] without fetching when zeldApiBaseUrl is
+      // unset — an empty list that is NOT evidence of an empty ZELD balance.
+      getZeldBalances: vi.fn(async () => []),
+      getKontorHoldings: vi.fn(),
+    };
+    ctxRef.current = makeCtx({
+      addresses: { p2wpkh: "bc1qnozeld", p2tr: "bc1pnozeld", publicKey: "02aa" },
+      network: "testnet",
+      zeldApiBaseUrl: undefined,
+      client: asClient(client),
+      fetch: vi.fn(),
+    });
+
+    const { result } = renderHook(() => useAssets());
+    await waitFor(() => expect(result.current.lastFetchedAt).not.toBeNull());
+
+    expect(result.current.sources.zeld.status).toBe("unread");
+    expect(result.current.errors.zeld).toBeNull();
   });
 
   it("seeds from a fresh balances-cache entry without hitting the network", async () => {

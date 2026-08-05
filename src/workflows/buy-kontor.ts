@@ -1,6 +1,7 @@
-import type { HttpClient } from "../api/http.js";
+import { HorizonMarketApiError, type HttpClient } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import { kontorBuy } from "../api/kontor.js";
+import { getPendingPurchaseTxIds } from "../api/atomic-swaps.js";
 import { resolveKontorFunding } from "../kontor/funding.js";
 import { makeKontorSession } from "../kontor/session.js";
 import { getKontorSigning } from "../kontor/signing.js";
@@ -16,9 +17,15 @@ import { WorkflowProgressReporter } from "./progress.js";
 
 /**
  * The buyer's swap reveal was broadcast on-chain (`accept()`), but recording the
- * purchase with Horizon failed. The offer is CONSUMED — do not retry
- * `fillSwaps` (it would fail at inspect). Retry only the recording POST with the
- * carried `txId`, or wait for the indexer to settle the purchase.
+ * purchase with Horizon failed — even after the automatic retries in
+ * {@link fillKontorSwap}. The offer is CONSUMED — do not retry `fillSwaps` (it
+ * would fail at inspect). Retry only the recording POST with the carried `txId`
+ * (`client.recordKontorPurchase`), or wait for the indexer to settle the
+ * purchase.
+ *
+ * The message is written for the end user, because UIs surface it verbatim: by
+ * the time this error escapes, the purchase itself is safe on-chain and the only
+ * thing left is bookkeeping.
  */
 export class KontorPurchaseNotRecordedError extends Error {
   readonly swapId: string;
@@ -29,15 +36,95 @@ export class KontorPurchaseNotRecordedError extends Error {
 
   constructor(swapId: string, txId: string, buyerAddress: string, cause: unknown) {
     super(
-      "Kontor offer was accepted on-chain (swap reveal broadcast) but the " +
-        "purchase could not be recorded server-side. Do NOT retry fillSwaps — " +
-        "the offer is already consumed. Retry recording with the carried txId.",
+      "Your purchase went through on-chain — the swap is broadcast and the " +
+        "asset is yours — but the marketplace could not record it yet. " +
+        "Retry re-records the same transaction: nothing is signed, broadcast, " +
+        "or paid again.",
     );
     this.name = "KontorPurchaseNotRecordedError";
     this.swapId = swapId;
     this.txId = txId;
     this.buyerAddress = buyerAddress;
     this.cause = cause;
+  }
+}
+
+/**
+ * Backoff before each recording retry, ~30s in total. The server verifies the
+ * reveal against its own electrs view of the chain, which lags the Kontor-side
+ * broadcast by a few seconds — so the early retries come quickly and the later
+ * ones give a slow mempool room to catch up.
+ */
+const RECORD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A recording failure worth retrying: the POST never reached the server, the
+ * server errored transiently, or its verification could not *find* the
+ * just-broadcast reveal (or its commit/funding ancestors) yet. Everything else
+ * — already filled, wrong spender, buyer mismatch — is a verdict, not a
+ * glitch, and retrying cannot change it.
+ */
+function isTransientRecordingError(err: unknown): boolean {
+  if (!(err instanceof HorizonMarketApiError)) return true;
+  if (err.status >= 500 || err.status === 408 || err.status === 429) return true;
+  // The kontor-buy route rejects with 400 when its electrs lookup cannot see a
+  // transaction yet ("… not found", "missing (tx) hex") — a race, not a verdict.
+  return err.status === 400 && /not found|missing (tx )?hex/i.test(err.error);
+}
+
+/**
+ * True when the purchase is already in the server's pending sales for this
+ * buyer — a previous POST landed but its response was lost, so the server now
+ * refuses with "already pending" while the recording actually exists. The
+ * pending-sales read is the authority the UI polls, so matching `txId` there
+ * means recorded.
+ */
+async function purchaseAlreadyRecorded(
+  http: HttpClient,
+  swapId: string,
+  buyerAddress: string,
+  txId: string,
+): Promise<boolean> {
+  try {
+    const txIds = await getPendingPurchaseTxIds(http, swapId, buyerAddress);
+    return txIds.includes(txId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record the purchase, absorbing transient failures. The reveal is already
+ * broadcast when this runs, so giving up early strands a completed purchase in
+ * an error dialog — worth ~30s of retries before asking the user to intervene.
+ */
+async function recordKontorPurchaseWithRetry(
+  http: HttpClient,
+  swapId: string,
+  buyerAddress: string,
+  txId: string,
+): Promise<PendingSale> {
+  let lastFailure: unknown;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await kontorBuy(http, swapId, { buyerAddress, txId });
+    } catch (failure) {
+      lastFailure = failure;
+    }
+    if (await purchaseAlreadyRecorded(http, swapId, buyerAddress, txId)) {
+      return { txId, buyerAddress, atomicSwap: { id: swapId } };
+    }
+    if (
+      attempt >= RECORD_RETRY_DELAYS_MS.length ||
+      !isTransientRecordingError(lastFailure)
+    ) {
+      throw lastFailure;
+    }
+    await sleep(RECORD_RETRY_DELAYS_MS[attempt]);
   }
 }
 
@@ -141,13 +228,14 @@ export async function fillKontorSwap(
       incoming.accept(),
     );
 
-    // The swap reveal is on-chain now: a failure recording it must carry the
-    // txid so the purchase can be recovered without re-accepting (mirrors
-    // KontorListingNotRecordedError / KontorDelistNotRecordedError).
+    // The swap reveal is on-chain now: recording retries transient failures
+    // itself (electrs lag, dropped responses), and a failure that survives them
+    // must carry the txid so the purchase can be recovered without re-accepting
+    // (mirrors KontorListingNotRecordedError / KontorDelistNotRecordedError).
     let pendingSale: PendingSale;
     try {
       pendingSale = await progress.runAsync("submitPurchase", () =>
-        kontorBuy(http, swap.id, { buyerAddress, txId: txid }),
+        recordKontorPurchaseWithRetry(http, swap.id, buyerAddress, txid),
       );
     } catch (cause) {
       throw new KontorPurchaseNotRecordedError(swap.id, txid, buyerAddress, cause);

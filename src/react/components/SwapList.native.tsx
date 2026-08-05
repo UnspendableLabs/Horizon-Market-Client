@@ -16,7 +16,7 @@ import {
   SORT_OPTION_LABELS,
   type UseSwapListOptions,
 } from "../hooks/useSwapList.js";
-import { FILTER_TABS } from "../internal/swapListConstants.js";
+import { useSwapFilterTabs } from "../internal/useProtocolVisibility.js";
 import { Dropdown } from "../internal/Dropdown.native.js";
 import { useCommonSheet } from "../internal/styles.native.js";
 import { ListHeader } from "../internal/ListHeader.native.js";
@@ -144,6 +144,8 @@ export function SwapList({
     // Consumers can opt out with `includePendingOrders={false}`.
   } = useSwapList({ includePendingOrders: true, ...hookOptions });
 
+  const filterTabs = useSwapFilterTabs();
+
   // The connected wallet's in-progress orders ride at the very top of the grid
   // (the API already sorts them first via `pending_address`), rendered as
   // ordinary tiles with a "Pending" badge and no Buy action. They're a small
@@ -261,7 +263,7 @@ export function SwapList({
           title="Filter by type"
           value={listingType}
           onChange={setListingType}
-          options={FILTER_TABS.map(({ key, label }) => ({ value: key, label }))}
+          options={filterTabs.map(({ key, label }) => ({ value: key, label }))}
         />
         <Dropdown
           style={[common.flex1, stylesProp?.sortSelect]}

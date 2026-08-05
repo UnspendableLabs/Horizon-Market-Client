@@ -26,6 +26,37 @@ export const FILTER_TABS: Array<{ key: SwapListingType | null; label: string }> 
     { key: "kontor", label: "Kontor" },
   ];
 
+/**
+ * Which network-bound protocols this app shows AT ALL — rows in the wallet,
+ * groups in the sell picker, tabs in the swap filter. Derived from the client
+ * configuration ("configured to read it" ⇒ visible), never a per-page choice:
+ * ZELD is visible where a ZeldHash API resolves (mainnet by default), Kontor
+ * where `kontorNetwork` is set (signet today — flipping Kontor on for mainnet
+ * is just configuring it there). Counterparty and ordinals are always shown.
+ * React apps get this from `useProtocolVisibility()`.
+ */
+export interface ProtocolVisibility {
+  zeld: boolean;
+  kontor: boolean;
+}
+
+/**
+ * {@link FILTER_TABS} restricted to the protocols this app shows (see
+ * {@link ProtocolVisibility}). React apps should prefer `useSwapFilterTabs()`,
+ * which derives the visibility from the provider config.
+ */
+export function visibleFilterTabs(
+  visibility: ProtocolVisibility,
+): Array<{ key: SwapListingType | null; label: string }> {
+  return FILTER_TABS.filter((tab) =>
+    tab.key === "zeld"
+      ? visibility.zeld
+      : tab.key === "kontor"
+        ? visibility.kontor
+        : true,
+  );
+}
+
 /** Default page size for the swap list. */
 export const DEFAULT_LIMIT = 24;
 

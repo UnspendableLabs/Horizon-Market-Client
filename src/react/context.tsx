@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import { resolveFetch } from "../api/resolveFetch.js";
 import { HorizonMarketClient } from "../client.js";
-import { DEFAULT_BASE_URL } from "../config.js";
+import { DEFAULT_BASE_URL, DEFAULT_ZELD_API_BASE_URL } from "../config.js";
 import { HDSigner, LocalSigner, type Signer } from "../crypto/signer.js";
 import { privateKeyToMnemonic } from "../crypto/mnemonic.js";
 import type { Network } from "../types/index.js";
@@ -148,6 +148,13 @@ export interface HorizonMarketContextValue {
   /** Resolved Horizon Market API origin (e.g. for the asset-image endpoint). */
   baseUrl: string;
   ordApiBaseUrl: string | undefined;
+  /**
+   * ZeldHash API base URL the client actually reads from, with the client's own
+   * resolution applied (the public mainnet API by default on mainnet; on other
+   * networks only an explicit prop). `undefined` means ZELD is not readable in
+   * this app — `useProtocolVisibility` keys off this to hide the ZELD UI.
+   */
+  zeldApiBaseUrl: string | undefined;
   /** TTL (ms) for the persistent owned-balances cache. Defaults to 1h. */
   balancesCacheTtlMs: number | undefined;
   /**
@@ -577,6 +584,13 @@ export function HorizonMarketProvider({
   const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
   const resolvedFetch = useMemo(() => resolveFetch(fetchImpl), [fetchImpl]);
 
+  // Mirror of the client's zeldApiBaseUrl resolution (default only on mainnet),
+  // so hooks can tell "ZELD isn't read here" apart from "ZELD balance is 0"
+  // without reaching into the client's private config.
+  const resolvedZeldApiBaseUrl =
+    zeldApiBaseUrl ??
+    (network === "mainnet" ? DEFAULT_ZELD_API_BASE_URL : undefined);
+
   const value = useMemo<HorizonMarketContextValue>(
     () => ({
       client: authedClient ?? anonClient,
@@ -600,13 +614,14 @@ export function HorizonMarketProvider({
       kontorNetwork,
       baseUrl: baseUrl ?? DEFAULT_BASE_URL,
       ordApiBaseUrl,
+      zeldApiBaseUrl: resolvedZeldApiBaseUrl,
       balancesCacheTtlMs,
       balancesRefreshKey,
       refreshBalances,
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, initializeWithSigner, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, initializeWithSigner, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, resolvedZeldApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
   );
 
   return (

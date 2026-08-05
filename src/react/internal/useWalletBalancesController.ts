@@ -9,6 +9,7 @@ import {
   type TokenSymbol,
   type WalletTokenSummary,
 } from "./useWalletTokenSummary.js";
+import { useProtocolVisibility } from "./useProtocolVisibility.js";
 
 /** The per-balance action affordances. */
 export type ActionKind = "deposit" | "withdraw" | "sell";
@@ -234,6 +235,7 @@ export function useWalletBalancesController(
   const { btcSats, others, sources } = summary;
   const { btcUsd } = usePrices();
   const { addresses } = useHorizonMarket();
+  const protocols = useProtocolVisibility();
 
   const [deposit, setDeposit] = useState<DepositInfo | null>(null);
   const [sellAsset, setSellAsset] = useState<AssetOption | null>(null);
@@ -260,31 +262,38 @@ export function useWalletBalancesController(
     setWithdraw(target);
   };
 
+  // The Kontor tab only exists where Kontor is configured at all — on other
+  // networks its "signet only" notice would be a permanent dead tab, unlike
+  // ordinals, whose unread state is an app choice worth surfacing.
   const otherGroups = useMemo<OtherGroup[]>(
     () => [
       {
         label: "Counterparty",
-        depositType: "counterparty",
+        depositType: "counterparty" as const,
         depositSymbol: "Counterparty assets",
         options: others.filter((a) => a.type === "counterparty"),
         state: sources.counterparty,
       },
-      {
-        label: "Kontor",
-        depositType: "kontor-nft",
-        depositSymbol: "Kontor NFTs",
-        options: others.filter((a) => a.type === "kontor-nft"),
-        state: sources.kontor,
-      },
+      ...(protocols.kontor
+        ? [
+            {
+              label: "Kontor",
+              depositType: "kontor-nft" as const,
+              depositSymbol: "Kontor NFTs",
+              options: others.filter((a) => a.type === "kontor-nft"),
+              state: sources.kontor,
+            },
+          ]
+        : []),
       {
         label: "Ordinals",
-        depositType: "ordinal",
+        depositType: "ordinal" as const,
         depositSymbol: "Ordinals",
         options: others.filter((a) => a.type === "ordinal"),
         state: sources.ordinals,
       },
     ],
-    [others, sources],
+    [others, sources, protocols.kontor],
   );
 
   // Active other-holdings tab: user choice, else the first group that has any

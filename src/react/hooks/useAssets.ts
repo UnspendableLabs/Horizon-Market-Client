@@ -206,6 +206,15 @@ const KONTOR_UNAVAILABLE_MESSAGE: Record<KontorUnavailableReason, string> = {
 const ORDINALS_UNREAD_MESSAGE =
   "This app isn't configured to read ordinals, so your inscriptions weren't looked up.";
 
+/**
+ * Wording for a ZELD source with no API to read from (ZELD runs on mainnet;
+ * other networks need an explicit `zeldApiBaseUrl`). Without this, an
+ * unconfigured ZELD reported `ok` with an empty list — a confident "0" about a
+ * balance that was never looked up.
+ */
+const ZELD_UNREAD_MESSAGE =
+  "ZELD isn't available on this network, so your ZELD balance wasn't looked up.";
+
 type GroupErrors = UseAssetsResult["errors"];
 
 const NO_ERRORS: GroupErrors = {
@@ -258,6 +267,7 @@ export function useAssets(): UseAssetsResult {
     network,
     kontorNetwork,
     ordApiBaseUrl,
+    zeldApiBaseUrl,
     fetch,
     balancesCacheTtlMs,
     balancesRefreshKey,
@@ -547,6 +557,9 @@ export function useAssets(): UseAssetsResult {
       if (k === "ordinals" && !ordApiBaseUrl) {
         return { status: "unread", reason: ORDINALS_UNREAD_MESSAGE };
       }
+      if (k === "zeld" && !zeldApiBaseUrl) {
+        return { status: "unread", reason: ZELD_UNREAD_MESSAGE };
+      }
       if (k === "kontor" && kontorNetwork !== "signet") {
         return { status: "unread", reason: KONTOR_UNAVAILABLE_MESSAGE.network };
       }
@@ -561,7 +574,7 @@ export function useAssets(): UseAssetsResult {
       ordinals: stateOf("ordinals"),
       kontor: stateOf("kontor"),
     };
-  }, [errors, loadingSources, ordApiBaseUrl, kontorNetwork]);
+  }, [errors, loadingSources, ordApiBaseUrl, zeldApiBaseUrl, kontorNetwork]);
 
   const allAssets = flatten(groups);
   // A failed source contributes no holdings, so an all-empty result with an
