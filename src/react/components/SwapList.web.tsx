@@ -10,7 +10,7 @@ import {
 } from "../hooks/useSwapList.js";
 import { cx } from "../internal/format.js";
 import { useIsPhone } from "../internal/useMediaQuery.web.js";
-import { FILTER_TABS } from "../internal/swapListConstants.js";
+import { useSwapFilterTabs } from "../internal/useProtocolVisibility.js";
 import {
   SwapListItem,
   type SwapListItemClassNames,
@@ -155,6 +155,7 @@ export function SwapList({
     // `includePendingOrders={false}`.
   } = useSwapList({ includePendingOrders: true, ...hookOptions });
 
+  const filterTabs = useSwapFilterTabs();
   const isPhone = useIsPhone();
   const root: CSSProperties = { ...rootStyle, ...style };
 
@@ -218,7 +219,7 @@ export function SwapList({
             }
             style={{ ...ws.input, flex: 1, minWidth: 0 }}
           >
-            {FILTER_TABS.map(({ key, label }) => (
+            {filterTabs.map(({ key, label }) => (
               <option key={key ?? "all"} value={key ?? "all"}>
                 {label}
               </option>
@@ -237,7 +238,7 @@ export function SwapList({
             className={classNames?.filterTabs}
             style={{ ...ws.actionsRow, alignItems: "flex-end", flexWrap: "wrap" as const }}
           >
-            {FILTER_TABS.map(({ key, label }) => (
+            {filterTabs.map(({ key, label }) => (
               <button
                 key={key ?? "all"}
                 type="button"

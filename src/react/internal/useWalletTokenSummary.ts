@@ -7,8 +7,13 @@ import {
 } from "../hooks/useAssets.js";
 import { useBtcBalance } from "../hooks/useBtcBalance.js";
 import { formatAmount } from "./format.js";
+import { useProtocolVisibility } from "./useProtocolVisibility.js";
 
-/** The four headline balances every wallet always shows, in display order. */
+/**
+ * The headline balances, in display order. BTC and XCP always show; KOR and
+ * ZELD only where their protocol is configured (see `useProtocolVisibility`) —
+ * a network the protocol doesn't run on gets no row at all, not a dead "0".
+ */
 export type TokenSymbol = "BTC" | "XCP" | "KOR" | "ZELD";
 
 export interface TokenLine {
@@ -63,11 +68,13 @@ export interface WalletTokenSummary {
   /** Raw BTC balance in sats (for USD conversion), or null while loading. */
   btcSats: bigint | null;
   /**
-   * XCP, KOR, ZELD — always present, "0" when the wallet holds none and a null
-   * `amount` + set `error` when that token's source could not be read.
+   * XCP, plus KOR / ZELD where their protocol is configured — "0" when the
+   * wallet holds none and a null `amount` + set `error` when that token's
+   * source could not be read. A protocol this app isn't configured for
+   * contributes NO line (see {@link TokenSymbol}).
    */
   primary: TokenLine[];
-  /** BTC + XCP + KOR + ZELD in display order (for the compact grid). */
+  /** BTC + {@link WalletTokenSummary.primary} in display order (compact grid). */
   tokens: TokenLine[];
   /** Every other holding: non-XCP Counterparty assets, Kontor NFTs, ordinals. */
   others: AssetOption[];
@@ -115,9 +122,10 @@ function largestBalance<T extends { balance: bigint }>(options: T[]): T | null {
 }
 
 /**
- * Aggregates the connected wallet's balances into the four headline tokens
- * (BTC/XCP/KOR/ZELD, always shown) plus every other holding — sharing one fetch
- * between the wallet dropdown summary and the full wallet page.
+ * Aggregates the connected wallet's balances into the headline tokens (BTC and
+ * XCP always; KOR / ZELD where their protocol is configured) plus every other
+ * holding — sharing one fetch between the wallet dropdown summary and the full
+ * wallet page.
  *
  * Platform-neutral (no DOM): consumed by both the web and native renderers of
  * `WalletBalances` / `WalletBalanceSummary`.
@@ -126,6 +134,7 @@ export function useWalletTokenSummary(): WalletTokenSummary {
   const { addresses } = useHorizonMarket();
   const assets = useAssets();
   const btc = useBtcBalance();
+  const protocols = useProtocolVisibility();
 
   const address = addresses?.p2wpkh ?? "";
 
@@ -198,7 +207,14 @@ export function useWalletTokenSummary(): WalletTokenSummary {
       sellAsset: largestBalance(zeldOptions),
     };
 
-    const primary = [xcpLine, korLine, zeldLine];
+    // A protocol this app isn't configured for gets no row at all — a "0" (or
+    // even a dash) for a token that can't exist on this network reads as a
+    // balance, and the row would invite deposits nothing can read back.
+    const primary = [
+      xcpLine,
+      ...(protocols.kontor ? [korLine] : []),
+      ...(protocols.zeld ? [zeldLine] : []),
+    ];
     const others: AssetOption[] = [
       ...assets.counterpartyAssets.filter((a) => !isXcp(a)),
       ...assets.kontorNfts,
@@ -221,5 +237,5 @@ export function useWalletTokenSummary(): WalletTokenSummary {
         btc.refresh();
       },
     };
-  }, [assets, btc, address]);
+  }, [assets, btc, address, protocols]);
 }

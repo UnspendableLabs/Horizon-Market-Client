@@ -265,6 +265,9 @@ describe("useSellOrderForm", () => {
   // ─── asset groups ─────────────────────────────────────────────────────────
 
   it("groups + orders sellable assets, dropping empty groups", () => {
+    // Kontor configured so its group is visible at all (see the hidden-protocol
+    // test below); ZELD is visible via makeCtx's resolved mainnet default.
+    ctxRef.current = makeCtx({ kontorNetwork: "signet" });
     assetsRef.current = makeAssets({
       counterpartyAssets: [PEPE, xcp(50n)],
       zeldAssets: [ZELD_OPT],
@@ -289,6 +292,26 @@ describe("useSellOrderForm", () => {
   it("returns no asset groups when nothing is owned", () => {
     const { result } = renderHook(() => useSellOrderForm());
     expect(result.current.assetGroups).toEqual([]);
+  });
+
+  it("hides a protocol's group when it isn't configured, even with cached options", () => {
+    // Default ctx: no kontorNetwork; drop ZELD's API too. Options for both may
+    // still be present (e.g. seeded from a stale balances cache) — the groups
+    // must not show regardless.
+    ctxRef.current = makeCtx({ zeldApiBaseUrl: undefined });
+    assetsRef.current = makeAssets({
+      counterpartyAssets: [xcp(50n)],
+      zeldAssets: [ZELD_OPT],
+      korAssets: [KOR_OPT],
+      kontorNfts: [NFT],
+      ordinals: [ORD],
+    });
+
+    const { result } = renderHook(() => useSellOrderForm());
+    expect(result.current.assetGroups.map((g) => g.label)).toEqual([
+      "Counterparty",
+      "Ordinals",
+    ]);
   });
 
   // ─── selection reconciliation effect ──────────────────────────────────────

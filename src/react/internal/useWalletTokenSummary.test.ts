@@ -82,7 +82,10 @@ const ORD: AssetOption = {
 
 describe("useWalletTokenSummary", () => {
   beforeEach(() => {
-    ctxRef.current = makeCtx();
+    // Kontor configured (and ZELD via makeCtx's mainnet default) so the full
+    // BTC/XCP/KOR/ZELD headline set is exercised; the visibility tests at the
+    // bottom cover the rows disappearing with their protocol's config.
+    ctxRef.current = makeCtx({ kontorNetwork: "signet" });
     assetsRef.current = makeAssets();
     btcRef.current = makeBtc();
   });
@@ -257,6 +260,32 @@ describe("useWalletTokenSummary", () => {
     expect(tokenAmountTitle({ ...line, amount: "0", error: null })).toBe(
       "0 XCP",
     );
+  });
+
+  it("drops the KOR row when Kontor isn't configured", () => {
+    // A mainnet app today: no kontorNetwork → no KOR headline row (not a "0").
+    ctxRef.current = makeCtx({ kontorNetwork: undefined });
+
+    const { result } = renderHook(() => useWalletTokenSummary());
+
+    expect(result.current.primary.map((l) => l.symbol)).toEqual(["XCP", "ZELD"]);
+    expect(result.current.tokens.map((l) => l.symbol)).toEqual([
+      "BTC",
+      "XCP",
+      "ZELD",
+    ]);
+  });
+
+  it("drops the ZELD row when no ZeldHash API resolves", () => {
+    // A signet app today: no zeldApiBaseUrl → no ZELD headline row.
+    ctxRef.current = makeCtx({
+      kontorNetwork: "signet",
+      zeldApiBaseUrl: undefined,
+    });
+
+    const { result } = renderHook(() => useWalletTokenSummary());
+
+    expect(result.current.primary.map((l) => l.symbol)).toEqual(["XCP", "KOR"]);
   });
 
   it("refresh() re-fetches both BTC and owned balances", () => {

@@ -79,7 +79,9 @@ function makeSummary(o: Partial<WalletTokenSummary> = {}): WalletTokenSummary {
 
 describe("useWalletBalancesController", () => {
   beforeEach(() => {
-    ctxRef.current = makeCtx();
+    // Kontor configured so the full Counterparty/Kontor/Ordinals tab set is
+    // exercised; the visibility test below covers the tab disappearing with it.
+    ctxRef.current = makeCtx({ kontorNetwork: "signet" });
     summaryRef.current = makeSummary();
     pricesRef.current = { btcUsd: null, loading: false };
   });
@@ -155,6 +157,20 @@ describe("useWalletBalancesController", () => {
     expect(result.current.activeLabel).toBe("Counterparty");
     expect(byLabel.Counterparty.state).toEqual({ status: "ok" });
     expect(byLabel.Ordinals.state).toEqual({ status: "loading" });
+  });
+
+  it("drops the Kontor tab entirely when Kontor isn't configured", () => {
+    // A mainnet app today: the tab would only ever show its "signet only"
+    // notice, so it doesn't exist at all.
+    ctxRef.current = makeCtx({ kontorNetwork: undefined });
+    summaryRef.current = makeSummary({ others: [PEPE, NFT, ORD] });
+
+    const { result } = renderHook(() => useWalletBalancesController());
+
+    expect(result.current.otherGroups.map((g) => g.label)).toEqual([
+      "Counterparty",
+      "Ordinals",
+    ]);
   });
 
   it("only lets an `ok` tab claim the wallet holds nothing", () => {

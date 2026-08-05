@@ -3,6 +3,7 @@ import type { SwapListingType } from "../hooks/useSwapList.js";
 import {
   FILTER_TABS,
   MY_SWAPS_MERGE_FETCH_LIMIT,
+  visibleFilterTabs,
 } from "./swapListConstants.js";
 
 describe("FILTER_TABS", () => {
@@ -18,6 +19,19 @@ describe("FILTER_TABS", () => {
       { key: "zeld", label: "ZELD" },
       { key: "kontor", label: "Kontor" },
     ]);
+  });
+
+  it("filters to the visible protocols via visibleFilterTabs", () => {
+    // A mainnet app today: ZELD visible, Kontor not.
+    expect(
+      visibleFilterTabs({ zeld: true, kontor: false }).map((t) => t.key),
+    ).toEqual([null, "counterparty", "ordinal", "zeld"]);
+    // A signet app today: the reverse.
+    expect(
+      visibleFilterTabs({ zeld: false, kontor: true }).map((t) => t.key),
+    ).toEqual([null, "counterparty", "ordinal", "kontor"]);
+    // Everything configured (e.g. once Kontor reaches mainnet): all tabs.
+    expect(visibleFilterTabs({ zeld: true, kontor: true })).toEqual(FILTER_TABS);
   });
 
   it("uses only null or valid SwapListingType keys", () => {

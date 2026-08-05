@@ -2,6 +2,7 @@
 // excluded from coverage (see vitest.config.ts) and never bundled by tsup
 // (no production entry imports it). NOT part of the public API.
 import { vi } from "vitest";
+import { DEFAULT_ZELD_API_BASE_URL } from "../config.js";
 import type { HorizonMarketContextValue } from "./context.js";
 import { defaultTheme } from "./theme.js";
 
@@ -62,6 +63,10 @@ export function makeCtx(
     kontorNetwork: undefined,
     baseUrl: "https://horizon.market",
     ordApiBaseUrl: undefined,
+    // The provider hands hooks the RESOLVED value (mainnet default applied), so
+    // ZELD is visible under the default ctx; Kontor is not (kontorNetwork
+    // unset). Tests that exercise the Kontor-visible surfaces override it.
+    zeldApiBaseUrl: DEFAULT_ZELD_API_BASE_URL,
     balancesCacheTtlMs: undefined,
     balancesRefreshKey: 0,
     refreshBalances: vi.fn(),
