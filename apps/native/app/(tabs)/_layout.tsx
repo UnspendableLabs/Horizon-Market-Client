@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
 import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
 import type { AssetOption } from "@unspendablelabs/horizon-market-client/react";
+import { Header } from "../../components/Header.js";
 import { SwipeTabs } from "../../components/SwipeTabs.js";
 import { TabBar } from "../../components/TabBar.js";
 import { colors } from "../../lib/theme.js";
@@ -53,6 +54,10 @@ export default function TabsLayout() {
   return (
     <SellIntentProvider value={sellIntent}>
       <BuyRefreshProvider value={buyRefresh}>
+      {/* Fixed above the pager (a sibling, not a scene child): the header keeps
+          its place while scenes scroll vertically or swipe horizontally. The
+          navigator's own container is flex:1, so it takes the remaining space. */}
+      <Header />
       <SwipeTabs
         // Pin the tab bar to the bottom and render our custom one, so the pager
         // keeps the classic bottom-tab look while swiping horizontally between
