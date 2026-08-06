@@ -267,6 +267,8 @@ export async function listSwaps(
 ): Promise<ListSwapsResult> {
   const qs = new URLSearchParams();
   if (params.assetName !== undefined) qs.set("asset_name", params.assetName);
+  if (params.kontorNftId !== undefined)
+    qs.set("kontor_nft_id", params.kontorNftId);
   if (params.sellerAddress !== undefined)
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)

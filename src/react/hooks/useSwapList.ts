@@ -42,6 +42,20 @@ export type {
 } from "../internal/swapListConstants.js";
 
 export interface UseSwapListOptions {
+  /**
+   * Fixed exact asset-name filter for the whole feed (e.g. a Counterparty
+   * asset, or an inscription id — ordinal listings store it as their asset
+   * name). Unlike the `default*` options there is no setter: it narrows every
+   * fetch for the hook's lifetime (URL-driven views remount to change it).
+   * Facet counts do NOT honor it — leave `includeFacets` off when set.
+   */
+  assetName?: string;
+  /**
+   * Fixed exact Kontor-NFT-id filter, mirroring {@link assetName} for Kontor
+   * listings (which carry no asset name). Same caveats: no setter, and facet
+   * counts do not honor it.
+   */
+  kontorNftId?: string;
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
@@ -196,6 +210,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const { client, addresses, kontorNetwork, refreshBalances } =
     useHorizonMarket();
   const {
+    assetName,
+    kontorNftId,
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
@@ -387,6 +403,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
     const sort = SORT_MAP[sortOption];
     const filters = {
+      assetName,
+      kontorNftId,
       listingType: listingType ?? undefined,
       priceMin: priceMin ?? undefined,
       priceMax: priceMax ?? undefined,
@@ -489,6 +507,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       .finally(finish);
   }, [
     client,
+    assetName,
+    kontorNftId,
     listingType,
     sortOption,
     showMySwaps,

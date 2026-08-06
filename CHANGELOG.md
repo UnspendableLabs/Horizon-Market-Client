@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-08-06
+
+**The swap feed can now be pinned to a single asset.** An asset- or NFT-detail page needs "the listings for *this* one" — but `useSwapList` always browsed the whole marketplace, and for Kontor there was no way to ask at all: Kontor listings carry no asset name, and `listSwaps` had no parameter naming the escrowed NFT. Both gaps close here, so a URL-driven detail view (horizon.market's `/nfts/[nft_id]` page) can mount the same hook, the same grid, the same buy path — just narrowed to one asset.
+
+### Added
+
+- **`assetName` / `kontorNftId` options on `useSwapList`** — fixed exact filters threaded into every feed fetch for the hook's lifetime. Unlike the `default*` options there is no setter: a URL-driven view remounts to change them, and every user-facing control (sort, Sold, My swaps, pagination) keeps working *within* the pinned asset. `assetName` matches Counterparty assets and ordinal inscriptions (ordinal listings store the inscription id as their asset name); `kontorNftId` is its Kontor counterpart. Facet counts do **not** honor these filters — leave `includeFacets` off when pinning.
+- **`kontorNftId` on `ListSwapsParams` / `client.listSwaps()`** — sent as `kontor_nft_id`, matching only the swap escrowing that NFT. `assetName` already existed here; this fills the Kontor half.
+- The example mobile app (`apps/native`) shows a Horizon-branded header above the tabbed screens.
+
 ## [0.2.9] - 2026-08-05
 
 **A protocol that isn't configured no longer renders as if it were merely empty.** The packaged surfaces showed every protocol everywhere: the wallet printed a KOR row on mainnet (where Kontor doesn't exist yet) and a ZELD row on signet (where ZELD has no API), and the swap filter offered a Kontor tab that could never return listings. The rule is now *configured ⇒ visible*: ZELD shows wherever a ZeldHash API resolves (mainnet by default, or an explicit `zeldApiBaseUrl`), Kontor wherever `kontorNetwork` is set — so lighting Kontor up on mainnet later is just configuring it there, no UI change.
@@ -232,6 +242,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[0.2.10]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.9...v0.2.10
+[0.2.9]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.5...v0.2.6
