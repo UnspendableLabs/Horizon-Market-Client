@@ -442,6 +442,41 @@ describe("useSwapList — sold", () => {
   });
 });
 
+describe("useSwapList — fixed asset filters", () => {
+  it("threads a fixed assetName into every feed fetch", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList({ assetName: "RAREPEPE" }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ assetName: "RAREPEPE" }),
+    );
+
+    // Still applied after a filter change triggers a refetch.
+    act(() => result.current.setShowSold(true));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ assetName: "RAREPEPE", sales: true }),
+    );
+  });
+
+  it("threads a fixed kontorNftId into the feed fetch", async () => {
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "k1", listingType: "kontor" })]));
+    ctxRef.current = ctxWith(listSwaps, { kontorNetwork: "signet" });
+
+    const { result } = renderHook(() =>
+      useSwapList({ kontorNftId: "nft-123", defaultListingType: "kontor" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ kontorNftId: "nft-123", listingType: "kontor" }),
+    );
+  });
+});
+
 describe("useSwapList — kontor availability", () => {
   it("skips the query and shows nothing when kontor is unavailable", async () => {
     const listSwaps = vi.fn();

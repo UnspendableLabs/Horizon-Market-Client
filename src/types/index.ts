@@ -359,6 +359,12 @@ export interface ConfirmDelistResult {
 /** Query params for `listSwaps`. Unset booleans use server defaults. */
 export interface ListSwapsParams {
   assetName?: string;
+  /**
+   * Exact Kontor NFT id filter — only the swap escrowing that NFT can match.
+   * Kontor listings carry no `assetName`, so this is the only way to narrow
+   * the feed to a single Kontor NFT.
+   */
+  kontorNftId?: string;
   search?: string;
   sellerAddress?: string;
   buyerAddress?: string;

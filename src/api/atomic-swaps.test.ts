@@ -300,6 +300,17 @@ describe("listSwaps", () => {
     expect(url).toContain("pending_address=bc1qme");
   });
 
+  it("sends asset_name and kontor_nft_id query params", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await listSwaps(http, { assetName: "RAREPEPE", kontorNftId: "nft-123" });
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("asset_name=RAREPEPE");
+    expect(url).toContain("kontor_nft_id=nft-123");
+  });
+
   it("sends price_min / price_max / collection query params", async () => {
     const fetchFn = makeFetch(200, {
       data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
