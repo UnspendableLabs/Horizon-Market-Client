@@ -195,15 +195,6 @@ export function trackProfileAvatarChanged(): void {
   void track("profile_avatar_updated", withPlatform(SURFACE.profile));
 }
 
-// Same event name the web profile page's server-side toggle records, so the two
-// surfaces land in one chart.
-export function trackProfileWalletVisibilityChanged(isPublic: boolean): void {
-  void track(
-    "toggle_wallet_public",
-    withPlatform(SURFACE.profile, { is_public: isPublic }),
-  );
-}
-
 // ---- Screen views -----------------------------------------------------
 
 export function trackScreenView(path: string): void {

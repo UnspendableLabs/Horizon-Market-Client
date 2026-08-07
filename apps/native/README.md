@@ -5,13 +5,14 @@ An Expo / React Native app demonstrating the
 passwordless), a swap list, a sell flow, and a runtime mainnet ⇄ signet switch.
 
 The user icon at the right of the header opens the **Profile** screen (a
-root-stack route, not a tab): avatar, username with live availability, bio,
-public/private visibility, points and credits, and per-wallet visibility — all
-on the SDK's `useProfile()` / `useProfileWallets()` hooks. It needs a Horizon
-Market session, which the provider mints from the connected wallet; with no
-wallet it shows the same login gate as the Sell and Wallet tabs. Picking an
-avatar uses `expo-image-picker`, a native module — after pulling this change,
-rebuild (`npm run android` / `npm run ios`) rather than just reloading Metro.
+root-stack route, not a tab, but it keeps the header and tab bar so it behaves
+like any other screen): avatar, username with live availability, bio,
+public/private visibility, points and credits — on the SDK's `useProfile()`
+hook. It needs a Horizon Market session, which the provider mints from the
+connected wallet; with no wallet it shows the same login gate as the Sell and
+Wallet tabs. Picking an avatar uses `expo-image-picker`, a native module — after
+pulling this change, rebuild (`npm run android` / `npm run ios`) rather than
+just reloading Metro.
 
 ## Local development
 

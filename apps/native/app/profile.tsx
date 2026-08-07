@@ -10,20 +10,19 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import {
   isPlaceholderUsername,
   useHorizonMarket,
   useProfile,
-  useProfileWallets,
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../components/ConnectPrompt.js";
+import { Header } from "../components/Header.js";
+import { StandaloneTabBar } from "../components/TabBar.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import {
   trackProfileAvatarChanged,
   trackProfileSaved,
-  trackProfileWalletVisibilityChanged,
 } from "../lib/analytics/events.js";
 
 /** Same shape the API enforces: 1–30 lowercase letters, digits, `_`, `-`, `,`. */
@@ -34,15 +33,12 @@ type UsernameCheck =
   | { state: "idle" | "checking" | "available" | "taken" }
   | { state: "invalid"; reason: string };
 
-function shortAddress(address: string): string {
-  return address.length > 18
-    ? `${address.slice(0, 10)}…${address.slice(-6)}`
-    : address;
-}
-
 /**
  * Profile screen — reached from the user icon in the {@link Header}, not from a
- * tab: it is a root-stack route that pushes over the tab pager and pops back.
+ * tab: it is a root-stack route that pushes over the tab pager. It still wears
+ * the full app chrome (the same {@link Header} above, a {@link StandaloneTabBar}
+ * below), so it reads as an ordinary screen rather than a modal — tapping any
+ * tab takes the user straight there, which is why there's no back affordance.
  *
  * Everything it reads is session-gated (`/api/profiles/me/*`), so it needs BOTH
  * a connected wallet and the Horizon Market session the provider mints from it.
@@ -51,34 +47,26 @@ function shortAddress(address: string): string {
  * simply is not readable until that lands.
  */
 export default function ProfileScreen() {
-  const router = useRouter();
   const { addresses } = useHorizonMarket();
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.topBar}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.navigate("/"))}
-          style={styles.back}
-          hitSlop={spacing.sm}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Text style={styles.backText}>‹</Text>
-        </Pressable>
+    <View style={styles.screen}>
+      <Header />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Profile</Text>
-      </View>
 
-      {addresses ? (
-        <ProfileEditor />
-      ) : (
-        <ConnectPrompt message="Connect your wallet to manage your Horizon Market profile." />
-      )}
-    </ScrollView>
+        {addresses ? (
+          <ProfileEditor />
+        ) : (
+          <ConnectPrompt message="Connect your wallet to manage your Horizon Market profile." />
+        )}
+      </ScrollView>
+      <StandaloneTabBar />
+    </View>
   );
 }
 
@@ -395,17 +383,12 @@ function ProfileEditor() {
             value={String(profile.credits + profile.freeCredits)}
           />
           <View style={styles.divider} />
+          {/* No X row: linking it is a web-only OAuth flow (server actions on
+              the Auth.js cookie, with a fixed web callback URL), so all this
+              screen could ever show is a handle it can't change. */}
           <Row label="Email" value={profile.email ?? "Not linked"} />
-          <View style={styles.divider} />
-          {/* X linking is a web-only OAuth flow, so this is read-only here. */}
-          <Row
-            label="X (Twitter)"
-            value={profile.xUsername ? `@${profile.xUsername}` : "Not linked"}
-          />
         </View>
       </View>
-
-      <WalletsSection />
     </View>
   );
 }
@@ -421,80 +404,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * Linked wallets and which of them are public. Linking happens by signing in
- * with a wallet, so this only flips visibility — and only a public address's
- * listings and curated assets show up on the public profile.
- */
-function WalletsSection() {
-  const { wallets, loading, error, setVisibility, updating } =
-    useProfileWallets();
-
-  if (loading && wallets.length === 0) return null;
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>Linked wallets</Text>
-      {error && <Text style={styles.errorText}>{error}</Text>}
-      {wallets.length === 0 ? (
-        <Text style={styles.fieldHint}>No wallet linked to this account yet.</Text>
-      ) : (
-        <View style={styles.card}>
-          {wallets.map((wallet, index) => (
-            <View key={wallet.address}>
-              {index > 0 && <View style={styles.divider} />}
-              <View style={styles.switchRow}>
-                <View style={styles.switchText}>
-                  <Text style={styles.mono}>{shortAddress(wallet.address)}</Text>
-                  <Text style={styles.switchSub}>
-                    {wallet.isPublic
-                      ? "Listings from this address are public."
-                      : "Hidden from your public profile."}
-                  </Text>
-                </View>
-                <Switch
-                  value={wallet.isPublic}
-                  disabled={updating === wallet.address}
-                  onValueChange={(next) => {
-                    void setVisibility(wallet.address, next).then((ok) => {
-                      if (ok) trackProfileWalletVisibilityChanged(next);
-                    });
-                  }}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor={colors.foreground}
-                />
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1, backgroundColor: colors.background },
   content: {
     padding: spacing.md,
     paddingBottom: spacing.xl,
     gap: spacing.lg,
-  },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  back: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backText: {
-    fontSize: 28,
-    lineHeight: 32,
-    color: colors.foreground,
-    fontFamily: fonts.sansSemiBold,
   },
   title: {
     fontSize: 22,
@@ -591,12 +507,6 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontFamily: fonts.sansSemiBold,
   },
-  mono: {
-    fontSize: 14,
-    color: colors.foreground,
-    fontFamily: fonts.mono,
-  },
-
   switchRow: {
     flexDirection: "row",
     alignItems: "center",

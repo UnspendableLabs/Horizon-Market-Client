@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
+import { useRouter } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
@@ -100,6 +101,55 @@ const TABS: Record<string, { label: string; Icon: (p: IconProps) => ReactNode }>
   settings: { label: "Settings", Icon: GearIcon },
 };
 
+// Tab routes in bar order, with the path each one lives at. Only the standalone
+// bar needs this: inside the pager the navigator's own state supplies both.
+const TAB_ROUTES: { name: string; path: string }[] = [
+  { name: "index", path: "/" },
+  { name: "sell", path: "/sell" },
+  { name: "wallet", path: "/wallet" },
+  { name: "settings", path: "/settings" },
+];
+
+/** The bar chrome — owns the bottom safe-area inset. */
+function Bar({ children }: { children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.bar, { paddingBottom: insets.bottom || spacing.sm }]}>
+      {children}
+    </View>
+  );
+}
+
+function TabButton({
+  name,
+  focused,
+  onPress,
+}: {
+  name: string;
+  focused: boolean;
+  onPress: () => void;
+}) {
+  const config = TABS[name];
+  // Ignore any route without a tab config (defensive — every (tabs) screen has
+  // one today).
+  if (!config) return null;
+
+  const color = focused ? colors.primary : colors.muted;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={styles.tab}
+      accessibilityRole="button"
+      accessibilityState={{ selected: focused }}
+      accessibilityLabel={config.label}
+    >
+      <config.Icon color={color} />
+      <Text style={[styles.label, { color }]}>{config.label}</Text>
+    </Pressable>
+  );
+}
+
 /**
  * Fixed bottom navigation bar (classic mobile-app tab bar) rendered by the
  * {@link SwipeTabs} (Material top-tabs) navigator via its `tabBar` prop, pinned to
@@ -110,18 +160,10 @@ const TABS: Record<string, { label: string; Icon: (p: IconProps) => ReactNode }>
  * always reflects the visible page — the bar stays in sync while the user swipes.
  */
 export function TabBar({ state, navigation }: MaterialTopTabBarProps) {
-  const insets = useSafeAreaInsets();
-
   return (
-    <View style={[styles.bar, { paddingBottom: insets.bottom || spacing.sm }]}>
+    <Bar>
       {state.routes.map((route, index) => {
-        const config = TABS[route.name];
-        // Ignore any route without a tab config (defensive — every (tabs) screen
-        // has one today).
-        if (!config) return null;
-
         const focused = state.index === index;
-        const color = focused ? colors.primary : colors.muted;
 
         const onPress = () => {
           const event = navigation.emit({
@@ -135,20 +177,40 @@ export function TabBar({ state, navigation }: MaterialTopTabBarProps) {
         };
 
         return (
-          <Pressable
+          <TabButton
             key={route.key}
+            name={route.name}
+            focused={focused}
             onPress={onPress}
-            style={styles.tab}
-            accessibilityRole="button"
-            accessibilityState={{ selected: focused }}
-            accessibilityLabel={config.label}
-          >
-            <config.Icon color={color} />
-            <Text style={[styles.label, { color }]}>{config.label}</Text>
-          </Pressable>
+          />
         );
       })}
-    </View>
+    </Bar>
+  );
+}
+
+/**
+ * The same bar for screens rendered OUTSIDE the tab pager — root-stack routes
+ * like /profile, which keep the app chrome (header + tab bar) but aren't a tab
+ * themselves. There's no navigator state to read here, so the routes come from
+ * {@link TAB_ROUTES} and taps go through the router: navigating to a tab path
+ * pops this screen and lands on that tab. No tab is focused, since the visible
+ * screen is none of them.
+ */
+export function StandaloneTabBar() {
+  const router = useRouter();
+
+  return (
+    <Bar>
+      {TAB_ROUTES.map((route) => (
+        <TabButton
+          key={route.name}
+          name={route.name}
+          focused={false}
+          onPress={() => router.navigate(route.path)}
+        />
+      ))}
+    </Bar>
   );
 }
 
