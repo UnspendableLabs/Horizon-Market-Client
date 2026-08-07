@@ -179,6 +179,31 @@ export type {
   WalletTokenSignIn,
 } from "./api/auth.js";
 
+// Profiles (`/api/profiles/*`) — the account's own profile (session-gated) and
+// the public read surface. `isPlaceholderUsername` tells the random UUID a fresh
+// account is created with apart from a username the user actually picked;
+// `publicAvatarUrl` builds a public avatar URL without a round-trip (the
+// client's own methods carry the configured origin).
+export { isPlaceholderUsername, publicAvatarUrl } from "./api/profiles.js";
+export type {
+  MyProfile,
+  PublicProfile,
+  UpdateMyProfileParams,
+  UsernameAvailability,
+  ProfileWallet,
+  WalletVisibility,
+  ProfileAsset,
+  ProfileAssetPage,
+  ProfileSwapPage,
+  ProfilePageParams,
+  PointsSummary,
+  RewardAction,
+  RewardActionStatus,
+  FollowState,
+  AvatarUpload,
+  AvatarUploadResult,
+} from "./api/profiles.js";
+
 // Manual sell workflow helper (quote → sign → submit)
 export {
   signAndFinalizeSellPrep,

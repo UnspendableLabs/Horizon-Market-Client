@@ -15,6 +15,7 @@ export const SURFACE = {
   sell: "sell_native",
   wallet: "wallet_native",
   settings: "settings_native",
+  profile: "profile_native",
 } as const;
 
 function withPlatform(surface: string, props?: EventPayload): EventPayload {
@@ -172,6 +173,34 @@ export function trackNetworkSwitched(from: string, to: string): void {
   void track(
     "network_switched",
     withPlatform(SURFACE.settings, { from, to }),
+  );
+}
+
+// ---- Profile --------------------------------------------------------------
+
+export function trackProfileSaved(props: {
+  renamed: boolean;
+  isPublic: boolean;
+}): void {
+  void track(
+    "profile_updated",
+    withPlatform(SURFACE.profile, {
+      renamed: props.renamed,
+      is_public: props.isPublic,
+    }),
+  );
+}
+
+export function trackProfileAvatarChanged(): void {
+  void track("profile_avatar_updated", withPlatform(SURFACE.profile));
+}
+
+// Same event name the web profile page's server-side toggle records, so the two
+// surfaces land in one chart.
+export function trackProfileWalletVisibilityChanged(isPublic: boolean): void {
+  void track(
+    "toggle_wallet_public",
+    withPlatform(SURFACE.profile, { is_public: isPublic }),
   );
 }
 

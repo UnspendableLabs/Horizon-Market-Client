@@ -24,6 +24,8 @@ export {
   WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
   useSwapList,
+  useProfile,
+  useProfileWallets,
   useKontorFaucet,
   usePrices,
   useFeeEstimates,
@@ -72,7 +74,20 @@ export type {
   SortOption,
   UseSwapListOptions,
   UseSwapListResult,
+  UseProfileResult,
+  UseProfileWalletsResult,
 } from "./hooks/index.js";
+
+// The profile payloads those two hooks hand back — re-exported here so an app
+// can type its own profile screen without also importing the root entry (which
+// would pull the whole client surface into a React-only bundle).
+export type {
+  MyProfile,
+  UpdateMyProfileParams,
+  ProfileWallet,
+  AvatarUpload,
+} from "../api/profiles.js";
+export { isPlaceholderUsername } from "../api/profiles.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm
 // step (cost breakdown, live fee-rate selection, fee waiver, and the Kontor
