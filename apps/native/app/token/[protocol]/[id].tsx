@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -29,6 +28,10 @@ import type { KontorAssetKind } from "@unspendablelabs/horizon-market-client";
 import { Header } from "../../../components/Header.js";
 import { StandaloneTabBar } from "../../../components/TabBar.js";
 import { TokenChart } from "../../../components/TokenChart.js";
+import {
+  TokenImage,
+  tokenHasBrandMark,
+} from "../../../components/TokenImage.js";
 import { TokenValueRow } from "../../../components/TokenValueView.js";
 import { getPrivateKey } from "../../../lib/web3auth.js";
 import { colors, fonts, radii, spacing } from "../../../lib/theme.js";
@@ -62,8 +65,11 @@ import { trackTokenViewed } from "../../../lib/analytics/events.js";
  * screen: tapping any tab takes the user straight there.
  */
 
-/** Section tabs, in the order the API lists them, plus Offers which is always on. */
-type Tab = "offers" | TokenSection;
+/**
+ * Section tabs, in the order the API lists them, plus the two that are always
+ * on: Info (everything the payload describes about the token itself) and Offers.
+ */
+type Tab = "info" | "offers" | TokenSection;
 
 const SECTION_LABELS: Record<TokenSection, string> = {
   chart: "Chart",
@@ -115,8 +121,14 @@ export default function TokenScreen() {
 
   // Fires once the payload lands rather than on mount, so the event carries the
   // protocol — the bare pageview already covers "someone opened a token screen".
+  // Keyed on the token's identity, not the payload object: a `refresh` hands
+  // back a new object for the same token, and re-emitting there would count one
+  // view twice.
+  const reportedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (token) trackTokenViewed({ protocol: token.protocol, from });
+    if (!token || reportedRef.current === token.canonicalId) return;
+    reportedRef.current = token.canonicalId;
+    trackTokenViewed({ protocol: token.protocol, from });
   }, [token, from]);
 
   return (
@@ -157,11 +169,85 @@ function TokenBody({ token }: { token: TokenDetail }) {
   // Sections come from the payload — the tab bar is built from what the server
   // says exists, minus the ones with no renderer here yet.
   const sections = token.availableSections.filter((s) => RENDERABLE.includes(s));
-  const [tab, setTab] = useState<Tab>("offers");
+  const [tab, setTab] = useState<Tab>("info");
 
   return (
     <View style={styles.sections}>
+      {/* Above the tabs: the artwork and the name, and nothing else. Everything
+          the payload says *about* the token lives in the Info tab, so the four
+          tabs sit near the top of the screen instead of below a page-length
+          preamble the reader has to scroll past to reach the offers. */}
       <Hero token={token} />
+
+      {/* Section tabs: Info and Offers are always available — every payload
+          carries stats or properties, and every token type can be listed. The
+          rest come straight from `availableSections`. */}
+      <View style={styles.tabs}>
+        <TabButton
+          label="Info"
+          active={tab === "info"}
+          onPress={() => setTab("info")}
+        />
+        <TabButton
+          label={`Offers${token.offers.count > 0 ? ` (${token.offers.count})` : ""}`}
+          active={tab === "offers"}
+          onPress={() => setTab("offers")}
+        />
+        {sections.map((section) => (
+          <TabButton
+            key={section}
+            label={SECTION_LABELS[section]}
+            active={tab === section}
+            onPress={() => setTab(section)}
+          />
+        ))}
+      </View>
+
+      {tab === "info" && <InfoSection token={token} />}
+      {tab === "offers" && <OffersSection token={token} />}
+      {tab === "chart" && <ChartSection token={token} />}
+      {tab === "activity" && <ActivitySection tokenRef={ref} />}
+    </View>
+  );
+}
+
+/**
+ * Everything the payload describes about the token itself: its description, the
+ * market tiles, the typed stat and property rows, attributes, links. The name,
+ * subtitle and tagline stay in the hero — they identify the token rather than
+ * describe it, and a tab you have to open to learn what you are looking at is
+ * no header at all.
+ */
+function InfoSection({ token }: { token: TokenDetail }) {
+  const { media } = token;
+  // Whatever `kind` says, `imageUrl` is always an actual image — an HTML or
+  // audio inscription gets a placeholder in the hero and its real payload in
+  // `contentUrl`, which is what the button below opens.
+  const richContent =
+    media.kind !== "image" && media.kind !== "none" ? media.contentUrl : null;
+  // A Counterparty description is free-form and often raw HTML; a <Text> would
+  // print the markup.
+  const description = stripHtml(token.description);
+  const hasProse = Boolean(description) || Boolean(richContent);
+
+  return (
+    <View style={styles.sections}>
+      {hasProse && (
+        <View style={styles.prose}>
+          {description && <Text style={styles.description}>{description}</Text>}
+          {richContent && (
+            <Pressable
+              onPress={() => void Linking.openURL(richContent)}
+              style={styles.secondaryButton}
+              accessibilityRole="link"
+            >
+              <Text style={styles.secondaryButtonText}>
+                Open {media.kind} content ↗
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {token.market && <MarketBlock token={token} />}
 
@@ -216,53 +302,38 @@ function TokenBody({ token }: { token: TokenDetail }) {
             ))}
           </View>
         )}
-
-      {/* Section tabs: Offers is always available (every token type can be
-          listed); the rest come straight from `availableSections`. */}
-      <View style={styles.tabs}>
-        <TabButton
-          label={`Offers${token.offers.count > 0 ? ` (${token.offers.count})` : ""}`}
-          active={tab === "offers"}
-          onPress={() => setTab("offers")}
-        />
-        {sections.map((section) => (
-          <TabButton
-            key={section}
-            label={SECTION_LABELS[section]}
-            active={tab === section}
-            onPress={() => setTab(section)}
-          />
-        ))}
-      </View>
-
-      {tab === "offers" && <OffersSection token={token} />}
-      {tab === "chart" && <ChartSection token={token} />}
-      {tab === "activity" && <ActivitySection tokenRef={ref} />}
     </View>
   );
 }
 
+/** Artwork and identity — the only thing standing above the tab bar. */
 function Hero({ token }: { token: TokenDetail }) {
   const { media } = token;
-  // Whatever `kind` says, `imageUrl` is always an actual image — an HTML or
-  // audio inscription gets a placeholder here and its real payload in
-  // `contentUrl`, which is what the button below opens.
-  const richContent =
-    media.kind !== "image" && media.kind !== "none" ? media.contentUrl : null;
-  // A Counterparty description is free-form and often raw HTML; a <Text> would
-  // print the markup.
-  const description = stripHtml(token.description);
+  const ref = { protocol: token.protocol, id: token.id };
+  // XCP is reported as placeholder-imaged but <TokenImage> draws its brand mark,
+  // so it keeps the inset every other real logo gets.
+  const bareGradient = media.imageIsPlaceholder && !tokenHasBrandMark(ref);
 
   return (
     <View style={styles.hero}>
-      <View style={styles.mediaPanel}>
-        <Image
-          source={{ uri: media.imageLargeUrl || media.imageUrl }}
-          style={[styles.media, media.imageIsPlaceholder && styles.mediaFaded]}
+      {/* The generated placeholder is a background, not artwork: it fills the
+          panel edge to edge (no inset) so it doesn't read as a small pastel
+          square floating in a dark box. */}
+      <View style={[styles.mediaPanel, bareGradient && styles.mediaPanelBare]}>
+        <TokenImage
+          uri={media.imageLargeUrl || media.imageUrl}
+          isPlaceholder={media.imageIsPlaceholder}
+          name={token.name}
+          token={ref}
+          style={styles.media}
           resizeMode="contain"
+          monogramSize={56}
         />
       </View>
 
+      {/* Subtitle and tagline stay with the name: they are identity (the
+          collection it belongs to, its one-line billing), not description —
+          which is why the long prose goes to Info and these two do not. */}
       <View style={styles.heroText}>
         <View style={styles.heroTitleRow}>
           <Text style={styles.title} numberOfLines={2}>
@@ -274,18 +345,6 @@ function Hero({ token }: { token: TokenDetail }) {
         </View>
         {token.subtitle && <Text style={styles.subtitle}>{token.subtitle}</Text>}
         {token.tagline && <Text style={styles.tagline}>{token.tagline}</Text>}
-        {description && <Text style={styles.description}>{description}</Text>}
-        {richContent && (
-          <Pressable
-            onPress={() => void Linking.openURL(richContent)}
-            style={styles.secondaryButton}
-            accessibilityRole="link"
-          >
-            <Text style={styles.secondaryButtonText}>
-              Open {media.kind} content ↗
-            </Text>
-          </Pressable>
-        )}
       </View>
     </View>
   );
@@ -379,26 +438,45 @@ function OffersSection({ token }: { token: TokenDetail }) {
   // (`offers.atomicSwapsQuery`) rather than guessing a filter here: those keys
   // are exactly the ones `GET /api/atomic-swaps` parses, so the list matches the
   // `count` above it. Facets do not honour the pin, hence `includeFacets` off.
+  //
+  // Every key it can send is forwarded — dropping one (`expired`,
+  // `exclude_pending`, `unattached`) is exactly how a list drifts away from the
+  // count rendered above it. `funded` / `delisted` / `filled` are the open-offer
+  // defaults `useSwapList` already sends.
   const query = token.offers.atomicSwapsQuery;
   const assetName = query.asset_name;
   const kontorNftId = query.kontor_nft_id;
+  // A fixed pin, not `defaultListingType`: the type is a property of the asset
+  // this feed is pinned to, so a filter control could only answer an empty list
+  // under a non-zero count. `SwapList` hides the control while it is pinned.
   const listingType = query.listing_type;
   // KOR and Kontor NFTs share one listing type, so without this the KOR page's
   // offers would also list every NFT — against a count that excluded them.
   const kontorAssetKind = query.kontor_asset_kind;
+  // Absent means "don't send it" (the server's default applies), which is not
+  // the same as sending `false` — hence the tri-state rather than a truthiness
+  // check on the string.
+  const flag = (value: string | undefined): boolean | undefined =>
+    value === undefined ? undefined : value === "true";
 
   return (
     <View style={styles.offers}>
       <SwapList
         getPrivateKey={getPrivateKey}
+        // No toolbar here. The feed is already narrowed to this token, so the
+        // Buy screen's browsing controls (type, sort, My swaps, Sold) would sit
+        // above a handful of rows that are all the same asset — the reader came
+        // for *this* token's offers, not to re-filter the market inside a tab.
+        showToolbar={false}
         {...(assetName ? { assetName } : {})}
         {...(kontorNftId ? { kontorNftId } : {})}
         {...(kontorAssetKind
           ? { kontorAssetKind: kontorAssetKind as KontorAssetKind }
           : {})}
-        {...(listingType
-          ? { defaultListingType: listingType as SwapListingType }
-          : {})}
+        {...(listingType ? { listingType: listingType as SwapListingType } : {})}
+        expired={flag(query.expired)}
+        excludePending={flag(query.exclude_pending)}
+        unattached={flag(query.unattached)}
         includePendingOrders={false}
         style={styles.offersList}
       />
@@ -558,11 +636,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.lg,
   },
-  media: { width: "100%", height: "100%" },
-  // A generated placeholder is not the token's artwork — dim it so it doesn't
-  // read as the real thing.
-  mediaFaded: { opacity: 0.45 },
+  mediaPanelBare: { padding: 0 },
+  media: { width: "100%", height: "100%", borderRadius: radii.md },
   heroText: { gap: spacing.xs },
+  // The description block that used to sit under the name; same rhythm, now the
+  // opening block of the Info tab.
+  prose: { gap: spacing.xs },
   heroTitleRow: {
     flexDirection: "row",
     alignItems: "center",

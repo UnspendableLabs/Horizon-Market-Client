@@ -30,6 +30,25 @@ function refKey(ref: TokenRef | null): string {
   return ref ? `${ref.protocol}:${ref.id}` : "";
 }
 
+/**
+ * True for the rejection an aborted request produces.
+ *
+ * Every read below is aborted when it is superseded or the component unmounts,
+ * and that rejects the promise — reporting it as a read failure would put an
+ * error banner on a screen the user has already left.
+ *
+ * `AbortError` only: a `TimeoutError` (what `AbortSignal.timeout` rejects with,
+ * should a caller ever hand one down) is a read that FAILED, not one nobody is
+ * waiting for. Swallowing it would leave `loading` true forever, with no error
+ * to explain the spinner.
+ */
+function isAbort(err: unknown): boolean {
+  // Duck-typed on `name`, not `instanceof Error`: `fetch` rejects an aborted
+  // request with a DOMException, which does not extend Error on every runtime
+  // this SDK ships to.
+  return (err as { name?: unknown } | null)?.name === "AbortError";
+}
+
 export interface UseTokenResult {
   /** The token, `null` before the first read resolves or when there is none. */
   token: TokenDetail | null;
@@ -60,18 +79,31 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
   refRef.current = ref;
 
   const [token, setToken] = useState<TokenDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref rather than `false`: the first read starts in an effect,
+  // which runs AFTER the first paint, so starting at `false` renders one frame
+  // that is neither loading nor loaded — a blank flash under the header.
+  const [loading, setLoading] = useState(ref !== null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Monotonic guard: a slower earlier read must never overwrite a newer one
   // (switching tokens, or a refresh racing the initial load).
   const seqRef = useRef(0);
+  const keyRef = useRef(key);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     const seq = ++seqRef.current;
     const current = refRef.current;
+    // A DIFFERENT token: drop the one on screen rather than rendering its
+    // payload under the new one's route while the read is in flight. A
+    // `refresh` keys the same token, so it deliberately keeps what is shown.
+    const switched = keyRef.current !== key;
+    keyRef.current = key;
+    if (switched) {
+      setToken(null);
+      setNotFound(false);
+    }
 
     if (!current) {
       setToken(null);
@@ -81,11 +113,16 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
       return;
     }
 
+    // Abort the superseded read rather than letting it finish for a token the
+    // user has already left. `seq` alone does not cover unmount (nothing bumps
+    // it there), so the cleanup below also aborts.
+    const controller = new AbortController();
+
     setLoading(true);
     setError(null);
     setNotFound(false);
     client
-      .getToken(current)
+      .getToken(current, { signal: controller.signal })
       .then((next) => {
         if (seq !== seqRef.current) return;
         setToken(next);
@@ -93,10 +130,12 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [client, key, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
@@ -112,8 +151,9 @@ export interface UseTokenChartOptions {
 export interface UseTokenChartResult {
   /**
    * The current series, or `null` before the first read / when the token has no
-   * chart. The PREVIOUS series is kept on screen while the next range loads, so
-   * changing range does not blank the graph.
+   * chart. The previous series is kept on screen while the next RANGE loads, so
+   * changing range does not blank the graph — but a change of *token* clears it,
+   * since one token's prices under another's name would simply be wrong.
    */
   chart: TokenChart | null;
   loading: boolean;
@@ -140,13 +180,21 @@ export function useTokenChart(
     options?.defaultRange ?? "1M",
   );
   const [chart, setChart] = useState<TokenChart | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref for the same reason as `useToken` — see there.
+  const [loading, setLoading] = useState(ref !== null);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
+  const keyRef = useRef(key);
 
   useEffect(() => {
     const seq = ++seqRef.current;
     const current = refRef.current;
+    // Keeping the previous series is only right across a range change. On a
+    // token change it would draw one token's prices under another's name, so
+    // clear it and let the loading state show.
+    const switched = keyRef.current !== key;
+    keyRef.current = key;
+    if (switched) setChart(null);
 
     if (!current) {
       setChart(null);
@@ -155,20 +203,24 @@ export function useTokenChart(
       return;
     }
 
+    const controller = new AbortController();
+
     setLoading(true);
     setError(null);
     client
-      .getTokenChart(current, { range })
+      .getTokenChart(current, { range }, { signal: controller.signal })
       .then((next) => {
         if (seq !== seqRef.current) return;
         setChart(next);
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [client, key, range]);
 
   return { chart, loading, error, range, setRange };
@@ -209,7 +261,8 @@ export function useTokenActivity(
 
   const [items, setItems] = useState<TokenActivityItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref for the same reason as `useToken` — see there.
+  const [loading, setLoading] = useState(ref !== null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
@@ -219,6 +272,15 @@ export function useTokenActivity(
   // `onEndReached` should not be a new function on every appended row.
   const stateRef = useRef({ items, total, busy: false });
   stateRef.current = { items, total, busy: loading || loadingMore };
+  // `busy` above only turns true on the NEXT render, so two `loadMore` calls in
+  // one tick — which `onEndReached` does fire — would both pass the guard and
+  // both fetch the same offset, splicing the page in twice. This flips
+  // synchronously.
+  const inFlightRef = useRef(false);
+  // The in-flight `loadMore` request, so the reset effect can abort it: its
+  // controller is created inside the callback and would otherwise outlive the
+  // token it was fetched for.
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const seq = ++seqRef.current;
@@ -227,15 +289,25 @@ export function useTokenActivity(
     setItems([]);
     setTotal(0);
     setError(null);
+    // A `loadMore` page still in flight is now for the previous token (the
+    // sequence bump above discards it), so it must not keep the guard closed —
+    // nor leave the spinner up. `loadingMore` in particular feeds `busy`, so a
+    // stale `true` would make `loadMore` a permanent no-op for the new token.
+    inFlightRef.current = false;
+    setLoadingMore(false);
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
 
     if (!current) {
       setLoading(false);
       return;
     }
 
+    const controller = new AbortController();
+
     setLoading(true);
     client
-      .getTokenActivity(current, { offset: 0, limit })
+      .getTokenActivity(current, { offset: 0, limit }, { signal: controller.signal })
       .then((page) => {
         if (seq !== seqRef.current) return;
         setItems(page.items);
@@ -243,32 +315,51 @@ export function useTokenActivity(
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => {
+      controller.abort();
+      // Unmount: nothing bumps the sequence, so abort the paging read too.
+      loadMoreAbortRef.current?.abort();
+    };
   }, [client, key, limit, nonce]);
 
   const loadMore = useCallback(() => {
     const { items: loaded, total: known, busy } = stateRef.current;
     const current = refRef.current;
-    if (busy || !current || loaded.length >= known) return;
+    if (busy || inFlightRef.current || !current || loaded.length >= known)
+      return;
 
     const seq = seqRef.current;
+    const controller = new AbortController();
+    inFlightRef.current = true;
+    loadMoreAbortRef.current = controller;
     setLoadingMore(true);
     client
-      .getTokenActivity(current, { offset: loaded.length, limit })
+      .getTokenActivity(
+        current,
+        { offset: loaded.length, limit },
+        { signal: controller.signal },
+      )
       .then((page) => {
         // A token switch (or a refresh) between request and response bumps the
         // sequence; appending that page would splice one token's sales into
-        // another's list.
+        // another's list. The effect that bumped it has already cleared the
+        // guard and the spinner, so this branch only has to drop the page.
         if (seq !== seqRef.current) return;
+        inFlightRef.current = false;
+        loadMoreAbortRef.current = null;
         setItems((prev) => [...prev, ...page.items]);
         setTotal(page.total);
         setLoadingMore(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
+        inFlightRef.current = false;
+        loadMoreAbortRef.current = null;
         setError(message(err));
         setLoadingMore(false);
       });

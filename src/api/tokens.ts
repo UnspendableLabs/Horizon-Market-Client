@@ -111,7 +111,7 @@ interface WireTokenDetail {
     profile_url: string | null;
     royalty_percent: number | null;
   } | null;
-  capabilities: Record<TokenSection, boolean>;
+  capabilities?: Record<TokenSection, boolean>;
   available_sections: TokenSection[];
   chart: {
     default_range: TokenChartRange;
@@ -610,7 +610,41 @@ function mapOffers(wire: WireTokenOffers): TokenOffers {
   };
 }
 
+/**
+ * Every section, as a map rather than a list so the compiler enforces
+ * exhaustiveness: a member added to {@link TokenSection} fails to compile here
+ * instead of silently reopening the hole {@link mapCapabilities} exists to fill
+ * — a key a caller reads back as `undefined`.
+ */
+const TOKEN_SECTIONS: Record<TokenSection, true> = {
+  chart: true,
+  activity: true,
+  holders: true,
+  attributes: true,
+  transactions: true,
+};
+
+/**
+ * `capabilities` with every section present.
+ *
+ * The two fields say the same thing twice, and a client reads whichever suits
+ * it — so a payload that ships one without the other must not leave the map
+ * with holes a caller reads as `undefined`.
+ */
+function mapCapabilities(
+  capabilities: Record<TokenSection, boolean> | undefined,
+  availableSections: TokenSection[],
+): Record<TokenSection, boolean> {
+  const mapped = {} as Record<TokenSection, boolean>;
+  for (const section of Object.keys(TOKEN_SECTIONS) as TokenSection[]) {
+    mapped[section] =
+      capabilities?.[section] ?? availableSections.includes(section);
+  }
+  return mapped;
+}
+
 function mapDetail(wire: WireTokenDetail): TokenDetail {
+  const availableSections = wire.available_sections ?? [];
   return {
     protocol: wire.protocol,
     protocolLabel: wire.protocol_label,
@@ -643,8 +677,8 @@ function mapDetail(wire: WireTokenDetail): TokenDetail {
           royaltyPercent: wire.issuer.royalty_percent,
         }
       : null,
-    capabilities: wire.capabilities,
-    availableSections: wire.available_sections ?? [],
+    capabilities: mapCapabilities(wire.capabilities, availableSections),
+    availableSections,
     chart: wire.chart
       ? {
           defaultRange: wire.chart.default_range,

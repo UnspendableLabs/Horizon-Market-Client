@@ -40,8 +40,14 @@ interface Geometry {
 function geometry(prices: number[]): Geometry | null {
   if (prices.length === 0) return null;
 
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
+  // Folded rather than `Math.min(...prices)`: the series length is the server's
+  // to choose, and a spread argument list is bounded by the JS call-stack.
+  let min = prices[0]!;
+  let max = prices[0]!;
+  for (const price of prices) {
+    if (price < min) min = price;
+    if (price > max) max = price;
+  }
   const span = max - min;
   const usableHeight = HEIGHT - PADDING_Y * 2;
   const step = prices.length > 1 ? WIDTH / (prices.length - 1) : 0;

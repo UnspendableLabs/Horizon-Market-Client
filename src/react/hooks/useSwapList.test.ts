@@ -503,6 +503,111 @@ describe("useSwapList — fixed asset filters", () => {
       expect.objectContaining({ kontorAssetKind: "token" }),
     );
   });
+
+  it("threads the listing-state pins into the open-offers fetch", async () => {
+    // The remaining keys of the tokens API's `offers.atomicSwapsQuery`. Drop one
+    // and the feed answers a different set from the `offers.count` above it.
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({
+        assetName: "RAREPEPE",
+        expired: false,
+        excludePending: true,
+        unattached: false,
+      }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetName: "RAREPEPE",
+        expired: false,
+        excludePending: true,
+        unattached: false,
+      }),
+    );
+  });
+
+  it("leaves the pins unset when not given, so the server's defaults apply", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const params = listSwaps.mock.calls[0]![0] as Record<string, unknown>;
+    expect(params.expired).toBeUndefined();
+    expect(params.excludePending).toBeUndefined();
+    expect(params.unattached).toBeUndefined();
+  });
+
+  it("pins the listing type against the user-facing control", async () => {
+    // On a feed narrowed to one asset the type is a property of that asset, not
+    // a choice — letting the control change it would answer an empty feed under
+    // a non-zero count.
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ assetName: "RAREPEPE", listingType: "counterparty" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingType).toBe("counterparty");
+    expect(result.current.listingTypePinned).toBe(true);
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ listingType: "counterparty" }),
+    );
+
+    act(() => result.current.setListingType("ordinal"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingType).toBe("counterparty");
+    // The no-op setter must not even trigger a refetch.
+    expect(listSwaps).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the control free when only defaultListingType is given", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultListingType: "counterparty" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingTypePinned).toBe(false);
+
+    act(() => result.current.setListingType("ordinal"));
+    await waitFor(() => expect(result.current.listingType).toBe("ordinal"));
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ listingType: "ordinal" }),
+    );
+  });
+
+  it("does not narrow the Sold feed with the open-offer pins", async () => {
+    // "Sold" is completed sales: "expired" and "purchase still unconfirmed" do
+    // not describe the same thing there.
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({
+        assetName: "RAREPEPE",
+        expired: false,
+        excludePending: true,
+        unattached: false,
+        defaultShowSold: true,
+      }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const params = listSwaps.mock.calls[0]![0] as Record<string, unknown>;
+    expect(params.sales).toBe(true);
+    // The identity pin still applies; the listing-state ones do not.
+    expect(params.assetName).toBe("RAREPEPE");
+    expect(params.expired).toBeUndefined();
+    expect(params.excludePending).toBeUndefined();
+    expect(params.unattached).toBeUndefined();
+  });
 });
 
 describe("useSwapList — kontor availability", () => {
