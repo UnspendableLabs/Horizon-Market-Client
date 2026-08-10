@@ -15,6 +15,7 @@ export const SURFACE = {
   sell: "sell_native",
   wallet: "wallet_native",
   settings: "settings_native",
+  profile: "profile_native",
 } as const;
 
 function withPlatform(surface: string, props?: EventPayload): EventPayload {
@@ -173,6 +174,25 @@ export function trackNetworkSwitched(from: string, to: string): void {
     "network_switched",
     withPlatform(SURFACE.settings, { from, to }),
   );
+}
+
+// ---- Profile --------------------------------------------------------------
+
+export function trackProfileSaved(props: {
+  renamed: boolean;
+  isPublic: boolean;
+}): void {
+  void track(
+    "profile_updated",
+    withPlatform(SURFACE.profile, {
+      renamed: props.renamed,
+      is_public: props.isPublic,
+    }),
+  );
+}
+
+export function trackProfileAvatarChanged(): void {
+  void track("profile_avatar_updated", withPlatform(SURFACE.profile));
 }
 
 // ---- Screen views -----------------------------------------------------

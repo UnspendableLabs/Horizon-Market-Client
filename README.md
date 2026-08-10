@@ -133,6 +133,7 @@ function App() {
 | `useSellOrderForm` | The packaged `SellOrderForm`'s controller: grouped asset picker, gas-aware "Max", submit validity, result messaging. Wraps `useSellOrder` + `useAssets` — use it *instead of* them |
 | `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
+| `useProfile`, `useProfileWallets` | The account's Horizon Market profile: load, edit username / bio / visibility, upload an avatar, publish or hide each linked wallet. Idle until the wallet sign-in lands (the whole surface is session-gated) |
 | `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
@@ -449,6 +450,38 @@ only unlock fee waivers:
 - `signInWithWalletCookie(params)` — cookie-based variant for same-origin apps (see `sessionToken`)
 - `getCredits()` — `CreditBalance | null` (`null` = signed out; throws on transient server errors)
 - `getSession()` / `isAuthenticated()` / `signOut()` — session introspection and teardown
+
+### Profiles
+
+The `/api/profiles/*` surface behind horizon.market's profile page, for clients
+that build their own. Everything under **`me`** is session-gated — there is no
+on-chain signature to stand in for authentication here — so call
+`signInWithWallet()` first; the public reads need no session at all.
+
+Own profile:
+
+- `getMyProfile(options?)` — `MyProfile` (username, bio, visibility, avatar URL, credits, points)
+- `updateMyProfile({ username?, bio?, isPublic? }, options?)` — partial update; a real username **and** `isPublic: true` completes profile setup and grants the one-off `profile-setup` reward. Throws `409` when the name is taken
+- `checkUsernameAvailability(username, options?)` — case-insensitive; your own current name reports as available
+- `getMyAvatarDataUrl(options?)` — your avatar as a `data:` URL (`null` when unset). That endpoint is auth-gated and `no-store`, so its URL can't be used as an image source directly
+- `uploadMyAvatar(image, options?)` — multipart upload; a `Blob`/`File` or a React Native `{ uri, name, type }` picker result. Resized to 512×512 PNG server-side, max 5 MB
+- `listMyWallets(options?)` / `setWalletVisibility(address, isPublic, options?)` — linked wallets and which are public (an idempotent set, not a toggle)
+- `listMyAssets(page?, options?)` / `listMyLikedAssets(page?, options?)` — issued and followed assets
+- `followAsset(asset, options?)` / `unfollowAsset(asset, options?)` — idempotent; keyed on the Counterparty asset *name*, not a subasset longname
+- `getMyPoints(page?, options?)` — balance + reward history (`PointsSummary`; pagination applies to the history only)
+
+Public reads (no authentication; a private and an unknown username both answer
+`null` / `404`, so existence is never leaked):
+
+- `getPublicProfile(username, options?)` — `PublicProfile | null`
+- `publicAvatarUrl(username)` — cacheable avatar URL, usable directly as an image source
+- `listPublicCuratedAssets(username, page?, options?)` / `listPublicLikedAssets(...)`
+- `listPublicProfileListings(username, page?, options?)` / `listPublicProfilePurchases(...)` — swaps in the same shape `listSwaps()` returns
+
+`isPlaceholderUsername(username)` tells the random UUID a fresh account is
+created with apart from a name the user actually picked. In React, `useProfile()`
+and `useProfileWallets()` wrap all of this (load, edit, avatar upload, wallet
+visibility) for a profile screen.
 
 ### Workflow Methods
 

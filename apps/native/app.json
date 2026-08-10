@@ -48,6 +48,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pick a photo from your library to use as your Horizon Market profile picture.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0b0b15",

@@ -29,6 +29,39 @@ import {
   type CreditBalance,
   type WalletTokenSignIn,
 } from "./api/auth.js";
+import {
+  getMyProfile as apiGetMyProfile,
+  updateMyProfile as apiUpdateMyProfile,
+  checkUsernameAvailability as apiCheckUsernameAvailability,
+  getMyAvatarDataUrl as apiGetMyAvatarDataUrl,
+  uploadMyAvatar as apiUploadMyAvatar,
+  listMyWallets as apiListMyWallets,
+  setWalletVisibility as apiSetWalletVisibility,
+  listMyAssets as apiListMyAssets,
+  listMyLikedAssets as apiListMyLikedAssets,
+  followAsset as apiFollowAsset,
+  unfollowAsset as apiUnfollowAsset,
+  getMyPoints as apiGetMyPoints,
+  getPublicProfile as apiGetPublicProfile,
+  publicAvatarUrl as apiPublicAvatarUrl,
+  listPublicCuratedAssets as apiListPublicCuratedAssets,
+  listPublicLikedAssets as apiListPublicLikedAssets,
+  listPublicProfileListings as apiListPublicProfileListings,
+  listPublicProfilePurchases as apiListPublicProfilePurchases,
+  type AvatarUpload,
+  type AvatarUploadResult,
+  type FollowState,
+  type MyProfile,
+  type PointsSummary,
+  type ProfileAssetPage,
+  type ProfilePageParams,
+  type ProfileSwapPage,
+  type ProfileWallet,
+  type PublicProfile,
+  type UpdateMyProfileParams,
+  type UsernameAvailability,
+  type WalletVisibility,
+} from "./api/profiles.js";
 import { LocalSigner, HDSigner, type Signer } from "./crypto/signer.js";
 import {
   openSellOrder as workflowOpenSellOrder,
@@ -202,6 +235,8 @@ export interface DelistSwapOptions extends WorkflowOptions {
  */
 export class HorizonMarketClient {
   private readonly http: HttpClient;
+  /** Resolved API origin, trailing slash stripped (e.g. for avatar URLs). */
+  private readonly baseUrl: string;
   private readonly signer: Signer | null;
   private readonly network: "mainnet" | "testnet";
   private readonly btcNetwork: btc.Network;
@@ -227,6 +262,7 @@ export class HorizonMarketClient {
     this.kontorIndexerUrl =
       options.kontorIndexerUrl ?? DEFAULT_KONTOR_INDEXER_URL;
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this.baseUrl = baseUrl;
     this.kontorFaucetUrl =
       options.kontorFaucetUrl ?? `${baseUrl}/api/kontor-faucet`;
     this.kontorNftContractAddress = options.kontorNftContractAddress;
@@ -824,6 +860,176 @@ export class HorizonMarketClient {
   signOut(): void {
     this.http.clearBearerToken();
     this.http.clearCookies();
+  }
+
+  // ─── Profiles ───────────────────────────────────────────────────────────────
+  //
+  // `/api/profiles/me/*` is session-gated (there is no on-chain signature to
+  // stand in for authentication here), so sign in first — `signInWithWallet()`
+  // mints the bearer token these attach. `/api/profiles/{username}/*` is public.
+
+  /**
+   * The signed-in account's own profile: username, bio, visibility, avatar URL,
+   * credits and points balance.
+   *
+   * @throws {HorizonMarketApiError} `401` when not signed in.
+   */
+  getMyProfile(options?: RequestOptions): Promise<MyProfile> {
+    return apiGetMyProfile(this.http, options);
+  }
+
+  /**
+   * Update username, bio and/or visibility — only the supplied keys are written.
+   * Picking a real username **and** going public completes profile setup and
+   * grants the one-off `profile-setup` points reward.
+   *
+   * @throws {HorizonMarketApiError} `409` when the username is already taken.
+   */
+  updateMyProfile(
+    params: UpdateMyProfileParams,
+    options?: RequestOptions,
+  ): Promise<MyProfile> {
+    return apiUpdateMyProfile(this.http, params, options);
+  }
+
+  /**
+   * Whether a username can be claimed. Case-insensitive; the caller's own
+   * current name reports as available so a no-op rename is not a conflict.
+   */
+  checkUsernameAvailability(
+    username: string,
+    options?: RequestOptions,
+  ): Promise<UsernameAvailability> {
+    return apiCheckUsernameAvailability(this.http, username, options);
+  }
+
+  /**
+   * The caller's own avatar as a `data:` URL, or `null` when none is set. That
+   * endpoint is auth-gated and `no-store`, so its URL cannot be handed straight
+   * to an image element the way a public avatar URL can.
+   */
+  getMyAvatarDataUrl(options?: RequestOptions): Promise<string | null> {
+    return apiGetMyAvatarDataUrl(this.http, options);
+  }
+
+  /**
+   * Upload an avatar — a `Blob`/`File`, or a React Native `{ uri }` picker
+   * result. Resized to 512×512 PNG server-side; max 5 MB.
+   */
+  uploadMyAvatar(
+    image: AvatarUpload,
+    options?: RequestOptions,
+  ): Promise<AvatarUploadResult> {
+    return apiUploadMyAvatar(this.http, image, options);
+  }
+
+  /** Wallets linked to the account, newest first. */
+  listMyWallets(options?: RequestOptions): Promise<ProfileWallet[]> {
+    return apiListMyWallets(this.http, options);
+  }
+
+  /**
+   * Publish or hide a linked wallet — an idempotent set, not a toggle. Only a
+   * public address's listings and curated assets show on the public profile.
+   */
+  setWalletVisibility(
+    address: string,
+    isPublic: boolean,
+    options?: RequestOptions,
+  ): Promise<WalletVisibility> {
+    return apiSetWalletVisibility(this.http, address, isPublic, options);
+  }
+
+  /** Assets issued by any of the account's linked wallets, newest issuance first. */
+  listMyAssets(
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileAssetPage> {
+    return apiListMyAssets(this.http, params, options);
+  }
+
+  /** Assets the account follows ("liked"), most recently followed first. */
+  listMyLikedAssets(
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileAssetPage> {
+    return apiListMyLikedAssets(this.http, params, options);
+  }
+
+  /** Follow an asset by its Counterparty name. Idempotent. */
+  followAsset(asset: string, options?: RequestOptions): Promise<FollowState> {
+    return apiFollowAsset(this.http, asset, options);
+  }
+
+  /** Unfollow an asset. Idempotent. */
+  unfollowAsset(asset: string, options?: RequestOptions): Promise<FollowState> {
+    return apiUnfollowAsset(this.http, asset, options);
+  }
+
+  /**
+   * Points balance and reward history. Pagination applies to the reward actions
+   * only — the balance and totals always cover the whole account.
+   */
+  getMyPoints(
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<PointsSummary> {
+    return apiGetMyPoints(this.http, params, options);
+  }
+
+  /**
+   * A public profile by username, or `null` when nothing public lives there.
+   * No authentication: private and unknown profiles are indistinguishable.
+   */
+  getPublicProfile(
+    username: string,
+    options?: RequestOptions,
+  ): Promise<PublicProfile | null> {
+    return apiGetPublicProfile(this.http, username, options);
+  }
+
+  /**
+   * Absolute URL of a public profile's avatar. Public and cacheable, so it can
+   * be used directly as an image source (unlike {@link getMyAvatarDataUrl}).
+   */
+  publicAvatarUrl(username: string): string {
+    return apiPublicAvatarUrl(this.baseUrl, username);
+  }
+
+  /** A public profile's curated showcase. */
+  listPublicCuratedAssets(
+    username: string,
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileAssetPage> {
+    return apiListPublicCuratedAssets(this.http, username, params, options);
+  }
+
+  /** A public profile's liked assets. */
+  listPublicLikedAssets(
+    username: string,
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileAssetPage> {
+    return apiListPublicLikedAssets(this.http, username, params, options);
+  }
+
+  /** A public profile's open listings, in the `listSwaps()` swap shape. */
+  listPublicProfileListings(
+    username: string,
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileSwapPage> {
+    return apiListPublicProfileListings(this.http, username, params, options);
+  }
+
+  /** Swaps a public profile bought, in the `listSwaps()` swap shape. */
+  listPublicProfilePurchases(
+    username: string,
+    params?: ProfilePageParams,
+    options?: RequestOptions,
+  ): Promise<ProfileSwapPage> {
+    return apiListPublicProfilePurchases(this.http, username, params, options);
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────

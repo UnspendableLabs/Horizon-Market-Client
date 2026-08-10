@@ -57,6 +57,11 @@ export { usePrices } from "./usePrices.js";
 export type { UsePricesResult } from "./usePrices.js";
 export { useFeeEstimates } from "./useFeeEstimates.js";
 export type { FeeEstimates, UseFeeEstimatesResult } from "./useFeeEstimates.js";
+export { useProfile, useProfileWallets } from "./useProfile.js";
+export type {
+  UseProfileResult,
+  UseProfileWalletsResult,
+} from "./useProfile.js";
 export { useSwapList, SORT_OPTIONS, SORT_OPTION_LABELS } from "./useSwapList.js";
 export type {
   SwapListOrderBy,
