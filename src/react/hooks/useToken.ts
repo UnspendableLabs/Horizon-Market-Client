@@ -30,6 +30,21 @@ function refKey(ref: TokenRef | null): string {
   return ref ? `${ref.protocol}:${ref.id}` : "";
 }
 
+/**
+ * True for the rejection an aborted request produces.
+ *
+ * Every read below is aborted when it is superseded or the component unmounts,
+ * and that rejects the promise — reporting it as a read failure would put an
+ * error banner on a screen the user has already left.
+ */
+function isAbort(err: unknown): boolean {
+  // Duck-typed on `name`, not `instanceof Error`: `fetch` rejects an aborted
+  // request with a DOMException, which does not extend Error on every runtime
+  // this SDK ships to.
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
 export interface UseTokenResult {
   /** The token, `null` before the first read resolves or when there is none. */
   token: TokenDetail | null;
@@ -60,7 +75,10 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
   refRef.current = ref;
 
   const [token, setToken] = useState<TokenDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref rather than `false`: the first read starts in an effect,
+  // which runs AFTER the first paint, so starting at `false` renders one frame
+  // that is neither loading nor loaded — a blank flash under the header.
+  const [loading, setLoading] = useState(ref !== null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,11 +109,16 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
       return;
     }
 
+    // Abort the superseded read rather than letting it finish for a token the
+    // user has already left. `seq` alone does not cover unmount (nothing bumps
+    // it there), so the cleanup below also aborts.
+    const controller = new AbortController();
+
     setLoading(true);
     setError(null);
     setNotFound(false);
     client
-      .getToken(current)
+      .getToken(current, { signal: controller.signal })
       .then((next) => {
         if (seq !== seqRef.current) return;
         setToken(next);
@@ -103,10 +126,12 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [client, key, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
@@ -151,7 +176,8 @@ export function useTokenChart(
     options?.defaultRange ?? "1M",
   );
   const [chart, setChart] = useState<TokenChart | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref for the same reason as `useToken` — see there.
+  const [loading, setLoading] = useState(ref !== null);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
   const keyRef = useRef(key);
@@ -173,20 +199,24 @@ export function useTokenChart(
       return;
     }
 
+    const controller = new AbortController();
+
     setLoading(true);
     setError(null);
     client
-      .getTokenChart(current, { range })
+      .getTokenChart(current, { range }, { signal: controller.signal })
       .then((next) => {
         if (seq !== seqRef.current) return;
         setChart(next);
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [client, key, range]);
 
   return { chart, loading, error, range, setRange };
@@ -227,7 +257,8 @@ export function useTokenActivity(
 
   const [items, setItems] = useState<TokenActivityItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  // Seeded from the ref for the same reason as `useToken` — see there.
+  const [loading, setLoading] = useState(ref !== null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
@@ -242,6 +273,10 @@ export function useTokenActivity(
   // both fetch the same offset, splicing the page in twice. This flips
   // synchronously.
   const inFlightRef = useRef(false);
+  // The in-flight `loadMore` request, so the reset effect can abort it: its
+  // controller is created inside the callback and would otherwise outlive the
+  // token it was fetched for.
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const seq = ++seqRef.current;
@@ -251,17 +286,24 @@ export function useTokenActivity(
     setTotal(0);
     setError(null);
     // A `loadMore` page still in flight is now for the previous token (the
-    // sequence bump below discards it), so it must not keep the guard closed.
+    // sequence bump above discards it), so it must not keep the guard closed —
+    // nor leave the spinner up. `loadingMore` in particular feeds `busy`, so a
+    // stale `true` would make `loadMore` a permanent no-op for the new token.
     inFlightRef.current = false;
+    setLoadingMore(false);
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
 
     if (!current) {
       setLoading(false);
       return;
     }
 
+    const controller = new AbortController();
+
     setLoading(true);
     client
-      .getTokenActivity(current, { offset: 0, limit })
+      .getTokenActivity(current, { offset: 0, limit }, { signal: controller.signal })
       .then((page) => {
         if (seq !== seqRef.current) return;
         setItems(page.items);
@@ -269,10 +311,16 @@ export function useTokenActivity(
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         setError(message(err));
         setLoading(false);
       });
+
+    return () => {
+      controller.abort();
+      // Unmount: nothing bumps the sequence, so abort the paging read too.
+      loadMoreAbortRef.current?.abort();
+    };
   }, [client, key, limit, nonce]);
 
   const loadMore = useCallback(() => {
@@ -282,23 +330,32 @@ export function useTokenActivity(
       return;
 
     const seq = seqRef.current;
+    const controller = new AbortController();
     inFlightRef.current = true;
+    loadMoreAbortRef.current = controller;
     setLoadingMore(true);
     client
-      .getTokenActivity(current, { offset: loaded.length, limit })
+      .getTokenActivity(
+        current,
+        { offset: loaded.length, limit },
+        { signal: controller.signal },
+      )
       .then((page) => {
         // A token switch (or a refresh) between request and response bumps the
         // sequence; appending that page would splice one token's sales into
-        // another's list.
+        // another's list. The effect that bumped it has already cleared the
+        // guard and the spinner, so this branch only has to drop the page.
         if (seq !== seqRef.current) return;
         inFlightRef.current = false;
+        loadMoreAbortRef.current = null;
         setItems((prev) => [...prev, ...page.items]);
         setTotal(page.total);
         setLoadingMore(false);
       })
       .catch((err: unknown) => {
-        if (seq !== seqRef.current) return;
+        if (isAbort(err) || seq !== seqRef.current) return;
         inFlightRef.current = false;
+        loadMoreAbortRef.current = null;
         setError(message(err));
         setLoadingMore(false);
       });

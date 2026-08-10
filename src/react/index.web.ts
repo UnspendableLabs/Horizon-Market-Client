@@ -125,12 +125,18 @@ export type {
   TokenChart,
   TokenChartPoint,
   TokenChartRange,
+  TokenChartParams,
   TokenActivityItem,
   TokenActivityPage,
+  TokenActivityParams,
   TokenSummary,
   TokenMatch,
+  TokenMatchField,
+  TokenMatchKind,
+  TokenSearchParams,
   TokenSearchResult,
   TokenSearchSourceStatus,
+  TokenOfferAggregateStatus,
 } from "../api/tokens.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm

@@ -80,6 +80,19 @@ export interface UseSwapListOptions {
   excludePending?: boolean;
   /** @see {@link expired} */
   unattached?: boolean;
+  /**
+   * Fixed listing-type filter, as opposed to {@link defaultListingType} which
+   * only seeds the user-facing control.
+   *
+   * Use this when the feed is pinned to one asset: the type is then a property
+   * of that asset, not a choice — letting the control change it would answer an
+   * empty feed under a non-zero count. While set, {@link
+   * UseSwapListResult.setListingType} is a no-op and
+   * {@link UseSwapListResult.listingTypePinned} is true, so a renderer can hide
+   * the control rather than show a dead one. Takes precedence over
+   * {@link defaultListingType}.
+   */
+  listingType?: SwapListingType;
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
@@ -145,6 +158,12 @@ export interface UseSwapListResult {
   lastFetchedAt: number | null;
   listingType: SwapListingType | null;
   setListingType: (t: SwapListingType | null) => void;
+  /**
+   * True when {@link UseSwapListOptions.listingType} pinned the type, so
+   * {@link setListingType} does nothing — a renderer should hide the control
+   * rather than offer one that cannot move.
+   */
+  listingTypePinned: boolean;
   sortOption: SortOption;
   setSortOption: (o: SortOption) => void;
   showMySwaps: boolean;
@@ -240,6 +259,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     expired,
     excludePending,
     unattached,
+    listingType: pinnedListingType,
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
@@ -260,9 +280,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const analyticsRef = useRef({ onLoginRequired, onBuyStarted, onDelistStarted });
   analyticsRef.current = { onLoginRequired, onBuyStarted, onDelistStarted };
 
-  const [listingType, setListingTypeState] = useState<SwapListingType | null>(
-    defaultListingType,
-  );
+  const [chosenListingType, setListingTypeState] =
+    useState<SwapListingType | null>(defaultListingType);
+  // A pin wins over the control for the hook's lifetime — every read below sees
+  // one effective value, so the fetch, the Kontor-availability check and what a
+  // renderer displays cannot disagree.
+  const listingTypePinned = pinnedListingType !== undefined;
+  const listingType = pinnedListingType ?? chosenListingType;
   const [sortOption, setSortOptionState] = useState<SortOption>(
     defaultSortOption,
   );
@@ -325,10 +349,14 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const kontorUnavailable =
     listingType === "kontor" && kontorNetwork !== "signet";
 
-  const setListingType = useCallback((t: SwapListingType | null) => {
-    setListingTypeState(t);
-    setPageState(0);
-  }, []);
+  const setListingType = useCallback(
+    (t: SwapListingType | null) => {
+      if (listingTypePinned) return;
+      setListingTypeState(t);
+      setPageState(0);
+    },
+    [listingTypePinned],
+  );
 
   const setSortOption = useCallback((o: SortOption) => {
     setSortOptionState(o);
@@ -795,6 +823,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     lastFetchedAt,
     listingType,
     setListingType,
+    listingTypePinned,
     sortOption,
     setSortOption,
     showMySwaps,

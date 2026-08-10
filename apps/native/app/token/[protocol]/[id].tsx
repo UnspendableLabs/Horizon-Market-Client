@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -115,8 +115,14 @@ export default function TokenScreen() {
 
   // Fires once the payload lands rather than on mount, so the event carries the
   // protocol — the bare pageview already covers "someone opened a token screen".
+  // Keyed on the token's identity, not the payload object: a `refresh` hands
+  // back a new object for the same token, and re-emitting there would count one
+  // view twice.
+  const reportedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (token) trackTokenViewed({ protocol: token.protocol, from });
+    if (!token || reportedRef.current === token.canonicalId) return;
+    reportedRef.current = token.canonicalId;
+    trackTokenViewed({ protocol: token.protocol, from });
   }, [token, from]);
 
   return (
@@ -387,6 +393,9 @@ function OffersSection({ token }: { token: TokenDetail }) {
   const query = token.offers.atomicSwapsQuery;
   const assetName = query.asset_name;
   const kontorNftId = query.kontor_nft_id;
+  // A fixed pin, not `defaultListingType`: the type is a property of the asset
+  // this feed is pinned to, so a filter control could only answer an empty list
+  // under a non-zero count. `SwapList` hides the control while it is pinned.
   const listingType = query.listing_type;
   // KOR and Kontor NFTs share one listing type, so without this the KOR page's
   // offers would also list every NFT — against a count that excluded them.
@@ -406,9 +415,7 @@ function OffersSection({ token }: { token: TokenDetail }) {
         {...(kontorAssetKind
           ? { kontorAssetKind: kontorAssetKind as KontorAssetKind }
           : {})}
-        {...(listingType
-          ? { defaultListingType: listingType as SwapListingType }
-          : {})}
+        {...(listingType ? { listingType: listingType as SwapListingType } : {})}
         expired={flag(query.expired)}
         excludePending={flag(query.exclude_pending)}
         unattached={flag(query.unattached)}

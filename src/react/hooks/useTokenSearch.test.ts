@@ -256,4 +256,40 @@ describe("useTokenSearch", () => {
     expect(result.current.results).toEqual([]);
     expect(result.current.loading).toBe(false);
   });
+
+  it("stringifies a rejection that is not an Error", async () => {
+    const searchTokens = stubSearch(() => {
+      throw "search exploded";
+    });
+    ctxRef.current = makeCtx({ client: { searchTokens } });
+
+    const { result } = renderHook(() => useTokenSearch());
+    act(() => result.current.setQuery("PEPE"));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+
+    await waitFor(() => expect(result.current.error).toBe("search exploded"));
+  });
+
+  it("clear() empties the box and everything under it", async () => {
+    const searchTokens = stubSearch(() =>
+      searchResult({ truncated: true, offers: "error" }),
+    );
+    ctxRef.current = makeCtx({ client: { searchTokens } });
+
+    const { result } = renderHook(() => useTokenSearch());
+    act(() => result.current.setQuery("PEPE"));
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    await waitFor(() => expect(result.current.results).not.toHaveLength(0));
+
+    act(() => result.current.clear());
+    await waitFor(() => expect(result.current.query).toBe(""));
+    expect(result.current.results).toEqual([]);
+    expect(result.current.truncated).toBe(false);
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.sources).toEqual({});
+  });
 });

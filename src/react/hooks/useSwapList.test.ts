@@ -542,6 +542,47 @@ describe("useSwapList — fixed asset filters", () => {
     expect(params.unattached).toBeUndefined();
   });
 
+  it("pins the listing type against the user-facing control", async () => {
+    // On a feed narrowed to one asset the type is a property of that asset, not
+    // a choice — letting the control change it would answer an empty feed under
+    // a non-zero count.
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ assetName: "RAREPEPE", listingType: "counterparty" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingType).toBe("counterparty");
+    expect(result.current.listingTypePinned).toBe(true);
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({ listingType: "counterparty" }),
+    );
+
+    act(() => result.current.setListingType("ordinal"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingType).toBe("counterparty");
+    // The no-op setter must not even trigger a refetch.
+    expect(listSwaps).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the control free when only defaultListingType is given", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "s1" })]));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultListingType: "counterparty" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.listingTypePinned).toBe(false);
+
+    act(() => result.current.setListingType("ordinal"));
+    await waitFor(() => expect(result.current.listingType).toBe("ordinal"));
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ listingType: "ordinal" }),
+    );
+  });
+
   it("does not narrow the Sold feed with the open-offer pins", async () => {
     // "Sold" is completed sales: "expired" and "purchase still unconfirmed" do
     // not describe the same thing there.

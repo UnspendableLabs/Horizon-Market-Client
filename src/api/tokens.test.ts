@@ -374,6 +374,103 @@ describe("getToken", () => {
     expect(token?.properties[0]?.group).toBe("overview");
   });
 
+  it("maps a payload with no market, collection, issuer, chart or lists", async () => {
+    // A Kontor NFT: one of a kind, so no fungible market and no price series —
+    // and every optional list simply absent rather than empty.
+    const fetchFn = makeRawFetch(
+      rawResponse(200, {
+        data: {
+          ...WIRE_DETAIL,
+          protocol: "kontor-nft",
+          market: null,
+          collection: null,
+          issuer: null,
+          chart: null,
+          stats: undefined,
+          properties: undefined,
+          attributes: undefined,
+          links: undefined,
+        },
+      }),
+    );
+    const token = await getToken(http(fetchFn), {
+      protocol: "kontor-nft",
+      id: "nft-7",
+    });
+
+    expect(token?.market).toBeNull();
+    expect(token?.collection).toBeNull();
+    expect(token?.issuer).toBeNull();
+    expect(token?.chart).toBeNull();
+    // Absent, not empty, on the wire — a caller must still get an array it can
+    // map over without a guard of its own.
+    expect(token?.stats).toEqual([]);
+    expect(token?.properties).toEqual([]);
+    expect(token?.attributes).toEqual([]);
+    expect(token?.links).toEqual([]);
+  });
+
+  it("falls back to the status text when the error body carries no message", async () => {
+    // `rawResponse` with no json rejects the body parse — the same shape an
+    // empty or HTML error page has.
+    const fetchFn = makeRawFetch(rawResponse(503, undefined, "Bad Gateway"));
+    await expect(
+      getToken(http(fetchFn), { protocol: "zeld", id: "ZELD" }),
+    ).rejects.toThrow("Bad Gateway");
+  });
+
+  it("falls back again when even the status text is empty", async () => {
+    const fetchFn = makeRawFetch(rawResponse(500, { notAnError: true }, ""));
+    await expect(
+      getToken(http(fetchFn), { protocol: "zeld", id: "ZELD" }),
+    ).rejects.toThrow("Unknown error");
+  });
+
+  it("fills capabilities from availableSections when the payload omits them", async () => {
+    // The two fields say the same thing twice and a client reads whichever suits
+    // it, so a payload shipping only one must not leave the map with holes a
+    // caller would read as `undefined` (i.e. as "no chart").
+    const { capabilities: _dropped, ...withoutCapabilities } = WIRE_DETAIL;
+    void _dropped;
+    const fetchFn = makeRawFetch(rawResponse(200, { data: withoutCapabilities }));
+    const token = await getToken(http(fetchFn), {
+      protocol: "counterparty",
+      id: "RAREPEPE",
+    });
+
+    expect(token?.capabilities).toEqual({
+      chart: true,
+      activity: true,
+      holders: true,
+      attributes: false,
+      transactions: false,
+    });
+  });
+
+  it("keeps every section defined when both fields are absent", async () => {
+    const {
+      capabilities: _caps,
+      available_sections: _sections,
+      ...bare
+    } = WIRE_DETAIL;
+    void _caps;
+    void _sections;
+    const fetchFn = makeRawFetch(rawResponse(200, { data: bare }));
+    const token = await getToken(http(fetchFn), {
+      protocol: "counterparty",
+      id: "RAREPEPE",
+    });
+
+    expect(token?.availableSections).toEqual([]);
+    expect(Object.values(token!.capabilities)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   it("returns null on 404 — an unknown token, or one this network doesn't serve", async () => {
     const fetchFn = makeRawFetch(rawResponse(404, { error: "Token not found" }));
     await expect(
@@ -452,6 +549,17 @@ describe("getTokenChart", () => {
     expect(lastUrl(fetchFn)).toBe("https://example.com/api/tokens/kontor/KOR/chart");
   });
 
+  it("maps a series whose points array is absent", async () => {
+    const { points: _points, ...noPoints } = WIRE_CHART;
+    void _points;
+    const fetchFn = makeRawFetch(rawResponse(200, { data: noPoints }));
+    const chart = await getTokenChart(http(fetchFn), {
+      protocol: "zeld",
+      id: "ZELD",
+    });
+    expect(chart?.points).toEqual([]);
+  });
+
   it("returns null for a token with no chart", async () => {
     const fetchFn = makeRawFetch(
       rawResponse(404, { error: "This token has no chart" }),
@@ -502,6 +610,34 @@ describe("getTokenActivity", () => {
       sellerAddress: "bc1qseller",
       txid: "a".repeat(64),
     });
+  });
+
+  it("omits the query string when no paging params are given", async () => {
+    const fetchFn = makeRawFetch(rawResponse(200, { data: WIRE_ACTIVITY }));
+    await getTokenActivity(http(fetchFn), { protocol: "zeld", id: "ZELD" });
+    expect(lastUrl(fetchFn)).toBe(
+      "https://example.com/api/tokens/ZELD/activity",
+    );
+  });
+
+  it("echoes the requested window back on the empty 404 page", async () => {
+    // So a caller's "showing 0 of 0 from offset N" stays truthful.
+    const fetchFn = makeRawFetch(rawResponse(404, { error: "Token not found" }));
+    const page = await getTokenActivity(
+      http(fetchFn),
+      { protocol: "kontor-nft", id: "nft-7" },
+      { offset: 60, limit: 30 },
+    );
+    expect(page).toEqual({ items: [], total: 0, offset: 60, limit: 30 });
+  });
+
+  it("defaults a page whose activity and pagination are absent", async () => {
+    const fetchFn = makeRawFetch(rawResponse(200, { data: {} }));
+    const page = await getTokenActivity(http(fetchFn), {
+      protocol: "zeld",
+      id: "ZELD",
+    });
+    expect(page).toEqual({ items: [], total: 0, offset: 0, limit: null });
   });
 
   it("answers an empty page on 404 rather than throwing", async () => {
@@ -564,6 +700,15 @@ describe("searchTokens", () => {
       webUrl: "https://example.com/assets/PEPECASH",
       match: { field: "name", kind: "prefix" },
     });
+  });
+
+  it("defaults an answer whose results and sources are absent", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { query: "ZZZ", truncated: false, offers: "ok" },
+    });
+    const result = await searchTokens(http(fetchFn), { query: "ZZZ" });
+    expect(result.results).toEqual([]);
+    expect(result.sources).toEqual({});
   });
 
   it("a result's id addresses its own detail endpoint", async () => {

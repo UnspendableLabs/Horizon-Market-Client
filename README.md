@@ -527,12 +527,19 @@ pins the token (`asset_name` / `kontor_nft_id` / `kontor_asset_kind`,
 drifts away from the count rendered above it. `useSwapList` takes each as a fixed
 pin with no setter — a URL-driven view remounts to change them, and the
 user-facing controls (sort, "Sold", "My swaps", pagination) keep working within
-the pin. Facet counts do not honour them, so leave `includeFacets` off.
+the pin. `listingType` is a pin too, distinct from `defaultListingType` which
+only seeds the control: on a pinned feed the type belongs to the asset, so
+`setListingType` no-ops and `listingTypePinned` tells a renderer to hide the
+control (both packaged `SwapList` components already do). Facet counts do not
+honour any of them, so leave `includeFacets` off.
 
 In React: `useToken(ref)`, `useTokenChart(ref)`, `useTokenActivity(ref)` and
-`useTokenSearch()` (debounced, aborts superseded requests, and reports
-`degraded` when a source or the offer aggregate failed — a partial answer
-otherwise looks identical to a complete one).
+`useTokenSearch()`. All of them abort a request the moment it is superseded — a
+token switch, a range change, a keystroke, an unmount — rather than let it finish
+for a screen nobody is looking at, and an aborted read never surfaces as an
+error. `useTokenSearch` is debounced (250 ms) and reports `degraded` when a
+source or the offer aggregate failed, since a partial answer otherwise looks
+identical to a complete one.
 
 ### Workflow Methods
 

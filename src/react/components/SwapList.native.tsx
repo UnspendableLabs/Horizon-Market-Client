@@ -126,6 +126,7 @@ export function SwapList({
     lastFetchedAt,
     listingType,
     setListingType,
+    listingTypePinned,
     sortOption,
     setSortOption,
     showMySwaps,
@@ -270,13 +271,18 @@ export function SwapList({
           "My swaps" toggle — all on a single row at the same height (native has
           no <select>; keeps the controls compact). */}
       <View style={[common.swapToolbar, stylesProp?.toolbar]}>
-        <Dropdown
-          style={[common.flex1, stylesProp?.filterTabs]}
-          title="Filter by type"
-          value={listingType}
-          onChange={setListingType}
-          options={filterTabs.map(({ key, label }) => ({ value: key, label }))}
-        />
+        {/* Hidden when the type is pinned (a feed narrowed to one asset): the
+            type is then a property of that asset, and a control that cannot
+            move is worse than no control. */}
+        {!listingTypePinned && (
+          <Dropdown
+            style={[common.flex1, stylesProp?.filterTabs]}
+            title="Filter by type"
+            value={listingType}
+            onChange={setListingType}
+            options={filterTabs.map(({ key, label }) => ({ value: key, label }))}
+          />
+        )}
         <Dropdown
           style={[common.flex1, stylesProp?.sortSelect]}
           title="Sort by"

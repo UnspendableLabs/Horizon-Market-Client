@@ -11,6 +11,7 @@ import { useToken, useTokenActivity, useTokenChart } from "./useToken.js";
 import type {
   TokenActivityPage,
   TokenChart,
+  TokenChartRange,
   TokenDetail,
   TokenRef,
 } from "../../api/tokens.js";
@@ -19,6 +20,13 @@ const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
 
 const REF: TokenRef = { protocol: "counterparty", id: "RAREPEPE" };
+
+/**
+ * The options argument every read carries: each one is abortable, so the hook
+ * can drop a request the user has already moved past instead of letting it
+ * finish. Asserted structurally — the controller is the hook's own.
+ */
+const signalArg = { signal: expect.any(AbortSignal) as AbortSignal };
 
 function detail(overrides: Partial<TokenDetail> = {}): TokenDetail {
   return {
@@ -124,10 +132,96 @@ describe("useToken", () => {
     const { result } = renderHook(() => useToken(REF));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(getToken).toHaveBeenCalledWith(REF);
+    expect(getToken).toHaveBeenCalledWith(REF, signalArg);
     expect(result.current.token?.canonicalId).toBe("counterparty:RAREPEPE");
     expect(result.current.notFound).toBe(false);
     expect(result.current.error).toBeNull();
+  });
+
+  it("is already loading on the very first render", () => {
+    // The read starts in an effect, which runs after the first paint. Starting
+    // at `loading: false` would give a screen one frame that is neither loading
+    // nor loaded — a blank flash before the spinner.
+    ctxRef.current = makeCtx({
+      client: { getToken: vi.fn(() => new Promise<null>(() => {})) },
+    });
+
+    const { result } = renderHook(() => useToken(REF));
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.token).toBeNull();
+  });
+
+  it("aborts the read a token switch supersedes", async () => {
+    const signals: AbortSignal[] = [];
+    const getToken = vi.fn((_ref: TokenRef, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return new Promise<TokenDetail>(() => {});
+    });
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useToken({ protocol: "counterparty", id } as TokenRef),
+      { initialProps: { id: "RAREPEPE" } },
+    );
+    await waitFor(() => expect(signals).toHaveLength(1));
+
+    rerender({ id: "PEPECASH" });
+    await waitFor(() => expect(signals).toHaveLength(2));
+    // The first read is for a token nobody is looking at any more.
+    expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+  });
+
+  it("aborts the in-flight read on unmount", async () => {
+    const signals: AbortSignal[] = [];
+    const getToken = vi.fn((_ref: TokenRef, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return new Promise<TokenDetail>(() => {});
+    });
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { unmount } = renderHook(() => useToken(REF));
+    await waitFor(() => expect(signals).toHaveLength(1));
+
+    unmount();
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it("does not report an aborted read as an error", async () => {
+    // `fetch` rejects an aborted request with a DOMException, which does not
+    // extend Error everywhere — so the guard cannot be `instanceof`-based.
+    const abortError = Object.assign(new Error("The operation was aborted"), {
+      name: "AbortError",
+    });
+    const getToken = vi
+      .fn()
+      .mockRejectedValueOnce(abortError)
+      .mockResolvedValue(detail({ id: "PEPECASH" }));
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useToken({ protocol: "counterparty", id } as TokenRef),
+      { initialProps: { id: "RAREPEPE" } },
+    );
+    rerender({ id: "PEPECASH" });
+
+    await waitFor(() => expect(result.current.token?.id).toBe("PEPECASH"));
+    expect(result.current.error).toBeNull();
+  });
+
+  it("stringifies a rejection that is not an Error", async () => {
+    // Nothing guarantees a client rejects with an Error — a bare string must
+    // still reach the banner instead of rendering as "[object Object]".
+    const getToken = vi.fn().mockRejectedValue("gateway exploded");
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { result } = renderHook(() => useToken(REF));
+
+    await waitFor(() => expect(result.current.error).toBe("gateway exploded"));
+    expect(result.current.loading).toBe(false);
   });
 
   it("stays idle for a null ref and issues no request", async () => {
@@ -160,10 +254,10 @@ describe("useToken", () => {
 
     rerender({ p: "counterparty", i: "PEPECASH" });
     await waitFor(() => expect(getToken).toHaveBeenCalledTimes(2));
-    expect(getToken).toHaveBeenLastCalledWith({
-      protocol: "counterparty",
-      id: "PEPECASH",
-    });
+    expect(getToken).toHaveBeenLastCalledWith(
+      { protocol: "counterparty", id: "PEPECASH" },
+      signalArg,
+    );
   });
 
   it("reports notFound (not an error) when the network serves no such token", async () => {
@@ -292,7 +386,7 @@ describe("useTokenChart", () => {
     const { result } = renderHook(() => useTokenChart(REF));
 
     await waitFor(() => expect(result.current.chart).not.toBeNull());
-    expect(getTokenChart).toHaveBeenCalledWith(REF, { range: "1M" });
+    expect(getTokenChart).toHaveBeenCalledWith(REF, { range: "1M" }, signalArg);
 
     act(() => result.current.setRange("1Y"));
     await waitFor(() => expect(result.current.chart?.range).toBe("1Y"));
@@ -306,7 +400,11 @@ describe("useTokenChart", () => {
     renderHook(() => useTokenChart(REF, { defaultRange: "1W" }));
 
     await waitFor(() =>
-      expect(getTokenChart).toHaveBeenCalledWith(REF, { range: "1W" }),
+      expect(getTokenChart).toHaveBeenCalledWith(
+        REF,
+        { range: "1W" },
+        signalArg,
+      ),
     );
   });
 
@@ -361,6 +459,68 @@ describe("useTokenChart", () => {
     expect(result.current.chart).not.toBeNull();
   });
 
+  it("stays idle for a null ref and issues no request", async () => {
+    const getTokenChart = vi.fn(async () => chartFixture("1M"));
+    ctxRef.current = makeCtx({ client: { getTokenChart } });
+
+    const { result } = renderHook(() => useTokenChart(null));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getTokenChart).not.toHaveBeenCalled();
+    expect(result.current.chart).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
+  it("clears the series when the ref goes away", async () => {
+    const getTokenChart = vi.fn(async () => chartFixture("1M"));
+    ctxRef.current = makeCtx({ client: { getTokenChart } });
+
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: TokenRef | null }) => useTokenChart(ref),
+      { initialProps: { ref: REF as TokenRef | null } },
+    );
+    await waitFor(() => expect(result.current.chart).not.toBeNull());
+
+    rerender({ ref: null });
+    await waitFor(() => expect(result.current.chart).toBeNull());
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("surfaces a read failure", async () => {
+    const getTokenChart = vi.fn(async () => {
+      throw new Error("chart down");
+    });
+    ctxRef.current = makeCtx({ client: { getTokenChart } });
+
+    const { result } = renderHook(() => useTokenChart(REF));
+
+    await waitFor(() => expect(result.current.error).toBe("chart down"));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("aborts the series a range change supersedes", async () => {
+    const signals: AbortSignal[] = [];
+    const getTokenChart = vi.fn(
+      (
+        _ref: TokenRef,
+        _params: { range: TokenChartRange },
+        options?: { signal?: AbortSignal },
+      ) => {
+        if (options?.signal) signals.push(options.signal);
+        return new Promise<TokenChart>(() => {});
+      },
+    );
+    ctxRef.current = makeCtx({ client: { getTokenChart } });
+
+    const { result } = renderHook(() => useTokenChart(REF));
+    await waitFor(() => expect(signals).toHaveLength(1));
+
+    act(() => result.current.setRange("1Y"));
+    await waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+  });
+
   it("reports a chartless token as a null series, not an error", async () => {
     const getTokenChart = vi.fn(async () => null);
     ctxRef.current = makeCtx({ client: { getTokenChart } });
@@ -385,7 +545,11 @@ describe("useTokenActivity", () => {
     const { result } = renderHook(() => useTokenActivity(REF, { limit: 2 }));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(getTokenActivity).toHaveBeenCalledWith(REF, { offset: 0, limit: 2 });
+    expect(getTokenActivity).toHaveBeenCalledWith(
+      REF,
+      { offset: 0, limit: 2 },
+      signalArg,
+    );
     expect(result.current.items).toHaveLength(2);
     expect(result.current.total).toBe(5);
     expect(result.current.hasMore).toBe(true);
@@ -403,10 +567,11 @@ describe("useTokenActivity", () => {
 
     act(() => result.current.loadMore());
     await waitFor(() => expect(result.current.items).toHaveLength(3));
-    expect(getTokenActivity).toHaveBeenLastCalledWith(REF, {
-      offset: 2,
-      limit: 2,
-    });
+    expect(getTokenActivity).toHaveBeenLastCalledWith(
+      REF,
+      { offset: 2, limit: 2 },
+      signalArg,
+    );
     expect(result.current.hasMore).toBe(false);
 
     // At the end, loadMore is a no-op rather than a request for an empty page.
@@ -470,6 +635,74 @@ describe("useTokenActivity", () => {
     expect(result.current.total).toBe(1);
   });
 
+  it("keeps paging after a refresh raced an in-flight loadMore", async () => {
+    // The reset must clear `loadingMore` too. It feeds the `busy` guard, so a
+    // stale `true` — left behind when the superseded page bails on the sequence
+    // check — makes `loadMore` a permanent no-op and pins the spinner up.
+    let resolveMore: ((page: TokenActivityPage) => void) | undefined;
+    const getTokenActivity = vi
+      .fn()
+      .mockImplementationOnce(async () => activityPage(0, 2, 9))
+      .mockImplementationOnce(
+        () =>
+          new Promise<TokenActivityPage>((resolve) => (resolveMore = resolve)),
+      )
+      .mockImplementation(
+        async (_ref: TokenRef, params: { offset: number; limit: number }) =>
+          activityPage(params.offset, 2, 9),
+      );
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result } = renderHook(() => useTokenActivity(REF, { limit: 2 }));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+
+    act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.loadingMore).toBe(false));
+
+    // The superseded page lands after the refresh and is dropped.
+    await act(async () => {
+      resolveMore?.(activityPage(2, 2, 9));
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    expect(result.current.loadingMore).toBe(false);
+
+    // …and paging still works, which the stale flag would have prevented.
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.items).toHaveLength(4));
+  });
+
+  it("aborts a loadMore page the reset supersedes", async () => {
+    const signals: AbortSignal[] = [];
+    const getTokenActivity = vi.fn(
+      (
+        _ref: TokenRef,
+        params: { offset: number; limit: number },
+        options?: { signal?: AbortSignal },
+      ) => {
+        if (options?.signal) signals.push(options.signal);
+        return params.offset === 0
+          ? Promise.resolve(activityPage(0, 2, 9))
+          : new Promise<TokenActivityPage>(() => {});
+      },
+    );
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result, unmount } = renderHook(() =>
+      useTokenActivity(REF, { limit: 2 }),
+    );
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[1]!.aborted).toBe(false);
+
+    unmount();
+    expect(signals[1]!.aborted).toBe(true);
+  });
+
   it("surfaces a read failure", async () => {
     const getTokenActivity = vi.fn(async () => {
       throw new Error("activity down");
@@ -479,5 +712,62 @@ describe("useTokenActivity", () => {
     const { result } = renderHook(() => useTokenActivity(REF));
 
     await waitFor(() => expect(result.current.error).toBe("activity down"));
+  });
+
+  it("stays idle for a null ref and issues no request", async () => {
+    const getTokenActivity = vi.fn(async () => activityPage(0, 1, 1));
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result } = renderHook(() => useTokenActivity(null));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getTokenActivity).not.toHaveBeenCalled();
+    expect(result.current.items).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    // Nothing to page through, so `loadMore` is a no-op rather than a throw.
+    act(() => result.current.loadMore());
+    expect(getTokenActivity).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a loadMore failure and reopens the guard", async () => {
+    const getTokenActivity = vi
+      .fn()
+      .mockResolvedValueOnce(activityPage(0, 2, 9))
+      .mockRejectedValueOnce(new Error("page down"))
+      .mockResolvedValue(activityPage(2, 2, 9));
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result } = renderHook(() => useTokenActivity(REF, { limit: 2 }));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.error).toBe("page down"));
+    expect(result.current.loadingMore).toBe(false);
+
+    // A failed page must not wedge paging shut — a retry is the obvious thing a
+    // user does next.
+    act(() => result.current.loadMore());
+    await waitFor(() => expect(result.current.items).toHaveLength(4));
+  });
+
+  it("does not report an aborted page as an error", async () => {
+    const abortError = Object.assign(new Error("aborted"), {
+      name: "AbortError",
+    });
+    const getTokenActivity = vi
+      .fn()
+      .mockRejectedValueOnce(abortError)
+      .mockResolvedValue(activityPage(0, 1, 1));
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useTokenActivity({ protocol: "counterparty", id } as TokenRef),
+      { initialProps: { id: "RAREPEPE" } },
+    );
+    rerender({ id: "PEPECASH" });
+
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    expect(result.current.error).toBeNull();
   });
 });

@@ -128,6 +128,7 @@ export function SwapList({
     error,
     listingType,
     setListingType,
+    listingTypePinned,
     sortOption,
     setSortOption,
     showMySwaps,
@@ -206,25 +207,30 @@ export function SwapList({
           className={classNames?.toolbar}
           style={{ ...ws.swapListToolbar, flexWrap: "nowrap" as const }}
         >
-          <select
-            className={classNames?.filterTabs}
-            aria-label="Filter by type"
-            value={listingType ?? "all"}
-            onChange={(e) =>
-              setListingType(
-                e.target.value === "all"
-                  ? null
-                  : (e.target.value as SwapListingType),
-              )
-            }
-            style={{ ...ws.input, flex: 1, minWidth: 0 }}
-          >
-            {filterTabs.map(({ key, label }) => (
-              <option key={key ?? "all"} value={key ?? "all"}>
-                {label}
-              </option>
-            ))}
-          </select>
+          {/* Hidden when the type is pinned (a feed narrowed to one asset): the
+              type is then a property of that asset, and a control that cannot
+              move is worse than no control. */}
+          {!listingTypePinned && (
+            <select
+              className={classNames?.filterTabs}
+              aria-label="Filter by type"
+              value={listingType ?? "all"}
+              onChange={(e) =>
+                setListingType(
+                  e.target.value === "all"
+                    ? null
+                    : (e.target.value as SwapListingType),
+                )
+              }
+              style={{ ...ws.input, flex: 1, minWidth: 0 }}
+            >
+              {filterTabs.map(({ key, label }) => (
+                <option key={key ?? "all"} value={key ?? "all"}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          )}
           {sortSelect}
           {mySwapsToggle}
         </div>
@@ -233,21 +239,24 @@ export function SwapList({
           className={classNames?.toolbar}
           style={{ ...ws.swapListToolbar, justifyContent: "space-between" }}
         >
-          {/* Filter tabs */}
+          {/* Filter tabs — see the pinned note on the phone <select> above. An
+              empty div still holds the left half of the space-between row, so
+              Sort + My swaps stay right-aligned. */}
           <div
             className={classNames?.filterTabs}
             style={{ ...ws.actionsRow, alignItems: "flex-end", flexWrap: "wrap" as const }}
           >
-            {filterTabs.map(({ key, label }) => (
-              <button
-                key={key ?? "all"}
-                type="button"
-                onClick={() => setListingType(key)}
-                style={ws.metaTab(listingType === key)}
-              >
-                {label}
-              </button>
-            ))}
+            {!listingTypePinned &&
+              filterTabs.map(({ key, label }) => (
+                <button
+                  key={key ?? "all"}
+                  type="button"
+                  onClick={() => setListingType(key)}
+                  style={ws.metaTab(listingType === key)}
+                >
+                  {label}
+                </button>
+              ))}
           </div>
 
           <div style={toolbarRightStyle}>
