@@ -64,6 +64,22 @@ export interface UseSwapListOptions {
    * caveats as {@link assetName}: no setter, and facet counts do not honor it.
    */
   kontorAssetKind?: KontorAssetKind;
+  /**
+   * Fixed listing-state pins, mirroring the remaining keys the tokens API hands
+   * out in `offers.atomicSwapsQuery`. A client following that query verbatim
+   * needs all of them: drop one and the feed answers a different set from the
+   * `offers.count` rendered above it.
+   *
+   * They describe what is *buyable*, so they narrow the open-offers feed only —
+   * the "Sold" feed is completed sales, where "expired" and "purchase still
+   * unconfirmed" do not mean the same thing. Same caveats as {@link assetName}:
+   * no setter, and facet counts do not honor them.
+   */
+  expired?: boolean;
+  /** @see {@link expired} */
+  excludePending?: boolean;
+  /** @see {@link expired} */
+  unattached?: boolean;
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
@@ -221,6 +237,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     assetName,
     kontorNftId,
     kontorAssetKind,
+    expired,
+    excludePending,
+    unattached,
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
@@ -434,6 +453,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
           filled: false,
           delisted: false,
           funded: true,
+          // The listing-state pins narrow the open-offers feed only — see
+          // {@link UseSwapListOptions.expired}. Left undefined they are simply
+          // not sent, so the server's own defaults apply exactly as before.
+          expired,
+          excludePending,
+          unattached,
         };
 
     // The seller filter is driven by "My swaps" ONLY — never by "Sold". "Sold"
@@ -520,6 +545,9 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     assetName,
     kontorNftId,
     kontorAssetKind,
+    expired,
+    excludePending,
+    unattached,
     listingType,
     sortOption,
     showMySwaps,

@@ -520,7 +520,14 @@ precision).
 tab bar is built from the response rather than from hard-coded protocol
 knowledge. For the open offers, hand `offers.atomicSwapsQuery` to `listSwaps()`
 (or `useSwapList`) — every key in it is one that endpoint parses, so the listing
-is exactly the set `offers.count` describes.
+is exactly the set `offers.count` describes. Forward *all* of them: the query
+pins the token (`asset_name` / `kontor_nft_id` / `kontor_asset_kind`,
+`listing_type`) **and** the listing state (`expired`, `exclude_pending`,
+`unattached`, `funded`, `delisted`, `filled`), and dropping one is how a list
+drifts away from the count rendered above it. `useSwapList` takes each as a fixed
+pin with no setter — a URL-driven view remounts to change them, and the
+user-facing controls (sort, "Sold", "My swaps", pagination) keep working within
+the pin. Facet counts do not honour them, so leave `includeFacets` off.
 
 In React: `useToken(ref)`, `useTokenChart(ref)`, `useTokenActivity(ref)` and
 `useTokenSearch()` (debounced, aborts superseded requests, and reports

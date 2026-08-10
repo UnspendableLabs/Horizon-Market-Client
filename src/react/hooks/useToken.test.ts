@@ -228,6 +228,55 @@ describe("useToken", () => {
     });
     expect(result.current.token?.id).toBe("PEPECASH");
   });
+
+  it("clears the previous token while a different one loads", async () => {
+    let resolveSecond: ((value: TokenDetail) => void) | undefined;
+    const getToken = vi
+      .fn()
+      .mockImplementationOnce(async () => detail({ id: "RAREPEPE" }))
+      .mockImplementationOnce(
+        () => new Promise<TokenDetail>((resolve) => (resolveSecond = resolve)),
+      );
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useToken({ protocol: "counterparty", id } as TokenRef),
+      { initialProps: { id: "RAREPEPE" } },
+    );
+    await waitFor(() => expect(result.current.token?.id).toBe("RAREPEPE"));
+
+    rerender({ id: "PEPECASH" });
+    // RAREPEPE's payload must not render under PEPECASH's route.
+    expect(result.current.token).toBeNull();
+
+    await act(async () => {
+      resolveSecond?.(detail({ id: "PEPECASH" }));
+    });
+    expect(result.current.token?.id).toBe("PEPECASH");
+  });
+
+  it("keeps the token on screen across a refresh of the SAME token", async () => {
+    let resolveSecond: ((value: TokenDetail) => void) | undefined;
+    const getToken = vi
+      .fn()
+      .mockImplementationOnce(async () => detail())
+      .mockImplementationOnce(
+        () => new Promise<TokenDetail>((resolve) => (resolveSecond = resolve)),
+      );
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { result } = renderHook(() => useToken(REF));
+    await waitFor(() => expect(result.current.token).not.toBeNull());
+
+    act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    expect(result.current.token?.id).toBe("RAREPEPE");
+
+    await act(async () => {
+      resolveSecond?.(detail());
+    });
+  });
 });
 
 // ─── useTokenChart ───────────────────────────────────────────────────────────
@@ -285,6 +334,33 @@ describe("useTokenChart", () => {
     expect(result.current.chart?.range).toBe("1Y");
   });
 
+  it("clears the series when the TOKEN changes, not just the range", async () => {
+    let resolveSecond: ((value: TokenChart) => void) | undefined;
+    const getTokenChart = vi
+      .fn()
+      .mockImplementationOnce(async () => chartFixture("1M"))
+      .mockImplementationOnce(
+        () => new Promise<TokenChart>((resolve) => (resolveSecond = resolve)),
+      );
+    ctxRef.current = makeCtx({ client: { getTokenChart } });
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) =>
+        useTokenChart({ protocol: "counterparty", id } as TokenRef),
+      { initialProps: { id: "RAREPEPE" } },
+    );
+    await waitFor(() => expect(result.current.chart?.range).toBe("1M"));
+
+    rerender({ id: "PEPECASH" });
+    // One token's prices must never be drawn under another's name.
+    expect(result.current.chart).toBeNull();
+
+    await act(async () => {
+      resolveSecond?.(chartFixture("1M"));
+    });
+    expect(result.current.chart).not.toBeNull();
+  });
+
   it("reports a chartless token as a null series, not an error", async () => {
     const getTokenChart = vi.fn(async () => null);
     ctxRef.current = makeCtx({ client: { getTokenChart } });
@@ -335,6 +411,28 @@ describe("useTokenActivity", () => {
 
     // At the end, loadMore is a no-op rather than a request for an empty page.
     act(() => result.current.loadMore());
+    expect(getTokenActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("fetches one page for two loadMore calls in the same tick", async () => {
+    // `onEndReached` fires more than once before React can re-render, so the
+    // `loadingMore` flag cannot be the only guard: both calls would read it as
+    // false, request the same offset and splice the page in twice.
+    const getTokenActivity = vi.fn(
+      async (_ref: TokenRef, params: { offset: number; limit: number }) =>
+        activityPage(params.offset, 2, 9),
+    );
+    ctxRef.current = makeCtx({ client: { getTokenActivity } });
+
+    const { result } = renderHook(() => useTokenActivity(REF, { limit: 2 }));
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+
+    act(() => {
+      result.current.loadMore();
+      result.current.loadMore();
+    });
+    await waitFor(() => expect(result.current.items).toHaveLength(4));
+    // Two calls total: the first page and ONE next page.
     expect(getTokenActivity).toHaveBeenCalledTimes(2);
   });
 

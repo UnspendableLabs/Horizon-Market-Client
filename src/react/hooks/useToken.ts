@@ -67,11 +67,21 @@ export function useToken(ref: TokenRef | null): UseTokenResult {
   // Monotonic guard: a slower earlier read must never overwrite a newer one
   // (switching tokens, or a refresh racing the initial load).
   const seqRef = useRef(0);
+  const keyRef = useRef(key);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     const seq = ++seqRef.current;
     const current = refRef.current;
+    // A DIFFERENT token: drop the one on screen rather than rendering its
+    // payload under the new one's route while the read is in flight. A
+    // `refresh` keys the same token, so it deliberately keeps what is shown.
+    const switched = keyRef.current !== key;
+    keyRef.current = key;
+    if (switched) {
+      setToken(null);
+      setNotFound(false);
+    }
 
     if (!current) {
       setToken(null);
@@ -112,8 +122,9 @@ export interface UseTokenChartOptions {
 export interface UseTokenChartResult {
   /**
    * The current series, or `null` before the first read / when the token has no
-   * chart. The PREVIOUS series is kept on screen while the next range loads, so
-   * changing range does not blank the graph.
+   * chart. The previous series is kept on screen while the next RANGE loads, so
+   * changing range does not blank the graph — but a change of *token* clears it,
+   * since one token's prices under another's name would simply be wrong.
    */
   chart: TokenChart | null;
   loading: boolean;
@@ -143,10 +154,17 @@ export function useTokenChart(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seqRef = useRef(0);
+  const keyRef = useRef(key);
 
   useEffect(() => {
     const seq = ++seqRef.current;
     const current = refRef.current;
+    // Keeping the previous series is only right across a range change. On a
+    // token change it would draw one token's prices under another's name, so
+    // clear it and let the loading state show.
+    const switched = keyRef.current !== key;
+    keyRef.current = key;
+    if (switched) setChart(null);
 
     if (!current) {
       setChart(null);
@@ -219,6 +237,11 @@ export function useTokenActivity(
   // `onEndReached` should not be a new function on every appended row.
   const stateRef = useRef({ items, total, busy: false });
   stateRef.current = { items, total, busy: loading || loadingMore };
+  // `busy` above only turns true on the NEXT render, so two `loadMore` calls in
+  // one tick — which `onEndReached` does fire — would both pass the guard and
+  // both fetch the same offset, splicing the page in twice. This flips
+  // synchronously.
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     const seq = ++seqRef.current;
@@ -227,6 +250,9 @@ export function useTokenActivity(
     setItems([]);
     setTotal(0);
     setError(null);
+    // A `loadMore` page still in flight is now for the previous token (the
+    // sequence bump below discards it), so it must not keep the guard closed.
+    inFlightRef.current = false;
 
     if (!current) {
       setLoading(false);
@@ -252,9 +278,11 @@ export function useTokenActivity(
   const loadMore = useCallback(() => {
     const { items: loaded, total: known, busy } = stateRef.current;
     const current = refRef.current;
-    if (busy || !current || loaded.length >= known) return;
+    if (busy || inFlightRef.current || !current || loaded.length >= known)
+      return;
 
     const seq = seqRef.current;
+    inFlightRef.current = true;
     setLoadingMore(true);
     client
       .getTokenActivity(current, { offset: loaded.length, limit })
@@ -263,12 +291,14 @@ export function useTokenActivity(
         // sequence; appending that page would splice one token's sales into
         // another's list.
         if (seq !== seqRef.current) return;
+        inFlightRef.current = false;
         setItems((prev) => [...prev, ...page.items]);
         setTotal(page.total);
         setLoadingMore(false);
       })
       .catch((err: unknown) => {
         if (seq !== seqRef.current) return;
+        inFlightRef.current = false;
         setError(message(err));
         setLoadingMore(false);
       });

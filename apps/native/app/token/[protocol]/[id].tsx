@@ -379,6 +379,11 @@ function OffersSection({ token }: { token: TokenDetail }) {
   // (`offers.atomicSwapsQuery`) rather than guessing a filter here: those keys
   // are exactly the ones `GET /api/atomic-swaps` parses, so the list matches the
   // `count` above it. Facets do not honour the pin, hence `includeFacets` off.
+  //
+  // Every key it can send is forwarded — dropping one (`expired`,
+  // `exclude_pending`, `unattached`) is exactly how a list drifts away from the
+  // count rendered above it. `funded` / `delisted` / `filled` are the open-offer
+  // defaults `useSwapList` already sends.
   const query = token.offers.atomicSwapsQuery;
   const assetName = query.asset_name;
   const kontorNftId = query.kontor_nft_id;
@@ -386,6 +391,11 @@ function OffersSection({ token }: { token: TokenDetail }) {
   // KOR and Kontor NFTs share one listing type, so without this the KOR page's
   // offers would also list every NFT — against a count that excluded them.
   const kontorAssetKind = query.kontor_asset_kind;
+  // Absent means "don't send it" (the server's default applies), which is not
+  // the same as sending `false` — hence the tri-state rather than a truthiness
+  // check on the string.
+  const flag = (value: string | undefined): boolean | undefined =>
+    value === undefined ? undefined : value === "true";
 
   return (
     <View style={styles.offers}>
@@ -399,6 +409,9 @@ function OffersSection({ token }: { token: TokenDetail }) {
         {...(listingType
           ? { defaultListingType: listingType as SwapListingType }
           : {})}
+        expired={flag(query.expired)}
+        excludePending={flag(query.exclude_pending)}
+        unattached={flag(query.unattached)}
         includePendingOrders={false}
         style={styles.offersList}
       />
