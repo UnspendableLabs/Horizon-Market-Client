@@ -2,7 +2,6 @@ import { useCallback } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +15,7 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "../components/Header.js";
 import { StandaloneTabBar } from "../components/TabBar.js";
+import { TokenImage } from "../components/TokenImage.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import { tokenHref } from "../lib/token-links.js";
 import { formatSatsAsBtc } from "../lib/token-format.js";
@@ -154,10 +154,14 @@ function ResultRow({
       {/* `imageUrl` is never empty — a token with no artwork gets the same
           deterministic placeholder the detail screen and the website draw, so
           one token shows one image everywhere. */}
-      <Image
-        source={{ uri: token.imageUrl }}
-        style={[styles.thumb, token.imageIsPlaceholder && styles.thumbFaded]}
+      <TokenImage
+        uri={token.imageUrl}
+        isPlaceholder={token.imageIsPlaceholder}
+        name={token.name}
+        token={{ protocol: token.protocol, id: token.id }}
+        style={styles.thumb}
         resizeMode="cover"
+        monogramSize={11}
       />
       <View style={styles.rowText}>
         <Text style={styles.rowName} numberOfLines={1}>
@@ -232,9 +236,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radii.sm,
-    backgroundColor: colors.surfaceHover,
   },
-  thumbFaded: { opacity: 0.45 },
   rowText: { flex: 1, gap: 2 },
   rowName: {
     fontSize: 15,

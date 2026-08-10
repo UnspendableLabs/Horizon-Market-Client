@@ -1,7 +1,7 @@
 /**
- * Fixed brand header — the full Horizon wordmark (the H mark + "Horizon") on a
- * slim bar pinned above the tab pager, with the profile entry point on the
- * right. It sits OUTSIDE the swipeable scenes, so it never scrolls with a tab's
+ * Fixed brand header — the full Horizon wordmark (the H mark + "Horizon"),
+ * tappable to return to the Buy tab, on a slim bar pinned above the tab pager,
+ * with the search and profile entry points on the right. It sits OUTSIDE the swipeable scenes, so it never scrolls with a tab's
  * content and stays put while swiping between tabs, mirroring the fixed bottom
  * {@link TabBar}. The root SafeAreaView already pads the top inset, so the bar
  * starts right under the status bar.
@@ -56,7 +56,18 @@ export function Header() {
 
   return (
     <View style={styles.bar}>
-      <Image source={wordmark} style={styles.logo} resizeMode="contain" />
+      {/* The wordmark is the way home, as on the website: it goes to Buy, the
+          first tab. `navigate` (not `push`) so tapping it from a root-stack
+          route — profile, search, a token — pops back to the pager rather than
+          stacking another copy of it, same as the tab bar's own buttons. */}
+      <Pressable
+        onPress={() => router.navigate("/")}
+        hitSlop={spacing.sm}
+        accessibilityRole="button"
+        accessibilityLabel="Horizon Market — go to Buy"
+      >
+        <Image source={wordmark} style={styles.logo} resizeMode="contain" />
+      </Pressable>
       {/* Both are root-stack routes, not tabs: they push over the pager (tab bar
           included) and pop back to wherever the user was. Disconnected users
           land on the same login gate the Sell / Wallet tabs show. */}
