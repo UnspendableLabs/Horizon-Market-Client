@@ -212,6 +212,25 @@ describe("useToken", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("reports a timed-out read as an error rather than swallowing it", async () => {
+    // `AbortSignal.timeout` also rejects with a DOMException, but a read nobody
+    // is waiting for and a read that FAILED are opposite things: treating the
+    // timeout as an abort would drop the banner and leave `loading` true, a
+    // spinner with nothing behind it and nothing to explain it.
+    const timeout = Object.assign(new Error("The operation timed out"), {
+      name: "TimeoutError",
+    });
+    const getToken = vi.fn().mockRejectedValue(timeout);
+    ctxRef.current = makeCtx({ client: { getToken } });
+
+    const { result } = renderHook(() => useToken(REF));
+
+    await waitFor(() =>
+      expect(result.current.error).toBe("The operation timed out"),
+    );
+    expect(result.current.loading).toBe(false);
+  });
+
   it("stringifies a rejection that is not an Error", async () => {
     // Nothing guarantees a client rejects with an Error — a bare string must
     // still reach the banner instead of rendering as "[object Object]".

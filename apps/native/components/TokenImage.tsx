@@ -136,6 +136,10 @@ export function TokenImage({
         <Text
           style={[
             styles.monogram,
+            // A failed image paints nothing, so the monogram sits on the dark
+            // frame instead of on a pastel placeholder — where the dark ink
+            // below would be invisible. Light ink is the readable one there.
+            broken && styles.monogramOnEmpty,
             { fontSize: monogramSize, lineHeight: monogramSize * 1.2 },
           ]}
           numberOfLines={1}
@@ -163,4 +167,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sansBold,
     letterSpacing: 1,
   },
+  // ...and the reverse over the bare frame, which is the app's own dark surface.
+  monogramOnEmpty: { color: colors.mutedStrong },
 });

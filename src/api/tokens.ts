@@ -610,13 +610,19 @@ function mapOffers(wire: WireTokenOffers): TokenOffers {
   };
 }
 
-const TOKEN_SECTIONS: TokenSection[] = [
-  "chart",
-  "activity",
-  "holders",
-  "attributes",
-  "transactions",
-];
+/**
+ * Every section, as a map rather than a list so the compiler enforces
+ * exhaustiveness: a member added to {@link TokenSection} fails to compile here
+ * instead of silently reopening the hole {@link mapCapabilities} exists to fill
+ * — a key a caller reads back as `undefined`.
+ */
+const TOKEN_SECTIONS: Record<TokenSection, true> = {
+  chart: true,
+  activity: true,
+  holders: true,
+  attributes: true,
+  transactions: true,
+};
 
 /**
  * `capabilities` with every section present.
@@ -630,7 +636,7 @@ function mapCapabilities(
   availableSections: TokenSection[],
 ): Record<TokenSection, boolean> {
   const mapped = {} as Record<TokenSection, boolean>;
-  for (const section of TOKEN_SECTIONS) {
+  for (const section of Object.keys(TOKEN_SECTIONS) as TokenSection[]) {
     mapped[section] =
       capabilities?.[section] ?? availableSections.includes(section);
   }

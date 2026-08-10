@@ -36,13 +36,17 @@ function refKey(ref: TokenRef | null): string {
  * Every read below is aborted when it is superseded or the component unmounts,
  * and that rejects the promise — reporting it as a read failure would put an
  * error banner on a screen the user has already left.
+ *
+ * `AbortError` only: a `TimeoutError` (what `AbortSignal.timeout` rejects with,
+ * should a caller ever hand one down) is a read that FAILED, not one nobody is
+ * waiting for. Swallowing it would leave `loading` true forever, with no error
+ * to explain the spinner.
  */
 function isAbort(err: unknown): boolean {
   // Duck-typed on `name`, not `instanceof Error`: `fetch` rejects an aborted
   // request with a DOMException, which does not extend Error on every runtime
   // this SDK ships to.
-  const name = (err as { name?: unknown } | null)?.name;
-  return name === "AbortError" || name === "TimeoutError";
+  return (err as { name?: unknown } | null)?.name === "AbortError";
 }
 
 export interface UseTokenResult {
