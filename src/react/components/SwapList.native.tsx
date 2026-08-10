@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap, PendingSale } from "../../types/index.js";
+import type { TokenRef } from "../../api/tokens.js";
 import {
   useSwapList,
   SORT_OPTIONS,
@@ -63,6 +64,15 @@ export interface SwapListProps extends UseSwapListOptions {
   title?: ReactNode;
   onSwapSelect?: (swap: AtomicSwap) => void;
   /**
+   * Turn each tile's asset name into a link to that token's screen. The handler
+   * receives the {@link TokenRef} the host feeds to `useToken` / `client.getToken`
+   * (or turns into a route), so the list needs no knowledge of the app's
+   * navigation. Listings that name no token keep a plain, unlinked name.
+   *
+   * Omit it and the list renders exactly as before.
+   */
+  onTokenPress?: (ref: TokenRef, swap: AtomicSwap) => void;
+  /**
    * Fired when a buy succeeds. Observation only — the built-in confirmation
    * modal still drives the UX unchanged. `sales` is the raw fill result
    * (asset-poor); `swap` is the full listing that was bought, so a host can
@@ -96,6 +106,7 @@ export function SwapList({
   getPrivateKey,
   title,
   onSwapSelect,
+  onTokenPress,
   onBuySuccess,
   onBuyError,
   onDelistSuccess,
@@ -191,6 +202,7 @@ export function SwapList({
                     onSwapSelect?.(swap);
                     onItemAction(swap);
                   }}
+                  onTokenPress={onTokenPress}
                   style={{ flex: 1 }}
                   styles={stylesProp?.item}
                 />

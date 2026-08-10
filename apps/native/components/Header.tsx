@@ -18,6 +18,21 @@ const wordmark = require("../assets/logo-wordmark.png");
 const LOGO_HEIGHT = 24;
 const LOGO_WIDTH = Math.round((LOGO_HEIGHT * 1500) / 304);
 
+/** lucide `search` — the token-search entry point. */
+function SearchIcon({ color, size = 21 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={11} cy={11} r={8} stroke={color} strokeWidth={2} />
+      <Path
+        d="m21 21-4.3-4.3"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 /** lucide `circle-user-round` — the profile entry point. */
 function UserIcon({ color, size = 22 }: { color: string; size?: number }) {
   return (
@@ -42,18 +57,30 @@ export function Header() {
   return (
     <View style={styles.bar}>
       <Image source={wordmark} style={styles.logo} resizeMode="contain" />
-      {/* /profile is a root-stack route, not a tab: it pushes over the pager
-          (tab bar included) and pops back to wherever the user was. Disconnected
-          users land on the same login gate the Sell / Wallet tabs show. */}
-      <Pressable
-        onPress={() => router.navigate("/profile")}
-        style={styles.profileButton}
-        hitSlop={spacing.sm}
-        accessibilityRole="button"
-        accessibilityLabel="Profile"
-      >
-        <UserIcon color={addresses ? colors.primary : colors.mutedStrong} />
-      </Pressable>
+      {/* Both are root-stack routes, not tabs: they push over the pager (tab bar
+          included) and pop back to wherever the user was. Disconnected users
+          land on the same login gate the Sell / Wallet tabs show. */}
+      <View style={styles.actions}>
+        {/* Search needs no wallet — it reads the public tokens API. */}
+        <Pressable
+          onPress={() => router.navigate("/search")}
+          style={styles.iconButton}
+          hitSlop={spacing.sm}
+          accessibilityRole="button"
+          accessibilityLabel="Search tokens"
+        >
+          <SearchIcon color={colors.mutedStrong} />
+        </Pressable>
+        <Pressable
+          onPress={() => router.navigate("/profile")}
+          style={styles.iconButton}
+          hitSlop={spacing.sm}
+          accessibilityRole="button"
+          accessibilityLabel="Profile"
+        >
+          <UserIcon color={addresses ? colors.primary : colors.mutedStrong} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -73,7 +100,12 @@ const styles = StyleSheet.create({
     width: LOGO_WIDTH,
     height: LOGO_HEIGHT,
   },
-  profileButton: {
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  iconButton: {
     width: 36,
     height: 36,
     alignItems: "center",

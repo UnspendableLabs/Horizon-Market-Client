@@ -1,0 +1,297 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHorizonMarket } from "../context.js";
+import type {
+  TokenActivityItem,
+  TokenChart,
+  TokenChartRange,
+  TokenDetail,
+  TokenRef,
+} from "../../api/tokens.js";
+
+/**
+ * Reads of one token over `/api/tokens/*`.
+ *
+ * The API answers with the same shape for all five asset types, so these hooks
+ * are protocol-blind: a screen mounts them with a {@link TokenRef} and renders
+ * whatever comes back, using `capabilities` / `availableSections` to decide
+ * which sections exist rather than branching on the protocol itself.
+ */
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * A stable string for a ref, so the effects below depend on the token's
+ * *identity* rather than on object identity — a caller building
+ * `{ protocol, id }` inline in its render would otherwise refetch every render.
+ */
+function refKey(ref: TokenRef | null): string {
+  return ref ? `${ref.protocol}:${ref.id}` : "";
+}
+
+export interface UseTokenResult {
+  /** The token, `null` before the first read resolves or when there is none. */
+  token: TokenDetail | null;
+  /** True while a read is in flight. */
+  loading: boolean;
+  /**
+   * True once a read came back 404 — the token does not exist, or this network
+   * does not serve it (Kontor is signet-only). Distinct from {@link error},
+   * which means the read itself failed.
+   */
+  notFound: boolean;
+  /** Last read error, or `null`. */
+  error: string | null;
+  /** Re-read the token from the server. */
+  refresh: () => void;
+}
+
+/**
+ * One token's detail payload. Idle (and empty) while `ref` is `null`, so a
+ * screen can mount this before its route params resolve.
+ */
+export function useToken(ref: TokenRef | null): UseTokenResult {
+  const { client } = useHorizonMarket();
+  const key = refKey(ref);
+  // The effect keys off `key` (a value), not the object — but it needs the
+  // object itself to make the call, so carry it through a ref.
+  const refRef = useRef(ref);
+  refRef.current = ref;
+
+  const [token, setToken] = useState<TokenDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Monotonic guard: a slower earlier read must never overwrite a newer one
+  // (switching tokens, or a refresh racing the initial load).
+  const seqRef = useRef(0);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    const seq = ++seqRef.current;
+    const current = refRef.current;
+
+    if (!current) {
+      setToken(null);
+      setLoading(false);
+      setNotFound(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setNotFound(false);
+    client
+      .getToken(current)
+      .then((next) => {
+        if (seq !== seqRef.current) return;
+        setToken(next);
+        setNotFound(next === null);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (seq !== seqRef.current) return;
+        setError(message(err));
+        setLoading(false);
+      });
+  }, [client, key, nonce]);
+
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  return { token, loading, notFound, error, refresh };
+}
+
+export interface UseTokenChartOptions {
+  /** Window to start on. Defaults to the API's own default (`1M`). */
+  defaultRange?: TokenChartRange;
+}
+
+export interface UseTokenChartResult {
+  /**
+   * The current series, or `null` before the first read / when the token has no
+   * chart. The PREVIOUS series is kept on screen while the next range loads, so
+   * changing range does not blank the graph.
+   */
+  chart: TokenChart | null;
+  loading: boolean;
+  error: string | null;
+  range: TokenChartRange;
+  setRange: (range: TokenChartRange) => void;
+}
+
+/**
+ * A token's price series for a preset range. Only mount this when the detail
+ * payload says `capabilities.chart` — a one-of-a-kind token has no series and
+ * the endpoint answers 404 (surfaced here as `chart: null`, not an error).
+ */
+export function useTokenChart(
+  ref: TokenRef | null,
+  options?: UseTokenChartOptions,
+): UseTokenChartResult {
+  const { client } = useHorizonMarket();
+  const key = refKey(ref);
+  const refRef = useRef(ref);
+  refRef.current = ref;
+
+  const [range, setRange] = useState<TokenChartRange>(
+    options?.defaultRange ?? "1M",
+  );
+  const [chart, setChart] = useState<TokenChart | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    const seq = ++seqRef.current;
+    const current = refRef.current;
+
+    if (!current) {
+      setChart(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    client
+      .getTokenChart(current, { range })
+      .then((next) => {
+        if (seq !== seqRef.current) return;
+        setChart(next);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (seq !== seqRef.current) return;
+        setError(message(err));
+        setLoading(false);
+      });
+  }, [client, key, range]);
+
+  return { chart, loading, error, range, setRange };
+}
+
+export interface UseTokenActivityOptions {
+  /** Page size. Defaults to 20. */
+  limit?: number;
+}
+
+export interface UseTokenActivityResult {
+  /** Sales loaded so far, newest first — appended page by page. */
+  items: TokenActivityItem[];
+  /** Total sales the server reports, across all pages. */
+  total: number;
+  /** True while the FIRST page is in flight. */
+  loading: boolean;
+  /** True while a {@link loadMore} page is in flight. */
+  loadingMore: boolean;
+  error: string | null;
+  hasMore: boolean;
+  /** Append the next page. No-op while a read is in flight or at the end. */
+  loadMore: () => void;
+  /** Drop everything and re-read the first page. */
+  refresh: () => void;
+}
+
+/** A token's completed sales, paged. */
+export function useTokenActivity(
+  ref: TokenRef | null,
+  options?: UseTokenActivityOptions,
+): UseTokenActivityResult {
+  const { client } = useHorizonMarket();
+  const key = refKey(ref);
+  const refRef = useRef(ref);
+  refRef.current = ref;
+  const limit = options?.limit ?? 20;
+
+  const [items, setItems] = useState<TokenActivityItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seqRef = useRef(0);
+  const [nonce, setNonce] = useState(0);
+
+  // Read through a ref inside `loadMore` so the callback stays stable — a list's
+  // `onEndReached` should not be a new function on every appended row.
+  const stateRef = useRef({ items, total, busy: false });
+  stateRef.current = { items, total, busy: loading || loadingMore };
+
+  useEffect(() => {
+    const seq = ++seqRef.current;
+    const current = refRef.current;
+
+    setItems([]);
+    setTotal(0);
+    setError(null);
+
+    if (!current) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    client
+      .getTokenActivity(current, { offset: 0, limit })
+      .then((page) => {
+        if (seq !== seqRef.current) return;
+        setItems(page.items);
+        setTotal(page.total);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (seq !== seqRef.current) return;
+        setError(message(err));
+        setLoading(false);
+      });
+  }, [client, key, limit, nonce]);
+
+  const loadMore = useCallback(() => {
+    const { items: loaded, total: known, busy } = stateRef.current;
+    const current = refRef.current;
+    if (busy || !current || loaded.length >= known) return;
+
+    const seq = seqRef.current;
+    setLoadingMore(true);
+    client
+      .getTokenActivity(current, { offset: loaded.length, limit })
+      .then((page) => {
+        // A token switch (or a refresh) between request and response bumps the
+        // sequence; appending that page would splice one token's sales into
+        // another's list.
+        if (seq !== seqRef.current) return;
+        setItems((prev) => [...prev, ...page.items]);
+        setTotal(page.total);
+        setLoadingMore(false);
+      })
+      .catch((err: unknown) => {
+        if (seq !== seqRef.current) return;
+        setError(message(err));
+        setLoadingMore(false);
+      });
+    // Deliberately not keyed on the token: everything it reads comes through a
+    // ref, and the sequence guard above discards a page that lands after a
+    // switch — so this callback stays stable for a list's `onEndReached`.
+  }, [client, limit]);
+
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  const hasMore = items.length < total;
+
+  return useMemo(
+    () => ({
+      items,
+      total,
+      loading,
+      loadingMore,
+      error,
+      hasMore,
+      loadMore,
+      refresh,
+    }),
+    [items, total, loading, loadingMore, error, hasMore, loadMore, refresh],
+  );
+}

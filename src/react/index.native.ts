@@ -26,6 +26,10 @@ export {
   WITHDRAW_FEE_OPTIONS,
   useSwapConfirmation,
   useSwapList,
+  useToken,
+  useTokenChart,
+  useTokenActivity,
+  useTokenSearch,
   useProfile,
   useProfileWallets,
   useKontorFaucet,
@@ -78,6 +82,13 @@ export type {
   UseSwapListResult,
   UseProfileResult,
   UseProfileWalletsResult,
+  UseTokenResult,
+  UseTokenChartOptions,
+  UseTokenChartResult,
+  UseTokenActivityOptions,
+  UseTokenActivityResult,
+  UseTokenSearchOptions,
+  UseTokenSearchResult,
 } from "./hooks/index.js";
 
 // The profile payloads those two hooks hand back — re-exported here so an app
@@ -90,6 +101,39 @@ export type {
   AvatarUpload,
 } from "../api/profiles.js";
 export { isPlaceholderUsername } from "../api/profiles.js";
+
+// The token payloads the useToken* / useTokenSearch hooks hand back — same
+// rationale as the profile types above: an app types its token screen without
+// importing the root entry. `tokenRefFromSwap` turns a listing into the token it
+// sells, which is what makes an asset name in a swap list linkable.
+export { tokenApiPath, tokenRefFromSwap } from "../api/tokens.js";
+export type {
+  TokenRef,
+  TokenProtocol,
+  TokenNetwork,
+  TokenDetail,
+  TokenMedia,
+  TokenMediaKind,
+  TokenMarket,
+  TokenOffers,
+  TokenLink,
+  TokenSection,
+  TokenStat,
+  TokenProperty,
+  TokenPropertyGroup,
+  TokenValue,
+  TokenValueType,
+  TokenValueTone,
+  TokenChart,
+  TokenChartPoint,
+  TokenChartRange,
+  TokenActivityItem,
+  TokenActivityPage,
+  TokenSummary,
+  TokenMatch,
+  TokenSearchResult,
+  TokenSearchSourceStatus,
+} from "../api/tokens.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm
 // step (cost breakdown, live fee-rate selection, fee waiver, and the Kontor

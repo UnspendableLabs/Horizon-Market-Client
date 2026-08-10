@@ -16,6 +16,8 @@ export const SURFACE = {
   wallet: "wallet_native",
   settings: "settings_native",
   profile: "profile_native",
+  token: "token_native",
+  search: "search_native",
 } as const;
 
 function withPlatform(surface: string, props?: EventPayload): EventPayload {
@@ -193,6 +195,39 @@ export function trackProfileSaved(props: {
 
 export function trackProfileAvatarChanged(): void {
   void track("profile_avatar_updated", withPlatform(SURFACE.profile));
+}
+
+// ---- Tokens ---------------------------------------------------------------
+
+/**
+ * A token screen was opened, and from where. `from` is the funnel question the
+ * bare pageview cannot answer: whether search actually leads anywhere, or
+ * whether every token view comes from tapping a name in the Buy list.
+ */
+export function trackTokenViewed(props: {
+  protocol: string;
+  from: "buy_list" | "search" | "direct";
+}): void {
+  void track(
+    "token_viewed",
+    withPlatform(SURFACE.token, { protocol: props.protocol, from: props.from }),
+  );
+}
+
+/** A search result was tapped — with its rank, to see whether ranking works. */
+export function trackTokenSearchResultOpened(props: {
+  protocol: string;
+  position: number;
+  queryLength: number;
+}): void {
+  void track(
+    "token_search_result_opened",
+    withPlatform(SURFACE.search, {
+      protocol: props.protocol,
+      position: props.position,
+      query_length: props.queryLength,
+    }),
+  );
 }
 
 // ---- Screen views -----------------------------------------------------

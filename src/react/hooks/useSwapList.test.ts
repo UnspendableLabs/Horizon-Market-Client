@@ -475,6 +475,34 @@ describe("useSwapList — fixed asset filters", () => {
       expect.objectContaining({ kontorNftId: "nft-123", listingType: "kontor" }),
     );
   });
+
+  it("threads a fixed kontorAssetKind into the feed fetch", async () => {
+    // KOR-token and NFT listings share `listingType: "kontor"`, so pinning a
+    // feed to the KOR token needs the kind as well — otherwise a KOR view lists
+    // every Kontor NFT alongside it.
+    const listSwaps = vi
+      .fn()
+      .mockResolvedValue(listResult([swap({ id: "k1", listingType: "kontor" })]));
+    ctxRef.current = ctxWith(listSwaps, { kontorNetwork: "signet" });
+
+    const { result } = renderHook(() =>
+      useSwapList({ kontorAssetKind: "token", defaultListingType: "kontor" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kontorAssetKind: "token",
+        listingType: "kontor",
+      }),
+    );
+
+    // Still applied once a user-facing control triggers a refetch.
+    act(() => result.current.setSortOption("cheapest"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(listSwaps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kontorAssetKind: "token" }),
+    );
+  });
 });
 
 describe("useSwapList — kontor availability", () => {

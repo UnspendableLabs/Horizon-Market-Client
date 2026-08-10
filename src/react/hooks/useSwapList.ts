@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket, type Addresses } from "../context.js";
 import type {
   AtomicSwap,
+  KontorAssetKind,
   SwapFacets,
   SwapFacetsParams,
 } from "../../types/index.js";
@@ -56,6 +57,13 @@ export interface UseSwapListOptions {
    * counts do not honor it.
    */
   kontorNftId?: string;
+  /**
+   * Fixed Kontor-asset-kind filter (`"token"` / `"nft"`). KOR-token and NFT
+   * listings share one `listingType`, so pinning a feed to the KOR token needs
+   * this as well — without it a KOR view also lists every Kontor NFT. Same
+   * caveats as {@link assetName}: no setter, and facet counts do not honor it.
+   */
+  kontorAssetKind?: KontorAssetKind;
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
@@ -212,6 +220,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const {
     assetName,
     kontorNftId,
+    kontorAssetKind,
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
@@ -405,6 +414,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     const filters = {
       assetName,
       kontorNftId,
+      kontorAssetKind,
       listingType: listingType ?? undefined,
       priceMin: priceMin ?? undefined,
       priceMax: priceMax ?? undefined,
@@ -509,6 +519,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     client,
     assetName,
     kontorNftId,
+    kontorAssetKind,
     listingType,
     sortOption,
     showMySwaps,

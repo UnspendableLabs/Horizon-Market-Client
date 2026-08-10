@@ -134,6 +134,7 @@ function App() {
 | `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
 | `useProfile`, `useProfileWallets` | The account's Horizon Market profile: load, edit username / bio / visibility, upload an avatar, publish or hide each linked wallet. Idle until the wallet sign-in lands (the whole surface is session-gated) |
+| `useToken`, `useTokenChart`, `useTokenActivity`, `useTokenSearch` | One token's detail payload, price series and sales, plus a debounced cross-protocol autocomplete. Protocol-blind: the same hooks serve all five asset types (see [Tokens](#tokens)) |
 | `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
@@ -482,6 +483,49 @@ Public reads (no authentication; a private and an unknown username both answer
 created with apart from a name the user actually picked. In React, `useProfile()`
 and `useProfileWallets()` wrap all of this (load, edit, avatar upload, wallet
 visibility) for a profile screen.
+
+### Tokens
+
+`/api/tokens/*` answers with **one payload shape for all five asset types** —
+Counterparty assets, ZELD, Ordinals inscriptions, the Kontor KOR token and Kontor
+NFTs — so a token screen is one component tree rather than five. Public,
+unauthenticated, GET-only.
+
+A token is addressed by a `TokenRef` (`{ protocol, id }`); `tokenApiPath()` is
+the single place the five URL shapes live:
+
+| Protocol | Endpoint |
+| --- | --- |
+| `counterparty` | `/api/tokens/counterparty/{asset}` (subasset longnames included) |
+| `zeld` | `/api/tokens/ZELD` |
+| `ordinals` | `/api/tokens/ordinals/{inscription}` |
+| `kontor` | `/api/tokens/kontor/KOR` — signet only |
+| `kontor-nft` | `/api/tokens/kontor/nfts/{nft_id}` — signet only |
+
+- `getToken(ref, options?)` — `TokenDetail | null`. `null` is an ordinary answer: an unknown asset, or a Kontor token asked of a mainnet host
+- `getTokenChart(ref, { range } | { from, to }, options?)` — `TokenChart | null` (`null` when the token has no series at all — a one-of-a-kind token). Pass one form or the other, never both
+- `getTokenActivity(ref, { offset?, limit? }, options?)` — completed sales, newest first
+- `searchTokens({ query, limit?, protocols?, listedOnly? }, options?)` — one autocomplete across all five types. No `offset`: five independently-ranked sources cannot be paged coherently, so raise `limit` (max 50) and read `truncated`
+- `tokenRefFromSwap(swap)` — the token a listing from `listSwaps()` sells, or `null` when it names none. This is what makes an asset name in a swap list linkable
+
+Two conventions worth knowing. **Values are typed, not pre-formatted**: `stats`
+and `properties` are ordered lists of `{ key, label, value }` where `value.type`
+(`sats`, `address`, `datetime`, `badge`, …) says how to render it — so a new row
+appears with no client change, and formatting stays the client's. And **every
+price is integer sats, per whole unit**, while `supply` and an activity row's
+`quantity` are decimal *strings* (they are bigint at rest and exceed float
+precision).
+
+`capabilities` / `availableSections` say which sub-resources a token has, so a
+tab bar is built from the response rather than from hard-coded protocol
+knowledge. For the open offers, hand `offers.atomicSwapsQuery` to `listSwaps()`
+(or `useSwapList`) — every key in it is one that endpoint parses, so the listing
+is exactly the set `offers.count` describes.
+
+In React: `useToken(ref)`, `useTokenChart(ref)`, `useTokenActivity(ref)` and
+`useTokenSearch()` (debounced, aborts superseded requests, and reports
+`degraded` when a source or the offer aggregate failed — a partial answer
+otherwise looks identical to a complete one).
 
 ### Workflow Methods
 

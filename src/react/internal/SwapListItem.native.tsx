@@ -13,6 +13,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap } from "../../types/index.js";
+import { tokenRefFromSwap, type TokenRef } from "../../api/tokens.js";
 import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useCommonSheet } from "./styles.native.js";
@@ -26,6 +27,8 @@ export interface SwapListItemStyles {
   image?: StyleProp<ImageStyle>;
   placeholder?: StyleProp<ViewStyle>;
   name?: StyleProp<TextStyle>;
+  /** Extra styling for the name when it links to a token screen. */
+  nameLink?: StyleProp<TextStyle>;
   price?: StyleProp<TextStyle>;
   meta?: StyleProp<TextStyle>;
   button?: StyleProp<ViewStyle>;
@@ -38,6 +41,12 @@ export interface SwapListItemProps {
   swap: AtomicSwap;
   isMySwap: boolean;
   onAction: () => void;
+  /**
+   * Make the asset name a link to this token's screen. Given a
+   * {@link TokenRef} the host turns into navigation; not called (and the name
+   * renders as plain text) for a listing that names no token.
+   */
+  onTokenPress?: (ref: TokenRef, swap: AtomicSwap) => void;
   style?: StyleProp<ViewStyle>;
   styles?: SwapListItemStyles;
 }
@@ -131,6 +140,11 @@ function createSheet(theme: ResolvedTheme) {
       fontSize: theme.typography.fontSizeSm,
       fontWeight: "600",
     },
+    // Tinted rather than underlined: the tile's name is a single line that
+    // already truncates, and an underline under an ellipsis reads as a defect.
+    nameLink: {
+      color: theme.colors.primary,
+    },
   });
 }
 
@@ -138,6 +152,7 @@ export function SwapListItem({
   swap,
   isMySwap,
   onAction,
+  onTokenPress,
   style,
   styles: stylesProp,
 }: SwapListItemProps) {
@@ -176,6 +191,11 @@ export function SwapListItem({
   const isKontorToken =
     swap.listingType === "kontor" && swap.kontorAssetKind !== "nft";
 
+  // The token this listing sells, when it names one. A hand-built fixture (or a
+  // Kontor NFT row with no id) has nothing to link to, so the name stays plain
+  // text rather than becoming a tap target that goes nowhere.
+  const tokenRef = onTokenPress ? tokenRefFromSwap(swap) : null;
+
   return (
     <View style={[common.swapItemCard, style, stylesProp?.root]}>
       <View style={sheet.imageGridPanel}>
@@ -195,12 +215,30 @@ export function SwapListItem({
           }
         />
       </View>
-      <Text
-        style={[common.swapItemName, stylesProp?.name]}
-        numberOfLines={1}
-      >
-        {title}
-      </Text>
+      {tokenRef ? (
+        <Pressable
+          onPress={() => onTokenPress?.(tokenRef, swap)}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel={`View ${title}`}
+        >
+          <Text
+            style={[
+              common.swapItemName,
+              sheet.nameLink,
+              stylesProp?.name,
+              stylesProp?.nameLink,
+            ]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={[common.swapItemName, stylesProp?.name]} numberOfLines={1}>
+          {title}
+        </Text>
+      )}
       <Text style={[common.muted, stylesProp?.price]}>
         {priceLabel}
       </Text>
