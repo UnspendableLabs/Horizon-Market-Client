@@ -42,8 +42,23 @@ export interface UseTokenListOptions {
 }
 
 export interface UseTokenListResult {
-  /** Rows loaded so far, appended page by page. */
+  /**
+   * Rows loaded so far, appended page by page and de-duplicated by
+   * `canonicalId` — see {@link UseTokenListResult.pagedCount} for why a live
+   * catalogue hands the same row out twice.
+   */
   tokens: TokenSummary[];
+  /**
+   * How many rows the server has handed over, which is where the next page is
+   * read from. It runs ahead of `tokens.length` once a feed has served a
+   * duplicate: paging is by offset over a list that moves, so an item added
+   * between two reads shifts everything after it — `recent_window` is ordered
+   * newest first, so that is one shift per new inscription. The next offset is
+   * a position in the *server's* list, so it counts what was sent rather than
+   * what survived de-duplication; charging the duplicates to it would re-read
+   * them forever.
+   */
+  pagedCount: number;
   /** How many rows exist in {@link source} — NOT in the protocol as a whole. */
   total: number;
   /**
@@ -103,6 +118,7 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
   const limit = options.limit ?? 20;
 
   const [tokens, setTokens] = useState<TokenSummary[]>([]);
+  const [pagedCount, setPagedCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [source, setSource] = useState<TokenListSource | null>(null);
   // Starts true: the first read begins in an effect, which runs after the first
@@ -123,8 +139,8 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
 
   // Read through a ref inside `loadMore` so the callback stays stable — a grid's
   // `onEndReached` should not be a new function on every appended row.
-  const stateRef = useRef({ tokens, total, busy: false });
-  stateRef.current = { tokens, total, busy: loading || loadingMore };
+  const stateRef = useRef({ paged: pagedCount, total, busy: false });
+  stateRef.current = { paged: pagedCount, total, busy: loading || loadingMore };
   // `busy` above only turns true on the NEXT render, so two `loadMore` calls in
   // one tick — which `onEndReached` does fire — would both pass the guard and
   // both fetch the same offset, splicing the page in twice. This flips
@@ -139,6 +155,7 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
     const seq = ++seqRef.current;
 
     setTokens([]);
+    setPagedCount(0);
     setTotal(0);
     setSource(null);
     setError(null);
@@ -171,7 +188,12 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
           return;
         }
         setTokens(page.results);
-        setTotal(page.total);
+        setPagedCount(page.results.length);
+        // Same clamp as `loadMore`: a first page that came back empty under a
+        // non-zero total is an upstream contradicting itself, and taking its
+        // word for it would leave `hasMore` true over an empty grid — which a
+        // `onEndReached` reads as "fetch offset 0 again".
+        setTotal(page.results.length === 0 ? 0 : page.total);
         setSource(page.source);
         setHydration(page.hydration);
         setArtwork(page.artwork);
@@ -192,8 +214,8 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
   }, [client, protocol, listedOnly, limit, nonce]);
 
   const loadMore = useCallback(() => {
-    const { tokens: loaded, total: known, busy } = stateRef.current;
-    if (busy || inFlightRef.current || loaded.length >= known) return;
+    const { paged, total: known, busy } = stateRef.current;
+    if (busy || inFlightRef.current || paged >= known) return;
 
     const seq = seqRef.current;
     const controller = new AbortController();
@@ -202,7 +224,7 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
     setLoadingMore(true);
     client
       .listTokens(
-        { protocol, listedOnly, offset: loaded.length, limit },
+        { protocol, listedOnly, offset: paged, limit },
         { signal: controller.signal },
       )
       .then((page) => {
@@ -213,11 +235,30 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
         if (seq !== seqRef.current) return;
         inFlightRef.current = false;
         loadMoreAbortRef.current = null;
-        // A protocol that stopped being served mid-page: keep what is on screen
-        // (it was real) and stop paging by leaving `total` where it is.
         if (page) {
-          setTokens((prev) => [...prev, ...page.results]);
-          setTotal(page.total);
+          setTokens((prev) => {
+            // Offset paging over a list that moves: an item added between two
+            // reads shifts everything after it, so the tail of the page on
+            // screen comes back at the head of the next one. Appending it
+            // verbatim duplicates a tile and a React key.
+            const seen = new Set(prev.map((token) => token.canonicalId));
+            return [
+              ...prev,
+              ...page.results.filter((token) => !seen.has(token.canonicalId)),
+            ];
+          });
+          // By what the server SENT, not by what survived the filter above —
+          // see `pagedCount`.
+          setPagedCount(paged + page.results.length);
+          // An empty page under a non-zero total is the end of what the upstream
+          // can actually serve. Trusting `total` there would leave `hasMore`
+          // true against an offset that answers nothing, and a grid's
+          // `onEndReached` would re-read it at every scroll.
+          setTotal(page.results.length === 0 ? paged : page.total);
+          // A page that landed clears the failure of the one before it: the
+          // effect's reset only runs on a feed change, so a retried `loadMore`
+          // would otherwise succeed under a stale error.
+          setError(null);
           setHydration(page.hydration);
           // Both statuses describe the page that just landed, not the rows
           // already on screen — a later page is what a "load more" spinner and a
@@ -225,7 +266,12 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
           setArtwork(page.artwork);
           setOffers(page.offers);
         } else {
+          // A protocol that stopped being served mid-feed: keep what is on
+          // screen (it was real) and stop paging. `total` is what `hasMore`
+          // reads, so leaving it alone would have `onEndReached` re-read the
+          // same 404 offset at every scroll rather than end the list.
           setNotAvailable(true);
+          setTotal(paged);
         }
         setLoadingMore(false);
       })
@@ -243,13 +289,17 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
-  const hasMore = tokens.length < total;
+  // Against what was PAGED, not what is on screen: a feed that served a
+  // duplicate has fewer rows than it has read, and measuring the end of the
+  // list by the shorter of the two would page one offset past it forever.
+  const hasMore = pagedCount < total;
   const degraded = hydration !== "ok" || offers !== "ok";
   const artworkPartial = artwork !== "ok";
 
   return useMemo(
     () => ({
       tokens,
+      pagedCount,
       total,
       source,
       loading,
@@ -267,6 +317,7 @@ export function useTokenList(options: UseTokenListOptions): UseTokenListResult {
     }),
     [
       tokens,
+      pagedCount,
       total,
       source,
       loading,

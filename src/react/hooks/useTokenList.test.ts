@@ -19,9 +19,7 @@ import type {
  * assert on `mock.calls` (a bare `vi.fn(async () => …)` infers a zero-arity
  * signature and makes every call tuple empty).
  */
-function stubList(
-  reply: (params: TokenListParams) => TokenListPage | null,
-) {
+function stubList(reply: (params: TokenListParams) => TokenListPage | null) {
   return vi.fn(
     async (params: TokenListParams, _options?: { signal?: AbortSignal }) =>
       reply(params),
@@ -77,7 +75,9 @@ beforeEach(() => {
 
 describe("useTokenList", () => {
   it("reads the first page on mount", async () => {
-    const listTokens = stubList((params) => page({ offset: params.offset ?? 0 }));
+    const listTokens = stubList((params) =>
+      page({ offset: params.offset ?? 0 }),
+    );
     ctxRef.current = makeCtx({ client: { listTokens } });
 
     const { result } = renderHook(() =>
@@ -214,7 +214,10 @@ describe("useTokenList", () => {
 
     const { result, rerender } = renderHook(
       (props: { listedOnly: boolean }) =>
-        useTokenList({ protocol: "counterparty", listedOnly: props.listedOnly }),
+        useTokenList({
+          protocol: "counterparty",
+          listedOnly: props.listedOnly,
+        }),
       { initialProps: { listedOnly: false } },
     );
     await waitFor(() => expect(result.current.source).toBe("catalogue"));
@@ -313,6 +316,108 @@ describe("useTokenList", () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.loading).toBe(true);
+  });
+
+  it("stops paging when a protocol stops being served mid-feed", async () => {
+    // The first page lands, the second 404s: what is on screen was real and
+    // stays, but `hasMore` has to go false — left true, a grid's `onEndReached`
+    // re-reads the same 404 offset at every scroll.
+    let served = true;
+    const listTokens = stubList((params) =>
+      served ? page({ offset: params.offset ?? 0 }) : null,
+    );
+    ctxRef.current = makeCtx({ client: { listTokens } });
+
+    const { result } = renderHook(() =>
+      useTokenList({ protocol: "kontor-nft", limit: 2 }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasMore).toBe(true);
+
+    served = false;
+    await act(async () => result.current.loadMore());
+    await waitFor(() => expect(result.current.notAvailable).toBe(true));
+
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.tokens).toHaveLength(2);
+
+    // And the guard holds: a further call is a no-op, not another 404.
+    await act(async () => result.current.loadMore());
+    expect(listTokens).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not append a row the shifted feed already served", async () => {
+    // `recent_window` is ordered newest first, so an item minted between two
+    // reads shifts the window: the tail of page 1 comes back at the head of
+    // page 2. Appending it verbatim duplicates a tile and a React key.
+    const listTokens = stubList((params) =>
+      params.offset === 0
+        ? page({ source: "recent_window", results: [row("A"), row("B")] })
+        : page({ source: "recent_window", results: [row("B"), row("C")] }),
+    );
+    ctxRef.current = makeCtx({ client: { listTokens } });
+
+    const { result } = renderHook(() =>
+      useTokenList({ protocol: "ordinals", limit: 2 }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(false));
+
+    expect(result.current.tokens.map((t) => t.name)).toEqual(["A", "B", "C"]);
+    // Paged by what the server SENT (4), not by what survived (3) — charging
+    // the duplicate to the offset would re-read it forever.
+    expect(result.current.pagedCount).toBe(4);
+    expect(listTokens.mock.calls[1]![0]).toMatchObject({ offset: 2 });
+  });
+
+  it("ends the feed on an empty page under a non-zero total", async () => {
+    // The upstream says 6 but has nothing at offset 2. Trusting `total` there
+    // leaves `hasMore` true against an offset that answers nothing.
+    const listTokens = stubList((params) =>
+      params.offset === 0 ? page({ limit: 2 }) : page({ results: [] }),
+    );
+    ctxRef.current = makeCtx({ client: { listTokens } });
+
+    const { result } = renderHook(() =>
+      useTokenList({ protocol: "counterparty", limit: 2 }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.loadMore());
+    await waitFor(() => expect(result.current.loadingMore).toBe(false));
+
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.tokens).toHaveLength(2);
+  });
+
+  it("clears a failed page once a retry lands", async () => {
+    // The effect's reset only runs on a feed change, so a `loadMore` that
+    // succeeds after one that failed would otherwise render under a stale error.
+    let fail = false;
+    const listTokens = vi.fn(async (params: TokenListParams) => {
+      if (fail) throw new Error("upstream down");
+      return page({ offset: params.offset ?? 0 });
+    });
+    ctxRef.current = makeCtx({ client: { listTokens } });
+
+    const { result } = renderHook(() =>
+      useTokenList({ protocol: "counterparty", limit: 2 }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    fail = true;
+    await act(async () => result.current.loadMore());
+    await waitFor(() => expect(result.current.error).toBe("upstream down"));
+    // The rows that did land stay, and paging is still open for a retry.
+    expect(result.current.tokens).toHaveLength(2);
+    expect(result.current.hasMore).toBe(true);
+
+    fail = false;
+    await act(async () => result.current.loadMore());
+    await waitFor(() => expect(result.current.tokens).toHaveLength(4));
+    expect(result.current.error).toBeNull();
   });
 
   it("keeps loadMore stable across appended rows", async () => {

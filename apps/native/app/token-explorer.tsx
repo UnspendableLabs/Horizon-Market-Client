@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
+  BROWSABLE_TOKEN_PROTOCOLS,
   useHorizonMarket,
   useTokenList,
   type BrowsableTokenProtocol,
@@ -39,11 +40,26 @@ import { formatSatsAsBtc } from "../lib/token-format.js";
  * tap away.
  */
 
-const PROTOCOL_TABS: { protocol: BrowsableTokenProtocol; label: string }[] = [
-  { protocol: "counterparty", label: "Counterparty" },
-  { protocol: "ordinals", label: "Ordinals" },
-  { protocol: "kontor-nft", label: "Kontor" },
-];
+/**
+ * One tab per browsable protocol, in the SDK's own order.
+ *
+ * Keyed by `BrowsableTokenProtocol` rather than listed by hand, so a protocol
+ * added to the SDK is a type error here — a missing tab is a catalogue the app
+ * silently stops offering, which nothing else would catch.
+ */
+const PROTOCOL_LABELS: Record<BrowsableTokenProtocol, string> = {
+  counterparty: "Counterparty",
+  ordinals: "Ordinals",
+  "kontor-nft": "Kontor",
+};
+
+const PROTOCOL_TABS = BROWSABLE_TOKEN_PROTOCOLS.map((protocol) => ({
+  protocol,
+  label: PROTOCOL_LABELS[protocol],
+}));
+
+/** The one protocol every host serves — the fallback when a tab goes away. */
+const DEFAULT_PROTOCOL: BrowsableTokenProtocol = "counterparty";
 
 /** Two columns of square art is what fits a phone without shrinking the name. */
 const COLUMNS = 2;
@@ -61,13 +77,14 @@ export default function TokenExplorerScreen() {
     [kontorNetwork],
   );
 
-  const [picked, setPicked] = useState<BrowsableTokenProtocol>("counterparty");
+  const [picked, setPicked] =
+    useState<BrowsableTokenProtocol>(DEFAULT_PROTOCOL);
   // Derived rather than corrected in an effect: a network switch that drops the
   // Kontor tab must not leave the feed pinned to a protocol this host doesn't
   // serve, and falling back in render means no frame ever shows that state.
   const protocol = tabs.some((tab) => tab.protocol === picked)
     ? picked
-    : "counterparty";
+    : DEFAULT_PROTOCOL;
   const [listedOnly, setListedOnly] = useState(false);
 
   const {
@@ -106,7 +123,10 @@ export default function TokenExplorerScreen() {
             <Pressable
               key={tab.protocol}
               onPress={() => setPicked(tab.protocol)}
-              style={[styles.tab, protocol === tab.protocol && styles.tabActive]}
+              style={[
+                styles.tab,
+                protocol === tab.protocol && styles.tabActive,
+              ]}
               accessibilityRole="button"
               accessibilityState={{ selected: protocol === tab.protocol }}
             >
@@ -173,9 +193,13 @@ export default function TokenExplorerScreen() {
             {loading ? (
               <ActivityIndicator color={colors.primary} />
             ) : notAvailable ? (
+              // `null` is any 404, not just Kontor's: a host that doesn't serve
+              // this protocol — or doesn't have the browse endpoint at all —
+              // answers the same way. Only name signet when signet is the fix.
               <Text style={styles.noticeText}>
-                Kontor NFTs live on signet. Switch network in Settings to browse
-                them.
+                {protocol === "kontor-nft"
+                  ? "Kontor NFTs live on signet. Switch network in Settings to browse them."
+                  : `This network doesn't serve ${PROTOCOL_LABELS[protocol]} tokens.`}
               </Text>
             ) : error ? (
               <>
@@ -202,16 +226,36 @@ export default function TokenExplorerScreen() {
             <View style={styles.footer}>
               {loadingMore ? (
                 <ActivityIndicator color={colors.primary} />
+              ) : error ? (
+                // A page that failed under rows already on screen: the empty
+                // state above never renders here, so without this the spinner
+                // simply vanishes and the grid stops growing for no stated
+                // reason.
+                <>
+                  <Text style={styles.errorText}>{error}</Text>
+                  <Pressable
+                    onPress={loadMore}
+                    style={styles.secondaryButton}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.secondaryButtonText}>Try again</Text>
+                  </Pressable>
+                </>
               ) : (
                 <Text style={styles.footerText}>
-                  {hasMore
-                    ? `${tokens.length} of ${total}`
-                    : // A window is the edge of what is browsable, not the end
-                      // of the protocol — say so, or "it stopped at 100" reads
-                      // as a bug.
-                      source === "recent_window"
-                      ? `${tokens.length} most recent — search reaches the rest`
-                      : `${total} token${total === 1 ? "" : "s"}`}
+                  {notAvailable
+                    ? // The host stopped serving this protocol between two
+                      // pages. What is on screen was real, so it stays — but it
+                      // is not the whole catalogue and must not read as it.
+                      `${tokens.length} loaded before this network stopped serving them`
+                    : hasMore
+                      ? `${tokens.length} of ${total}`
+                      : // A window is the edge of what is browsable, not the end
+                        // of the protocol — say so, or "it stopped at 100" reads
+                        // as a bug.
+                        source === "recent_window"
+                        ? `${tokens.length} most recent — search reaches the rest`
+                        : `${tokens.length} token${tokens.length === 1 ? "" : "s"}`}
                 </Text>
               )}
             </View>
@@ -317,7 +361,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
   },
   tabActive: { backgroundColor: colors.surfaceHover },
-  tabText: { fontSize: 13, color: colors.muted, fontFamily: fonts.sansSemiBold },
+  tabText: {
+    fontSize: 13,
+    color: colors.muted,
+    fontFamily: fonts.sansSemiBold,
+  },
   tabTextActive: { color: colors.foreground },
 
   toggle: {
@@ -336,7 +384,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   toggleButtonActive: { backgroundColor: colors.surfaceActive },
-  toggleText: { fontSize: 12, color: colors.muted, fontFamily: fonts.sansSemiBold },
+  toggleText: {
+    fontSize: 12,
+    color: colors.muted,
+    fontFamily: fonts.sansSemiBold,
+  },
   toggleTextActive: { color: colors.foreground },
 
   list: { paddingHorizontal: spacing.md, paddingBottom: spacing.lg },
@@ -369,7 +421,11 @@ const styles = StyleSheet.create({
   },
   cardMeta: { fontSize: 11, color: colors.muted, fontFamily: fonts.sans },
 
-  notice: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xl },
+  notice: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+  },
   noticeText: {
     fontSize: 13,
     color: colors.muted,
@@ -390,7 +446,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     paddingBottom: spacing.sm,
   },
-  footer: { alignItems: "center", paddingVertical: spacing.md },
+  footer: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
   footerText: { fontSize: 12, color: colors.muted, fontFamily: fonts.sans },
 
   secondaryButton: {

@@ -547,7 +547,10 @@ appended to another's), and separates `notAvailable` — this network doesn't
 serve this protocol — from an empty list, which is a real answer. It also keeps
 `artworkPartial` out of `degraded`: a page short of pictures and a page short of
 names are not the same event, and a grid that says "something went wrong"
-because the next read will be prettier is a worse grid.
+because the next read will be prettier is a worse grid. Paging is by offset over
+a list that moves, so appended rows are de-duplicated by `canonicalId` and the
+next page is read from `pagedCount` — what the server has sent — rather than from
+`tokens.length`, which a dropped duplicate leaves behind.
 
 ### Workflow Methods
 
