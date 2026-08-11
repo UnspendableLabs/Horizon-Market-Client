@@ -16,7 +16,7 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { Header } from "../components/Header.js";
 import { StandaloneTabBar } from "../components/TabBar.js";
-import { TokenImage } from "../components/TokenImage.js";
+import { TokenImage, tokenHasBrandMark } from "../components/TokenImage.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import { tokenHref } from "../lib/token-links.js";
 import { formatSatsAsBtc } from "../lib/token-format.js";
@@ -254,6 +254,13 @@ function TokenCard({
   token: TokenSummary;
   onPress: () => void;
 }) {
+  const ref = { protocol: token.protocol, id: token.id };
+  // Same rule as the detail hero: the generated gradient is a background and
+  // fills the tile edge to edge, real artwork gets an inset and is never
+  // cropped. XCP reports as placeholder-imaged but draws its brand mark, so it
+  // is inset like every other logo.
+  const bareGradient = token.imageIsPlaceholder && !tokenHasBrandMark(ref);
+
   return (
     <Pressable
       onPress={onPress}
@@ -261,16 +268,19 @@ function TokenCard({
       accessibilityRole="button"
       accessibilityLabel={`Open ${token.name}`}
     >
-      <View style={styles.artPanel}>
+      <View style={[styles.artPanel, bareGradient && styles.artPanelBare]}>
         {/* `imageUrl` is never empty — an unillustrated token gets the same
             deterministic placeholder the detail screen and the website draw. */}
         <TokenImage
           uri={token.imageUrl}
           isPlaceholder={token.imageIsPlaceholder}
           name={token.name}
-          token={{ protocol: token.protocol, id: token.id }}
+          token={ref}
           style={styles.art}
-          resizeMode="cover"
+          // `contain`, as on the website's grid and on the detail hero: a tile
+          // is square but the artwork behind it is any shape, and `cover` ate
+          // the edges of every banner and every non-square inscription.
+          resizeMode="contain"
           monogramSize={22}
         />
       </View>
@@ -339,7 +349,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     backgroundColor: "rgba(0, 0, 0, 0.33)",
     overflow: "hidden",
+    padding: spacing.sm,
   },
+  artPanelBare: { padding: 0 },
   art: { width: "100%", height: "100%" },
   cardText: { gap: 2 },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },

@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 import {
   SwapList,
   useHorizonMarket,
@@ -135,6 +136,11 @@ export default function TokenScreen() {
     <View style={styles.screen}>
       <Header />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {/* First thing in the page, above every state below: a token is always
+            arrived at from somewhere — a listing, a search hit, the explorer
+            grid — and that somewhere is a scroll position worth returning to,
+            which neither the wordmark nor a tab button preserves. */}
+        <BackLink />
         {loading && !token ? (
           <View style={styles.notice}>
             <ActivityIndicator color={colors.primary} />
@@ -303,6 +309,45 @@ function InfoSection({ token }: { token: TokenDetail }) {
           </View>
         )}
     </View>
+  );
+}
+
+/** lucide `chevron-left`, at the label's cap height. */
+function ChevronLeftIcon({ color, size = 18 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="m15 18-6-6 6-6"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * The way out of the token, at the top of the page rather than on the header —
+ * the header is app chrome, shared by every screen, and this is one screen's
+ * own control.
+ */
+function BackLink() {
+  const router = useRouter();
+
+  return (
+    <Pressable
+      // Nothing to pop when the route was opened cold (a deep link, or a dev
+      // reload): fall back to the first tab rather than leaving a dead control.
+      onPress={() => (router.canGoBack() ? router.back() : router.navigate("/"))}
+      style={({ pressed }) => [styles.backLink, pressed && styles.backLinkPressed]}
+      hitSlop={spacing.sm}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+    >
+      <ChevronLeftIcon color={colors.mutedStrong} />
+      <Text style={styles.backLinkText}>Back</Text>
+    </Pressable>
   );
 }
 
@@ -617,6 +662,26 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.lg },
+
+  backLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 2,
+    // The chevron's own bearing plus the content padding reads as an indent;
+    // pull it back to the page's left edge, and tighten the page gap below it
+    // so the artwork doesn't sit a full section away from its own control.
+    marginLeft: -spacing.xs,
+    marginBottom: -spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingRight: spacing.sm,
+  },
+  backLinkPressed: { opacity: 0.6 },
+  backLinkText: {
+    fontSize: 14,
+    color: colors.mutedStrong,
+    fontFamily: fonts.sansSemiBold,
+  },
 
   sections: { gap: spacing.lg },
   section: { gap: spacing.sm },
