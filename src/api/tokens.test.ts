@@ -4,6 +4,7 @@ import {
   getToken,
   getTokenActivity,
   getTokenChart,
+  listTokens,
   searchTokens,
   tokenApiPath,
   tokenRefFromSwap,
@@ -776,6 +777,189 @@ describe("searchTokens", () => {
     const fetchFn = makeFetch(400, { error: "q must not be empty" });
     await expect(
       searchTokens(http(fetchFn), { query: " " }),
+    ).rejects.toBeInstanceOf(HorizonMarketApiError);
+  });
+});
+
+// ─── listTokens ──────────────────────────────────────────────────────────────
+
+/** A browse row: the search row minus its `match`, which browse never sends. */
+const { match: searchOnly, ...WIRE_ROW } = WIRE_SUMMARY;
+void searchOnly;
+
+function listPage(overrides: Record<string, unknown> = {}) {
+  return {
+    protocol: "counterparty",
+    listed_only: false,
+    source: "catalogue",
+    results: [WIRE_ROW],
+    pagination: { total: 4_200, offset: 0, limit: 20 },
+    hydration: "ok",
+    artwork: "ok",
+    offers: "ok",
+    ...overrides,
+  };
+}
+
+describe("listTokens", () => {
+  it("maps a page and flattens its pagination", async () => {
+    const fetchFn = makeRawFetch(rawResponse(200, { data: listPage() }));
+
+    const page = await listTokens(http(fetchFn), { protocol: "counterparty" });
+
+    expect(lastUrl(fetchFn)).toBe(
+      "https://example.com/api/tokens?protocol=counterparty",
+    );
+    expect(page).toEqual({
+      protocol: "counterparty",
+      listedOnly: false,
+      source: "catalogue",
+      total: 4_200,
+      offset: 0,
+      limit: 20,
+      hydration: "ok",
+      artwork: "ok",
+      offers: "ok",
+      results: [
+        {
+          protocol: "counterparty",
+          protocolLabel: "Counterparty",
+          id: "PEPECASH",
+          canonicalId: "counterparty:PEPECASH",
+          network: "mainnet",
+          name: "PEPECASH",
+          subtitle: "Rare Pepes",
+          imageUrl: "https://example.com/pepecash.jpg",
+          imageIsPlaceholder: false,
+          thumbnailUrl: null,
+          floorPriceSats: 5_000,
+          offersCount: 3,
+          listed: true,
+          collection: { name: "Rare Pepes", slug: "rare-pepes" },
+          apiUrl: "https://example.com/api/tokens/counterparty/PEPECASH",
+          webUrl: "https://example.com/assets/PEPECASH",
+        },
+      ],
+    });
+  });
+
+  it("a row addresses its own detail endpoint", async () => {
+    // Same contract as a search hit: a tile nobody can open is useless.
+    const fetchFn = makeRawFetch(rawResponse(200, { data: listPage() }));
+    const page = await listTokens(http(fetchFn), { protocol: "counterparty" });
+    const row = page!.results[0]!;
+    expect(row.apiUrl).toBe(
+      `https://example.com${tokenApiPath(row.protocol, row.id)}`,
+    );
+  });
+
+  it("sends every param it was given", async () => {
+    const fetchFn = makeRawFetch(
+      rawResponse(200, {
+        data: listPage({
+          protocol: "ordinals",
+          listed_only: true,
+          source: "order_book",
+          pagination: { total: 83, offset: 40, limit: 40 },
+        }),
+      }),
+    );
+
+    const page = await listTokens(http(fetchFn), {
+      protocol: "ordinals",
+      offset: 40,
+      limit: 40,
+      listedOnly: true,
+    });
+
+    expect(lastUrl(fetchFn)).toBe(
+      "https://example.com/api/tokens?protocol=ordinals&offset=40&limit=40&listed_only=true",
+    );
+    expect(page?.source).toBe("order_book");
+    expect(page?.offset).toBe(40);
+  });
+
+  it("omits listed_only when false, and offset 0 when explicit", async () => {
+    // `offset=0` is sent because it was asked for — a caller re-reading the
+    // first page should get the same URL as the server's own default page.
+    const fetchFn = makeRawFetch(rawResponse(200, { data: listPage() }));
+    await listTokens(http(fetchFn), {
+      protocol: "counterparty",
+      offset: 0,
+      listedOnly: false,
+    });
+    expect(lastUrl(fetchFn)).toBe(
+      "https://example.com/api/tokens?protocol=counterparty&offset=0",
+    );
+  });
+
+  it("answers null when the network doesn't serve the protocol", async () => {
+    // Kontor off signet. Deliberately not an empty page: a caller would page
+    // through that forever with no way to tell "none" from "not here".
+    const fetchFn = makeRawFetch(rawResponse(404, { error: "Token not found" }));
+    await expect(
+      listTokens(http(fetchFn), { protocol: "kontor-nft" }),
+    ).resolves.toBeNull();
+  });
+
+  it("reports a degraded page rather than hiding it", async () => {
+    const fetchFn = makeRawFetch(
+      rawResponse(200, {
+        data: listPage({ hydration: "error", offers: "error" }),
+      }),
+    );
+    const page = await listTokens(http(fetchFn), { protocol: "counterparty" });
+    expect(page?.hydration).toBe("error");
+    expect(page?.offers).toBe("error");
+  });
+
+  it("keeps a half-illustrated page distinct from a failed one", async () => {
+    // `artwork` is its own status because it is not a failure: the rows that
+    // kept a placeholder do have art, the server just ran out of time resolving
+    // it, and the next read is better illustrated. Naming and pricing are fine.
+    const fetchFn = makeRawFetch(
+      rawResponse(200, { data: listPage({ artwork: "partial" }) }),
+    );
+    const page = await listTokens(http(fetchFn), { protocol: "counterparty" });
+    expect(page?.artwork).toBe("partial");
+    expect(page?.hydration).toBe("ok");
+    expect(page?.offers).toBe("ok");
+  });
+
+  it("defaults a page whose results and pagination are absent", async () => {
+    const fetchFn = makeRawFetch(
+      rawResponse(200, {
+        data: { protocol: "ordinals", listed_only: false, source: "catalogue" },
+      }),
+    );
+    const page = await listTokens(http(fetchFn), { protocol: "ordinals" });
+    // Including a status a server predating the field never sends: absent is
+    // "nothing to report", not "unknown".
+    expect(page).toMatchObject({
+      results: [],
+      total: 0,
+      offset: 0,
+      limit: 0,
+      hydration: "ok",
+      artwork: "ok",
+      offers: "ok",
+    });
+  });
+
+  it("throws on a rejected protocol", async () => {
+    // `zeld` / `kontor` are single tokens — the server answers 400 naming the
+    // detail route, which is a caller error, not an empty list.
+    const fetchFn = makeRawFetch(
+      rawResponse(
+        400,
+        { error: "zeld is a single token, not a catalogue" },
+        "Bad Request",
+      ),
+    );
+    await expect(
+      listTokens(http(fetchFn), {
+        protocol: "zeld" as unknown as "counterparty",
+      }),
     ).rejects.toBeInstanceOf(HorizonMarketApiError);
   });
 });

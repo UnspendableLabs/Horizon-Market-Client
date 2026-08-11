@@ -66,12 +66,15 @@ import {
   getToken as apiGetToken,
   getTokenActivity as apiGetTokenActivity,
   getTokenChart as apiGetTokenChart,
+  listTokens as apiListTokens,
   searchTokens as apiSearchTokens,
   type TokenActivityPage,
   type TokenActivityParams,
   type TokenChart,
   type TokenChartParams,
   type TokenDetail,
+  type TokenListPage,
+  type TokenListParams,
   type TokenRef,
   type TokenSearchParams,
   type TokenSearchResult,
@@ -1099,6 +1102,23 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<TokenSearchResult> {
     return apiSearchTokens(this.http, params, options);
+  }
+
+  /**
+   * One page of one protocol's tokens — the browse counterpart to
+   * {@link searchTokens}, in the same row shape, so a grid tile and a search hit
+   * render from one component and both open through `apiUrl`.
+   *
+   * `null` when this network doesn't serve the protocol (Kontor NFTs off
+   * signet), rather than an empty page a caller would page through forever.
+   * Read `source` before promising depth — an Ordinals page is a window of
+   * recent inscriptions, not the whole catalogue.
+   */
+  listTokens(
+    params: TokenListParams,
+    options?: RequestOptions,
+  ): Promise<TokenListPage | null> {
+    return apiListTokens(this.http, params, options);
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────

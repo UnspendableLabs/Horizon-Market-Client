@@ -28,6 +28,7 @@ export {
   useTokenChart,
   useTokenActivity,
   useTokenSearch,
+  useTokenList,
   useProfile,
   useProfileWallets,
   useKontorFaucet,
@@ -87,6 +88,8 @@ export type {
   UseTokenActivityResult,
   UseTokenSearchOptions,
   UseTokenSearchResult,
+  UseTokenListOptions,
+  UseTokenListResult,
 } from "./hooks/index.js";
 
 // The profile payloads those two hooks hand back — re-exported here so an app
@@ -104,7 +107,11 @@ export { isPlaceholderUsername } from "../api/profiles.js";
 // rationale as the profile types above: an app types its token screen without
 // importing the root entry. `tokenRefFromSwap` turns a listing into the token it
 // sells, which is what makes an asset name in a swap list linkable.
-export { tokenApiPath, tokenRefFromSwap } from "../api/tokens.js";
+export {
+  tokenApiPath,
+  tokenRefFromSwap,
+  BROWSABLE_TOKEN_PROTOCOLS,
+} from "../api/tokens.js";
 export type {
   TokenRef,
   TokenProtocol,
@@ -130,6 +137,7 @@ export type {
   TokenActivityPage,
   TokenActivityParams,
   TokenSummary,
+  TokenSearchSummary,
   TokenMatch,
   TokenMatchField,
   TokenMatchKind,
@@ -137,6 +145,12 @@ export type {
   TokenSearchResult,
   TokenSearchSourceStatus,
   TokenOfferAggregateStatus,
+  BrowsableTokenProtocol,
+  TokenListSource,
+  TokenHydrationStatus,
+  TokenArtworkStatus,
+  TokenListParams,
+  TokenListPage,
 } from "../api/tokens.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm

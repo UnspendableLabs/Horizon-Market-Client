@@ -1,16 +1,18 @@
 /**
  * Fixed brand header — the full Horizon wordmark (the H mark + "Horizon"),
  * tappable to return to the Buy tab, on a slim bar pinned above the tab pager,
- * with the search and profile entry points on the right. It sits OUTSIDE the swipeable scenes, so it never scrolls with a tab's
+ * with the search, profile and menu entry points on the right. It sits OUTSIDE the swipeable scenes, so it never scrolls with a tab's
  * content and stays put while swiping between tabs, mirroring the fixed bottom
  * {@link TabBar}. The root SafeAreaView already pads the top inset, so the bar
  * starts right under the status bar.
  */
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { useState, type ReactElement } from "react";
+import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
-import { colors, radii, spacing } from "../lib/theme.js";
+import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
 // 1500×304 source — sized here at a 24px height with the width matching the
 // asset's aspect ratio, so `contain` never letterboxes it.
@@ -50,9 +52,124 @@ function UserIcon({ color, size = 22 }: { color: string; size?: number }) {
   );
 }
 
+/** lucide `menu` — the hamburger that opens {@link HeaderMenu}. */
+function MenuIcon({ color, size = 22 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 6h16M4 12h16M4 18h16"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+/** lucide `layout-grid` — the Token Explorer's browse grid. */
+function GridIcon({ color, size = 18 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {[
+        { x: 3, y: 3 },
+        { x: 14, y: 3 },
+        { x: 14, y: 14 },
+        { x: 3, y: 14 },
+      ].map((rect) => (
+        <Rect
+          key={`${rect.x}:${rect.y}`}
+          x={rect.x}
+          y={rect.y}
+          width={7}
+          height={7}
+          rx={1}
+          stroke={color}
+          strokeWidth={2}
+        />
+      ))}
+    </Svg>
+  );
+}
+
+/** Everything the hamburger opens. One entry today; the list is the point. */
+const MENU_ITEMS: {
+  label: string;
+  path: string;
+  icon: (props: { color: string }) => ReactElement;
+}[] = [
+  {
+    label: "Token Explorer",
+    path: "/token-explorer",
+    icon: (props) => <GridIcon color={props.color} />,
+  },
+];
+
+/**
+ * The hamburger's sheet — a dropdown pinned under the bar's right edge.
+ *
+ * A `Modal` rather than an absolutely-positioned view inside the bar: the
+ * header is one row of a screen that also holds a scroll view and the tab bar,
+ * so a panel drawn in it would be clipped by the first ancestor that scrolls.
+ * The modal is drawn over everything, which also gives the backdrop a real tap
+ * target for dismissal.
+ */
+function HeaderMenu({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (path: string) => void;
+}) {
+  // The modal covers the whole window, status bar included, while the header
+  // sits below the safe-area inset the root SafeAreaView applies — so the panel
+  // has to add that inset back to land under the bar rather than over it.
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      // Android's back button dismisses via onRequestClose above; iOS has the
+      // backdrop below.
+      statusBarTranslucent
+    >
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Close menu"
+      />
+      <View style={[styles.menu, { top: insets.top + BAR_HEIGHT }]}>
+        {MENU_ITEMS.map((item, index) => (
+          <View key={item.path}>
+            {index > 0 && <View style={styles.menuDivider} />}
+            <Pressable
+              onPress={() => onSelect(item.path)}
+              style={({ pressed }) => [
+                styles.menuItem,
+                pressed && styles.menuItemPressed,
+              ]}
+              accessibilityRole="menuitem"
+              accessibilityLabel={item.label}
+            >
+              {item.icon({ color: colors.primary })}
+              <Text style={styles.menuLabel}>{item.label}</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </Modal>
+  );
+}
+
 export function Header() {
   const router = useRouter();
   const { addresses } = useHorizonMarket();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <View style={styles.bar}>
@@ -91,14 +208,41 @@ export function Header() {
         >
           <UserIcon color={addresses ? colors.primary : colors.mutedStrong} />
         </Pressable>
+        {/* Rightmost, where a thumb reaches it: the app's non-tab destinations,
+            which are pages rather than modes and so don't belong in the bottom
+            bar. */}
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          style={styles.iconButton}
+          hitSlop={spacing.sm}
+          accessibilityRole="button"
+          accessibilityLabel="Menu"
+          accessibilityState={{ expanded: menuOpen }}
+        >
+          <MenuIcon color={colors.mutedStrong} />
+        </Pressable>
       </View>
+
+      <HeaderMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onSelect={(path) => {
+          setMenuOpen(false);
+          // `navigate`, like the tab buttons: re-picking the destination the
+          // user is already on returns to it instead of stacking a second copy.
+          router.navigate(path);
+        }}
+      />
     </View>
   );
 }
 
+/** Bar height, shared with the menu so the panel lands under it exactly. */
+const BAR_HEIGHT = 52;
+
 const styles = StyleSheet.create({
   bar: {
-    height: 52,
+    height: BAR_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -122,5 +266,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radii.full,
+  },
+
+  // RN 0.86 merged `absoluteFillObject` into `absoluteFill` (see BrandCover).
+  backdrop: { ...StyleSheet.absoluteFill },
+  menu: {
+    position: "absolute",
+    right: spacing.sm,
+    minWidth: 240,
+    maxWidth: 320,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.backgroundSecondary,
+    overflow: "hidden",
+  },
+  menuDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+  },
+  menuItemPressed: { backgroundColor: colors.surfaceHover },
+  menuLabel: {
+    flexShrink: 1,
+    fontSize: 15,
+    color: colors.foreground,
+    fontFamily: fonts.sansSemiBold,
   },
 });
