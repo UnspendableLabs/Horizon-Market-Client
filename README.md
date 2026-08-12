@@ -134,6 +134,7 @@ function App() {
 | `useSellReview`, `useBuyReview`, `useKontorPreflight` | Review-step data layers (fee/cost preview, live price) and the Kontor chain gate that refuses a doomed flow before the user confirms |
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
 | `useProfile`, `useProfileWallets` | The account's Horizon Market profile: load, edit username / bio / visibility, upload an avatar, publish or hide each linked wallet. Idle until the wallet sign-in lands (the whole surface is session-gated) |
+| `useToken`, `useTokenChart`, `useTokenActivity`, `useTokenSearch`, `useTokenList` | One token's detail payload, price series and sales, a debounced cross-protocol autocomplete, and a paged browse grid. Protocol-blind: the same hooks serve all five asset types (see [Tokens](#tokens)) |
 | `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
@@ -482,6 +483,74 @@ Public reads (no authentication; a private and an unknown username both answer
 created with apart from a name the user actually picked. In React, `useProfile()`
 and `useProfileWallets()` wrap all of this (load, edit, avatar upload, wallet
 visibility) for a profile screen.
+
+### Tokens
+
+`/api/tokens/*` answers with **one payload shape for all five asset types** —
+Counterparty assets, ZELD, Ordinals inscriptions, the Kontor KOR token and Kontor
+NFTs — so a token screen is one component tree rather than five. Public,
+unauthenticated, GET-only.
+
+A token is addressed by a `TokenRef` (`{ protocol, id }`); `tokenApiPath()` is
+the single place the five URL shapes live:
+
+| Protocol | Endpoint |
+| --- | --- |
+| `counterparty` | `/api/tokens/counterparty/{asset}` (subasset longnames included) |
+| `zeld` | `/api/tokens/ZELD` |
+| `ordinals` | `/api/tokens/ordinals/{inscription}` |
+| `kontor` | `/api/tokens/kontor/KOR` — signet only |
+| `kontor-nft` | `/api/tokens/kontor/nfts/{nft_id}` — signet only |
+
+- `getToken(ref, options?)` — `TokenDetail | null`. `null` is an ordinary answer: an unknown asset, or a Kontor token asked of a mainnet host
+- `getTokenChart(ref, { range } | { from, to }, options?)` — `TokenChart | null` (`null` when the token has no series at all — a one-of-a-kind token). Pass one form or the other, never both
+- `getTokenActivity(ref, { offset?, limit? }, options?)` — completed sales, newest first
+- `searchTokens({ query, limit?, protocols?, listedOnly? }, options?)` — one autocomplete across all five types. No `offset`: five independently-ranked sources cannot be paged coherently, so raise `limit` (max 50) and read `truncated`
+- `listTokens({ protocol, offset?, limit?, listedOnly? }, options?)` — one page of one protocol's catalogue, in the same row shape search returns (`TokenSummary`; a search hit is that plus `match`). `counterparty`, `ordinals` and `kontor-nft` only — ZELD and KOR are single tokens, so their detail routes are the way to read them. `null` when the network doesn't serve the protocol. One protocol per call: three catalogues ordered by three unrelated things cannot be interleaved into a list that pages coherently. Read `source` (`catalogue` / `recent_window` / `order_book`) before promising depth, and the three page statuses before trusting what a row says: `hydration` (were the rows named?), `offers` (were they priced?) and `artwork` — `partial` there means the server ran out of time resolving pictures out of Counterparty asset descriptions, so some rows kept a placeholder that do have art. Nothing failed, and the next read is better illustrated, so it is a reason to offer a re-read and never a reason to show an error
+- `tokenRefFromSwap(swap)` — the token a listing from `listSwaps()` sells, or `null` when it names none. This is what makes an asset name in a swap list linkable
+
+Two conventions worth knowing. **Values are typed, not pre-formatted**: `stats`
+and `properties` are ordered lists of `{ key, label, value }` where `value.type`
+(`sats`, `address`, `datetime`, `badge`, …) says how to render it — so a new row
+appears with no client change, and formatting stays the client's. And **every
+price is integer sats, per whole unit**, while `supply` and an activity row's
+`quantity` are decimal *strings* (they are bigint at rest and exceed float
+precision).
+
+`capabilities` / `availableSections` say which sub-resources a token has, so a
+tab bar is built from the response rather than from hard-coded protocol
+knowledge. For the open offers, hand `offers.atomicSwapsQuery` to `listSwaps()`
+(or `useSwapList`) — every key in it is one that endpoint parses, so the listing
+is exactly the set `offers.count` describes. Forward *all* of them: the query
+pins the token (`asset_name` / `kontor_nft_id` / `kontor_asset_kind`,
+`listing_type`) **and** the listing state (`expired`, `exclude_pending`,
+`unattached`, `funded`, `delisted`, `filled`), and dropping one is how a list
+drifts away from the count rendered above it. `useSwapList` takes each as a fixed
+pin with no setter — a URL-driven view remounts to change them, and the
+user-facing controls (sort, "Sold", "My swaps", pagination) keep working within
+the pin. `listingType` is a pin too, distinct from `defaultListingType` which
+only seeds the control: on a pinned feed the type belongs to the asset, so
+`setListingType` no-ops and `listingTypePinned` tells a renderer to hide the
+control (both packaged `SwapList` components already do). Facet counts do not
+honour any of them, so leave `includeFacets` off.
+
+In React: `useToken(ref)`, `useTokenChart(ref)`, `useTokenActivity(ref)` and
+`useTokenSearch()`. All of them abort a request the moment it is superseded — a
+token switch, a range change, a keystroke, an unmount — rather than let it finish
+for a screen nobody is looking at, and an aborted read never surfaces as an
+error. `useTokenSearch` is debounced (250 ms) and reports `degraded` when a
+source or the offer aggregate failed, since a partial answer otherwise looks
+identical to a complete one. `useTokenList({ protocol, listedOnly?, limit? })` is
+the browse counterpart: it pages a catalogue with `loadMore()`, re-reads from
+offset 0 when the feed's identity changes (so one catalogue's rows are never
+appended to another's), and separates `notAvailable` — this network doesn't
+serve this protocol — from an empty list, which is a real answer. It also keeps
+`artworkPartial` out of `degraded`: a page short of pictures and a page short of
+names are not the same event, and a grid that says "something went wrong"
+because the next read will be prettier is a worse grid. Paging is by offset over
+a list that moves, so appended rows are de-duplicated by `canonicalId` and the
+next page is read from `pagedCount` — what the server has sent — rather than from
+`tokens.length`, which a dropped duplicate leaves behind.
 
 ### Workflow Methods
 

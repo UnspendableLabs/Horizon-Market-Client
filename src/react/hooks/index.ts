@@ -62,6 +62,24 @@ export type {
   UseProfileResult,
   UseProfileWalletsResult,
 } from "./useProfile.js";
+export { useToken, useTokenChart, useTokenActivity } from "./useToken.js";
+export type {
+  UseTokenResult,
+  UseTokenChartOptions,
+  UseTokenChartResult,
+  UseTokenActivityOptions,
+  UseTokenActivityResult,
+} from "./useToken.js";
+export { useTokenSearch } from "./useTokenSearch.js";
+export type {
+  UseTokenSearchOptions,
+  UseTokenSearchResult,
+} from "./useTokenSearch.js";
+export { useTokenList } from "./useTokenList.js";
+export type {
+  UseTokenListOptions,
+  UseTokenListResult,
+} from "./useTokenList.js";
 export { useSwapList, SORT_OPTIONS, SORT_OPTION_LABELS } from "./useSwapList.js";
 export type {
   SwapListOrderBy,

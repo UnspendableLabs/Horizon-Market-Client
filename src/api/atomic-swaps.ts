@@ -269,6 +269,14 @@ export async function listSwaps(
   if (params.assetName !== undefined) qs.set("asset_name", params.assetName);
   if (params.kontorNftId !== undefined)
     qs.set("kontor_nft_id", params.kontorNftId);
+  // Listing-only filters (the facets endpoint does not parse these), so they are
+  // set here rather than in the shared filter appender below.
+  if (params.expired !== undefined)
+    qs.set("expired", params.expired ? "true" : "false");
+  if (params.kontorAssetKind !== undefined)
+    qs.set("kontor_asset_kind", params.kontorAssetKind);
+  if (params.excludePending !== undefined)
+    qs.set("exclude_pending", params.excludePending ? "true" : "false");
   if (params.sellerAddress !== undefined)
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)

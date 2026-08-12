@@ -381,8 +381,21 @@ export interface ListSwapsParams {
   funded?: boolean;
   filled?: boolean;
   delisted?: boolean;
+  expired?: boolean;
   unattached?: boolean;
   sales?: boolean;
+  /**
+   * Which kind of Kontor asset a `listingType: "kontor"` swap escrows. Kontor
+   * KOR-token and NFT listings share one listing type, so this is the only way
+   * to ask for one without the other.
+   */
+  kontorAssetKind?: KontorAssetKind;
+  /**
+   * Drop listings whose purchase is already broadcast but unconfirmed — i.e.
+   * "an offer a buyer can take right now". Unset leaves them in, which is the
+   * server's default.
+   */
+  excludePending?: boolean;
   /**
    * Prioritize this address's in-progress orders: they sort to the top of the
    * result and are included even when the `delisted`/`funded` filters would hide

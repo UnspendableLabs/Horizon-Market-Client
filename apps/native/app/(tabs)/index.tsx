@@ -1,7 +1,9 @@
 import { StyleSheet, Text } from "react-native";
+import { useRouter } from "expo-router";
 import { SwapList } from "@unspendablelabs/horizon-market-client/react";
 import { getPrivateKey } from "../../lib/web3auth.js";
 import { useBuyRefresh } from "../../lib/buy-refresh.js";
+import { tokenHref } from "../../lib/token-links.js";
 import { colors, fonts } from "../../lib/theme.js";
 import {
   trackBuyCompleted,
@@ -24,6 +26,7 @@ export default function BuyScreen() {
   // list. The nonce only bumps on a successful sell — normal tab switches keep
   // the list's state — so this doesn't reintroduce refetch-on-focus.
   const { nonce } = useBuyRefresh();
+  const router = useRouter();
   return (
     <SwapList
       key={nonce}
@@ -31,6 +34,9 @@ export default function BuyScreen() {
       title={<Text style={styles.title}>Buy</Text>}
       scrollable
       style={styles.list}
+      // Each tile's asset name links to that token's screen. `push`, so Back
+      // returns to the feed with its filters and scroll position intact.
+      onTokenPress={(ref) => router.push(tokenHref(ref, "buy_list"))}
       onLoginRequired={trackBuyLoginRequired}
       onBuyStarted={trackBuyStarted}
       onDelistStarted={trackDelistStarted}

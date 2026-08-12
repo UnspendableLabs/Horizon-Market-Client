@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { AtomicSwap, PendingSale } from "../../types/index.js";
+import type { TokenRef } from "../../api/tokens.js";
 import {
   useSwapList,
   SORT_OPTIONS,
@@ -63,6 +64,15 @@ export interface SwapListProps extends UseSwapListOptions {
   title?: ReactNode;
   onSwapSelect?: (swap: AtomicSwap) => void;
   /**
+   * Turn each tile's asset name into a link to that token's screen. The handler
+   * receives the {@link TokenRef} the host feeds to `useToken` / `client.getToken`
+   * (or turns into a route), so the list needs no knowledge of the app's
+   * navigation. Listings that name no token keep a plain, unlinked name.
+   *
+   * Omit it and the list renders exactly as before.
+   */
+  onTokenPress?: (ref: TokenRef, swap: AtomicSwap) => void;
+  /**
    * Fired when a buy succeeds. Observation only — the built-in confirmation
    * modal still drives the UX unchanged. `sales` is the raw fill result
    * (asset-poor); `swap` is the full listing that was bought, so a host can
@@ -76,6 +86,16 @@ export interface SwapListProps extends UseSwapListOptions {
   onDelistSuccess?: (swap: AtomicSwap) => void;
   /** Fired when delisting fails. Observation only. */
   onDelistError?: (swap: AtomicSwap, error: Error) => void;
+  /**
+   * Draw the filter/sort/My-swaps/Sold toolbar above the grid. Default `true`.
+   *
+   * Turn it off where the feed is one section of a larger page rather than the
+   * page itself — a token detail's "Offers" tab, say, whose listings are already
+   * narrowed to that one asset and whose reader came to see *its* offers, not to
+   * browse the market. Every control keeps working when it is shown, pinned or
+   * not; this is about whether the surface should offer them at all.
+   */
+  showToolbar?: boolean;
   /**
    * When true, the toolbar (filters/sort) stays fixed and only the swap list
    * content scrolls. The root View expands to flex:1. Use this when SwapList
@@ -96,10 +116,12 @@ export function SwapList({
   getPrivateKey,
   title,
   onSwapSelect,
+  onTokenPress,
   onBuySuccess,
   onBuyError,
   onDelistSuccess,
   onDelistError,
+  showToolbar = true,
   scrollable,
   footerSlot,
   style,
@@ -115,6 +137,7 @@ export function SwapList({
     lastFetchedAt,
     listingType,
     setListingType,
+    listingTypePinned,
     sortOption,
     setSortOption,
     showMySwaps,
@@ -191,6 +214,7 @@ export function SwapList({
                     onSwapSelect?.(swap);
                     onItemAction(swap);
                   }}
+                  onTokenPress={onTokenPress}
                   style={{ flex: 1 }}
                   styles={stylesProp?.item}
                 />
@@ -256,69 +280,83 @@ export function SwapList({
 
       {/* Toolbar: asset-type filter + sort dropdowns and, when signed in, the
           "My swaps" toggle — all on a single row at the same height (native has
-          no <select>; keeps the controls compact). */}
-      <View style={[common.swapToolbar, stylesProp?.toolbar]}>
-        <Dropdown
-          style={[common.flex1, stylesProp?.filterTabs]}
-          title="Filter by type"
-          value={listingType}
-          onChange={setListingType}
-          options={filterTabs.map(({ key, label }) => ({ value: key, label }))}
-        />
-        <Dropdown
-          style={[common.flex1, stylesProp?.sortSelect]}
-          title="Sort by"
-          value={sortOption}
-          onChange={setSortOption}
-          options={SORT_OPTIONS.map((key) => ({
-            value: key,
-            label: SORT_OPTION_LABELS[key],
-          }))}
-        />
-        {canShowMySwaps && (
-          <TouchableOpacity
-            onPress={() => setShowMySwaps(!showMySwaps)}
-            style={[
-              common.toolbarToggle,
-              showMySwaps && common.toolbarToggleActive,
-              stylesProp?.mySwapsToggle,
-            ]}
-          >
-            <Text
+          no <select>; keeps the controls compact). Suppressed entirely by
+          `showToolbar={false}`. */}
+      {showToolbar && (
+        <View style={[common.swapToolbar, stylesProp?.toolbar]}>
+          {/* Hidden when the type is pinned (a feed narrowed to one asset): the
+            type is then a property of that asset, and a control that cannot
+            move is worse than no control. */}
+          {!listingTypePinned && (
+            <Dropdown
+              style={[common.flex1, stylesProp?.filterTabs]}
+              title="Filter by type"
+              value={listingType}
+              onChange={setListingType}
+              options={filterTabs.map(({ key, label }) => ({
+                value: key,
+                label,
+              }))}
+            />
+          )}
+          <Dropdown
+            style={[common.flex1, stylesProp?.sortSelect]}
+            title="Sort by"
+            value={sortOption}
+            onChange={setSortOption}
+            options={SORT_OPTIONS.map((key) => ({
+              value: key,
+              label: SORT_OPTION_LABELS[key],
+            }))}
+          />
+          {canShowMySwaps && (
+            <TouchableOpacity
+              onPress={() => setShowMySwaps(!showMySwaps)}
               style={[
-                common.toolbarToggleText,
-                showMySwaps && common.toolbarToggleTextActive,
+                common.toolbarToggle,
+                showMySwaps && common.toolbarToggleActive,
+                stylesProp?.mySwapsToggle,
               ]}
             >
-              {showMySwaps ? "All swaps" : "My swaps"}
-            </Text>
-          </TouchableOpacity>
-        )}
-        {canShowSold && (
-          <TouchableOpacity
-            onPress={() => setShowSold(!showSold)}
-            style={[
-              common.toolbarToggle,
-              showSold && common.toolbarToggleActive,
-              stylesProp?.soldToggle,
-            ]}
-          >
-            <Text
+              <Text
+                style={[
+                  common.toolbarToggleText,
+                  showMySwaps && common.toolbarToggleTextActive,
+                ]}
+              >
+                {showMySwaps ? "All swaps" : "My swaps"}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {canShowSold && (
+            <TouchableOpacity
+              onPress={() => setShowSold(!showSold)}
               style={[
-                common.toolbarToggleText,
-                showSold && common.toolbarToggleTextActive,
+                common.toolbarToggle,
+                showSold && common.toolbarToggleActive,
+                stylesProp?.soldToggle,
               ]}
             >
-              {showSold ? "For Sale" : "Sold"}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
+              <Text
+                style={[
+                  common.toolbarToggleText,
+                  showSold && common.toolbarToggleTextActive,
+                ]}
+              >
+                {showSold ? "For Sale" : "Sold"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Content + Pagination. The footer slot rides at the end of the scroll so
           it's only revealed once the list is scrolled to the bottom. */}
       {scrollable ? (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 8, gap: 8 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 8, gap: 8 }}
+        >
           {contentAndPagination}
           {footerSlot}
         </ScrollView>

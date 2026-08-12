@@ -311,6 +311,27 @@ describe("listSwaps", () => {
     expect(url).toContain("kontor_nft_id=nft-123");
   });
 
+  it("sends the open-offer filters the tokens API hands out", async () => {
+    // `offers.atomicSwapsQuery` on a token payload names these three, so a
+    // client following it verbatim must actually send them: without
+    // `kontor_asset_kind` a KOR feed also lists every Kontor NFT, and without
+    // `exclude_pending` / `expired` the listing is wider than the `count` it
+    // came with.
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+    await listSwaps(http, {
+      kontorAssetKind: "token",
+      excludePending: true,
+      expired: false,
+    });
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("kontor_asset_kind=token");
+    expect(url).toContain("exclude_pending=true");
+    expect(url).toContain("expired=false");
+  });
+
   it("sends price_min / price_max / collection query params", async () => {
     const fetchFn = makeFetch(200, {
       data: { count: 0, atomic_swaps: [], asset_media: {}, pagination: { total: 0, offset: 0, limit: null } },

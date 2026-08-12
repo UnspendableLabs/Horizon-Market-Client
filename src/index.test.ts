@@ -49,6 +49,11 @@ describe("public SDK barrel (index.ts)", () => {
     expect(sdk.DEFAULT_ZELD_API_BASE_URL).toBeTypeOf("string");
   });
 
+  it("re-exports the token path/ref helpers", () => {
+    expect(sdk.tokenApiPath).toBeTypeOf("function");
+    expect(sdk.tokenRefFromSwap).toBeTypeOf("function");
+  });
+
   it("re-exports the manual sell-prep helper", () => {
     expect(sdk.signAndFinalizeSellPrep).toBeTypeOf("function");
   });

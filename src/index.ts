@@ -204,6 +204,58 @@ export type {
   AvatarUploadResult,
 } from "./api/profiles.js";
 
+// Tokens (`/api/tokens/*`) — ONE payload shape for all five asset types
+// (Counterparty, ZELD, Ordinals, Kontor KOR, Kontor NFT), so a token screen is
+// one component tree rather than five. `tokenApiPath` is the single place the
+// five URL shapes live; `tokenRefFromSwap` turns a listing from `listSwaps`
+// into the token it sells (null when it names none), which is what makes an
+// asset name in a swap list linkable.
+export {
+  tokenApiPath,
+  tokenRefFromSwap,
+  BROWSABLE_TOKEN_PROTOCOLS,
+} from "./api/tokens.js";
+export type {
+  TokenRef,
+  TokenProtocol,
+  TokenNetwork,
+  TokenDetail,
+  TokenMedia,
+  TokenMediaKind,
+  TokenMarket,
+  TokenOffers,
+  TokenLink,
+  TokenSection,
+  TokenStat,
+  TokenProperty,
+  TokenPropertyGroup,
+  TokenValue,
+  TokenValueType,
+  TokenValueTone,
+  TokenChart,
+  TokenChartPoint,
+  TokenChartRange,
+  TokenChartParams,
+  TokenActivityItem,
+  TokenActivityPage,
+  TokenActivityParams,
+  TokenSummary,
+  TokenSearchSummary,
+  TokenMatch,
+  TokenMatchField,
+  TokenMatchKind,
+  TokenSearchParams,
+  TokenSearchResult,
+  TokenSearchSourceStatus,
+  TokenOfferAggregateStatus,
+  BrowsableTokenProtocol,
+  TokenListSource,
+  TokenHydrationStatus,
+  TokenArtworkStatus,
+  TokenListParams,
+  TokenListPage,
+} from "./api/tokens.js";
+
 // Manual sell workflow helper (quote → sign → submit)
 export {
   signAndFinalizeSellPrep,

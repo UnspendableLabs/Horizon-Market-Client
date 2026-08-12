@@ -62,6 +62,23 @@ import {
   type UsernameAvailability,
   type WalletVisibility,
 } from "./api/profiles.js";
+import {
+  getToken as apiGetToken,
+  getTokenActivity as apiGetTokenActivity,
+  getTokenChart as apiGetTokenChart,
+  listTokens as apiListTokens,
+  searchTokens as apiSearchTokens,
+  type TokenActivityPage,
+  type TokenActivityParams,
+  type TokenChart,
+  type TokenChartParams,
+  type TokenDetail,
+  type TokenListPage,
+  type TokenListParams,
+  type TokenRef,
+  type TokenSearchParams,
+  type TokenSearchResult,
+} from "./api/tokens.js";
 import { LocalSigner, HDSigner, type Signer } from "./crypto/signer.js";
 import {
   openSellOrder as workflowOpenSellOrder,
@@ -1030,6 +1047,78 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<ProfileSwapPage> {
     return apiListPublicProfilePurchases(this.http, username, params, options);
+  }
+
+  // ─── Tokens ─────────────────────────────────────────────────────────────────
+  //
+  // `/api/tokens/*` normalises five unrelated asset types — Counterparty, ZELD,
+  // Ordinals, the Kontor KOR token and Kontor NFTs — onto ONE payload shape, so
+  // a client renders any token with one component tree. Public and GET-only.
+
+  /**
+   * One token's full detail payload: media, typed stats and properties, market
+   * figures, and an `offers.atomicSwapsQuery` to hand straight to
+   * {@link listSwaps} for the open offers.
+   *
+   * `null` when this network serves no such token — an unknown asset, or a
+   * Kontor token asked of a mainnet host (Kontor is signet-only).
+   */
+  getToken(ref: TokenRef, options?: RequestOptions): Promise<TokenDetail | null> {
+    return apiGetToken(this.http, ref, options);
+  }
+
+  /**
+   * A token's bucketed price/volume series. Pass either `range` or both `from`
+   * and `to` — never both forms. `null` when the token has no chart at all (a
+   * Kontor NFT is one of a kind); `capabilities.chart` says so up front.
+   */
+  getTokenChart(
+    ref: TokenRef,
+    params?: TokenChartParams,
+    options?: RequestOptions,
+  ): Promise<TokenChart | null> {
+    return apiGetTokenChart(this.http, ref, params, options);
+  }
+
+  /** A token's completed sales, newest first. Empty page for an unknown token. */
+  getTokenActivity(
+    ref: TokenRef,
+    params?: TokenActivityParams,
+    options?: RequestOptions,
+  ): Promise<TokenActivityPage> {
+    return apiGetTokenActivity(this.http, ref, params, options);
+  }
+
+  /**
+   * One autocomplete across all five token types. Each result carries the
+   * identity {@link getToken} needs, so a keystroke reaches a token screen
+   * without any client-side knowledge of protocol URL shapes.
+   *
+   * There is no pagination — five independently-ranked sources cannot be paged
+   * coherently. Raise `limit` (max 50) and read `truncated`.
+   */
+  searchTokens(
+    params: TokenSearchParams,
+    options?: RequestOptions,
+  ): Promise<TokenSearchResult> {
+    return apiSearchTokens(this.http, params, options);
+  }
+
+  /**
+   * One page of one protocol's tokens — the browse counterpart to
+   * {@link searchTokens}, in the same row shape, so a grid tile and a search hit
+   * render from one component and both open through `apiUrl`.
+   *
+   * `null` when this network doesn't serve the protocol (Kontor NFTs off
+   * signet), rather than an empty page a caller would page through forever.
+   * Read `source` before promising depth — an Ordinals page is a window of
+   * recent inscriptions, not the whole catalogue.
+   */
+  listTokens(
+    params: TokenListParams,
+    options?: RequestOptions,
+  ): Promise<TokenListPage | null> {
+    return apiListTokens(this.http, params, options);
   }
 
   // ─── REST helpers ───────────────────────────────────────────────────────────

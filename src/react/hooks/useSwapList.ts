@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket, type Addresses } from "../context.js";
 import type {
   AtomicSwap,
+  KontorAssetKind,
   SwapFacets,
   SwapFacetsParams,
 } from "../../types/index.js";
@@ -56,6 +57,42 @@ export interface UseSwapListOptions {
    * counts do not honor it.
    */
   kontorNftId?: string;
+  /**
+   * Fixed Kontor-asset-kind filter (`"token"` / `"nft"`). KOR-token and NFT
+   * listings share one `listingType`, so pinning a feed to the KOR token needs
+   * this as well — without it a KOR view also lists every Kontor NFT. Same
+   * caveats as {@link assetName}: no setter, and facet counts do not honor it.
+   */
+  kontorAssetKind?: KontorAssetKind;
+  /**
+   * Fixed listing-state pins, mirroring the remaining keys the tokens API hands
+   * out in `offers.atomicSwapsQuery`. A client following that query verbatim
+   * needs all of them: drop one and the feed answers a different set from the
+   * `offers.count` rendered above it.
+   *
+   * They describe what is *buyable*, so they narrow the open-offers feed only —
+   * the "Sold" feed is completed sales, where "expired" and "purchase still
+   * unconfirmed" do not mean the same thing. Same caveats as {@link assetName}:
+   * no setter, and facet counts do not honor them.
+   */
+  expired?: boolean;
+  /** @see {@link expired} */
+  excludePending?: boolean;
+  /** @see {@link expired} */
+  unattached?: boolean;
+  /**
+   * Fixed listing-type filter, as opposed to {@link defaultListingType} which
+   * only seeds the user-facing control.
+   *
+   * Use this when the feed is pinned to one asset: the type is then a property
+   * of that asset, not a choice — letting the control change it would answer an
+   * empty feed under a non-zero count. While set, {@link
+   * UseSwapListResult.setListingType} is a no-op and
+   * {@link UseSwapListResult.listingTypePinned} is true, so a renderer can hide
+   * the control rather than show a dead one. Takes precedence over
+   * {@link defaultListingType}.
+   */
+  listingType?: SwapListingType;
   defaultListingType?: SwapListingType | null;
   defaultSortOption?: SortOption;
   defaultShowMySwaps?: boolean;
@@ -121,6 +158,12 @@ export interface UseSwapListResult {
   lastFetchedAt: number | null;
   listingType: SwapListingType | null;
   setListingType: (t: SwapListingType | null) => void;
+  /**
+   * True when {@link UseSwapListOptions.listingType} pinned the type, so
+   * {@link setListingType} does nothing — a renderer should hide the control
+   * rather than offer one that cannot move.
+   */
+  listingTypePinned: boolean;
   sortOption: SortOption;
   setSortOption: (o: SortOption) => void;
   showMySwaps: boolean;
@@ -212,6 +255,11 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const {
     assetName,
     kontorNftId,
+    kontorAssetKind,
+    expired,
+    excludePending,
+    unattached,
+    listingType: pinnedListingType,
     defaultListingType = null,
     defaultSortOption = "latest",
     defaultShowMySwaps = false,
@@ -232,9 +280,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const analyticsRef = useRef({ onLoginRequired, onBuyStarted, onDelistStarted });
   analyticsRef.current = { onLoginRequired, onBuyStarted, onDelistStarted };
 
-  const [listingType, setListingTypeState] = useState<SwapListingType | null>(
-    defaultListingType,
-  );
+  const [chosenListingType, setListingTypeState] =
+    useState<SwapListingType | null>(defaultListingType);
+  // A pin wins over the control for the hook's lifetime — every read below sees
+  // one effective value, so the fetch, the Kontor-availability check and what a
+  // renderer displays cannot disagree.
+  const listingTypePinned = pinnedListingType !== undefined;
+  const listingType = pinnedListingType ?? chosenListingType;
   const [sortOption, setSortOptionState] = useState<SortOption>(
     defaultSortOption,
   );
@@ -297,10 +349,14 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const kontorUnavailable =
     listingType === "kontor" && kontorNetwork !== "signet";
 
-  const setListingType = useCallback((t: SwapListingType | null) => {
-    setListingTypeState(t);
-    setPageState(0);
-  }, []);
+  const setListingType = useCallback(
+    (t: SwapListingType | null) => {
+      if (listingTypePinned) return;
+      setListingTypeState(t);
+      setPageState(0);
+    },
+    [listingTypePinned],
+  );
 
   const setSortOption = useCallback((o: SortOption) => {
     setSortOptionState(o);
@@ -405,6 +461,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     const filters = {
       assetName,
       kontorNftId,
+      kontorAssetKind,
       listingType: listingType ?? undefined,
       priceMin: priceMin ?? undefined,
       priceMax: priceMax ?? undefined,
@@ -424,6 +481,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
           filled: false,
           delisted: false,
           funded: true,
+          // The listing-state pins narrow the open-offers feed only — see
+          // {@link UseSwapListOptions.expired}. Left undefined they are simply
+          // not sent, so the server's own defaults apply exactly as before.
+          expired,
+          excludePending,
+          unattached,
         };
 
     // The seller filter is driven by "My swaps" ONLY — never by "Sold". "Sold"
@@ -509,6 +572,10 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     client,
     assetName,
     kontorNftId,
+    kontorAssetKind,
+    expired,
+    excludePending,
+    unattached,
     listingType,
     sortOption,
     showMySwaps,
@@ -756,6 +823,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     lastFetchedAt,
     listingType,
     setListingType,
+    listingTypePinned,
     sortOption,
     setSortOption,
     showMySwaps,

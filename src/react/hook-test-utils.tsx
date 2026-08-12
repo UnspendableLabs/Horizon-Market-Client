@@ -1,12 +1,35 @@
 // Test-only helpers for the React hook unit tests. Named `.tsx` so it is
 // excluded from coverage (see vitest.config.ts) and never bundled by tsup
 // (no production entry imports it). NOT part of the public API.
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
+import { cleanup } from "@testing-library/react";
 import { DEFAULT_ZELD_API_BASE_URL } from "../config.js";
 import type { HorizonMarketContextValue } from "./context.js";
 import { defaultTheme } from "./theme.js";
 
 export { renderHook, act, waitFor } from "@testing-library/react";
+
+/**
+ * Unmount every hook a test rendered, before the next one runs.
+ *
+ * Testing Library registers this itself — but only when `afterEach` is a
+ * global, and this project runs Vitest with `globals: false` (every test file
+ * imports its own). So auto-cleanup silently never armed, and each file's hooks
+ * accumulated: mounted, un-awaited and still reading the module-level `ctxRef`
+ * that the NEXT test overwrites through `makeCtx`.
+ *
+ * That is not merely untidy, it is a race. A test that stops at "the request
+ * went out" leaves its promise in flight; the resolution lands during a later
+ * test, sets state on the leaked hook, and re-renders it against a context
+ * whose `client` and inputs both changed — so its effect re-runs and calls the
+ * *later* test's mock. The symptom is a call count one too high, on the slower
+ * of two machines, in a test that never mentions the hook responsible.
+ *
+ * Registered here rather than in each file because every hook test already
+ * imports this module, and a cleanup that has to be remembered is one that
+ * eventually isn't.
+ */
+afterEach(cleanup);
 
 /**
  * Overrides accepted by {@link makeCtx}. Every field of the context is
