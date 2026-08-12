@@ -16,6 +16,7 @@ import type { AtomicSwap, RequestOptions } from "../types/index.js";
  * GET /api/tokens/kontor/KOR             [/chart] [/activity]   ← signet only
  * GET /api/tokens/kontor/nfts/{nft_id}   [/activity]            ← signet only
  * GET /api/tokens/search?q=…
+ * GET /api/tokens?protocol=…             ← one page of one catalogue
  * ```
  *
  * Everything here is public, unauthenticated and GET-only.
@@ -174,14 +175,28 @@ interface WireTokenSummary {
   collection: { name: string; slug: string } | null;
   api_url: string;
   web_url: string;
+}
+
+interface WireTokenSearchSummary extends WireTokenSummary {
   match: TokenMatch;
 }
 
 interface WireTokenSearchResult {
   query: string;
-  results: WireTokenSummary[];
+  results: WireTokenSearchSummary[];
   truncated: boolean;
   sources: Record<string, TokenSearchSourceStatus>;
+  offers: TokenOfferAggregateStatus;
+}
+
+interface WireTokenListResult {
+  protocol: BrowsableTokenProtocol;
+  listed_only: boolean;
+  source: TokenListSource;
+  results: WireTokenSummary[];
+  pagination: { total: number; offset: number; limit: number };
+  hydration: TokenHydrationStatus;
+  artwork: TokenArtworkStatus;
   offers: TokenOfferAggregateStatus;
 }
 
@@ -456,8 +471,12 @@ export interface TokenMatch {
 }
 
 /**
- * One search hit — a strict subset of {@link TokenDetail}'s fields, using the
- * same names, so a result row and a detail header render from one shape.
+ * One row of a list — a search hit or a browse page — and a strict subset of
+ * {@link TokenDetail}'s fields, using the same names, so a result row and a
+ * detail header render from one shape.
+ *
+ * Search adds one field of its own ({@link TokenSearchSummary.match}); nothing
+ * else differs, so a single row component draws both.
  */
 export interface TokenSummary {
   protocol: TokenProtocol;
@@ -485,7 +504,10 @@ export interface TokenSummary {
   /** Absolute URL of this token's own detail endpoint. */
   apiUrl: string;
   webUrl: string;
+}
 
+/** A {@link TokenSummary} plus which part of it a search query matched. */
+export interface TokenSearchSummary extends TokenSummary {
   match: TokenMatch;
 }
 
@@ -506,10 +528,117 @@ export type TokenOfferAggregateStatus = "ok" | "error";
 
 export interface TokenSearchResult {
   query: string;
-  results: TokenSummary[];
+  results: TokenSearchSummary[];
   /** True when at least one source had more matches than `limit` allowed. */
   truncated: boolean;
   sources: Record<string, TokenSearchSourceStatus>;
+  offers: TokenOfferAggregateStatus;
+}
+
+/**
+ * The token types with a catalogue worth paging.
+ *
+ * ZELD and KOR are absent because each is a *single* token: a list of them is a
+ * list of one, and their detail endpoints (`/api/tokens/ZELD`,
+ * `/api/tokens/kontor/KOR`) are the way to read them. Asking {@link listTokens}
+ * for either is a 400 naming the route that works.
+ */
+export const BROWSABLE_TOKEN_PROTOCOLS = [
+  "counterparty",
+  "ordinals",
+  "kontor-nft",
+] as const;
+
+export type BrowsableTokenProtocol = (typeof BROWSABLE_TOKEN_PROTOCOLS)[number];
+
+/**
+ * Where a browse page came from, and therefore what its `total` counts.
+ *
+ * The upstreams are not equally deep, and a client paging a grid has to know
+ * whether it is walking a catalogue or a window — otherwise "the list ended at
+ * row 100" reads as a bug rather than as the edge of what is browsable.
+ *
+ * - `catalogue` — the protocol's full catalogue; `total` is exact and paging
+ *   runs to the end of it.
+ * - `recent_window` — a cron-warmed window of the newest items, because the
+ *   upstream offers no cheap deep pagination. `total` is the window's size, not
+ *   the number of tokens in existence; {@link searchTokens} reaches the rest.
+ *   Ordinals only.
+ * - `order_book` — Horizon's open offers; `total` is exact. Only under
+ *   `listedOnly`.
+ */
+export type TokenListSource = "catalogue" | "recent_window" | "order_book";
+
+/**
+ * Whether a page's rows carry the names and collections their protocol knows
+ * them by.
+ *
+ * Only an `order_book` page can degrade: it selects tokens by identifier, so
+ * naming them means a second lookup per protocol. When that fails the rows are
+ * still real, openable and priced — but named `A9587…` rather than
+ * `RAREPEPE.card`, which reads like a catalogue of unnamed assets rather than
+ * like an outage. Hence the flag.
+ *
+ * Artwork has {@link TokenArtworkStatus} of its own: a page short of pictures
+ * and a page short of names are not the same event, and a UI that warns about
+ * the second should not warn about the first.
+ */
+export type TokenHydrationStatus = "ok" | "error";
+
+/**
+ * Whether every row that *could* be illustrated was.
+ *
+ * Most of the Counterparty catalogue keeps its image in the asset description
+ * rather than in a column, so illustrating a page means the server resolving
+ * those descriptions against third-party hosts, under a deadline. Rows that lose
+ * that race keep `imageIsPlaceholder: true`.
+ *
+ * `partial`, not `error`: nothing failed. The page is simply less illustrated
+ * than the next one will be — the resolutions that missed the deadline finish
+ * into the server's own cache — so this is a reason to re-read, never a reason
+ * to put an error in front of a user. An asset with no artwork anywhere leaves
+ * this `ok`: a pass that finished having found nothing is finished.
+ */
+export type TokenArtworkStatus = "ok" | "partial";
+
+export interface TokenListParams {
+  /** Which catalogue to page. Required — there is no default protocol. */
+  protocol: BrowsableTokenProtocol;
+  offset?: number;
+  /** Page size, capped at 100 by the server. Defaults to 20. */
+  limit?: number;
+  /**
+   * Only tokens with at least one open offer. Pages Horizon's order book rather
+   * than the protocol's catalogue, so `source` comes back `order_book`.
+   */
+  listedOnly?: boolean;
+}
+
+/** One page of one protocol's tokens. */
+export interface TokenListPage {
+  protocol: BrowsableTokenProtocol;
+  listedOnly: boolean;
+  /** What this page was paged from — see {@link TokenListSource}. */
+  source: TokenListSource;
+  results: TokenSummary[];
+  /** How many rows exist in {@link source}, not in the protocol as a whole. */
+  total: number;
+  offset: number;
+  limit: number;
+  /** Whether the rows could be named by their own protocol. */
+  hydration: TokenHydrationStatus;
+  /**
+   * Whether the rows carry every picture that exists for them. `partial` means
+   * some kept their placeholder because the server's artwork pass ran out of
+   * time — a reason to re-read, not a reason to warn. See
+   * {@link TokenArtworkStatus}.
+   */
+  artwork: TokenArtworkStatus;
+  /**
+   * Outcome of the offer aggregate that priced this page. On `error` every row
+   * comes back `listed: false` with no floor price — indistinguishable from a
+   * page where nothing happens to be listed, hence the flag.
+   */
   offers: TokenOfferAggregateStatus;
 }
 
@@ -746,7 +875,26 @@ function mapSummary(wire: WireTokenSummary): TokenSummary {
     collection: wire.collection,
     apiUrl: wire.api_url,
     webUrl: wire.web_url,
-    match: wire.match,
+  };
+}
+
+function mapSearchSummary(wire: WireTokenSearchSummary): TokenSearchSummary {
+  return { ...mapSummary(wire), match: wire.match };
+}
+
+function mapListResult(wire: WireTokenListResult): TokenListPage {
+  return {
+    protocol: wire.protocol,
+    listedOnly: wire.listed_only,
+    source: wire.source,
+    results: (wire.results ?? []).map(mapSummary),
+    total: wire.pagination?.total ?? 0,
+    offset: wire.pagination?.offset ?? 0,
+    limit: wire.pagination?.limit ?? 0,
+    // A server that ships none of these has not degraded — it predates them.
+    hydration: wire.hydration ?? "ok",
+    artwork: wire.artwork ?? "ok",
+    offers: wire.offers ?? "ok",
   };
 }
 
@@ -970,9 +1118,45 @@ export async function searchTokens(
   );
   return {
     query: wire.query,
-    results: (wire.results ?? []).map(mapSummary),
+    results: (wire.results ?? []).map(mapSearchSummary),
     truncated: wire.truncated,
     sources: wire.sources ?? {},
     offers: wire.offers,
   };
+}
+
+/**
+ * `GET /api/tokens` — one page of one protocol's tokens, in the same row shape
+ * {@link searchTokens} returns. This is the browse surface: a grid whose rows
+ * each carry an {@link TokenSummary.apiUrl}, so a tile becomes a token screen
+ * with no client-side knowledge of any protocol's URL shape.
+ *
+ * `null` when this network does not serve the protocol at all — Kontor NFTs
+ * asked of a mainnet host. Deliberately not an empty page: a client would page
+ * through that forever with no way to tell "no NFTs" from "not here".
+ *
+ * One protocol per call, and no merged feed: three catalogues ordered by three
+ * unrelated things (issuance height, inscription order, mint order) cannot be
+ * interleaved into a list that pages coherently — page 2 would be computed from
+ * a different merge than page 1 the moment any upstream moved.
+ *
+ * Read {@link TokenListPage.source} before promising depth: an Ordinals page is
+ * a cron-warmed *window* of recent inscriptions, not the whole catalogue.
+ */
+export async function listTokens(
+  http: HttpClient,
+  params: TokenListParams,
+  options?: RequestOptions,
+): Promise<TokenListPage | null> {
+  const qs = new URLSearchParams({ protocol: params.protocol });
+  if (params.offset !== undefined) qs.set("offset", String(params.offset));
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.listedOnly) qs.set("listed_only", "true");
+
+  return getOrNull<WireTokenListResult, TokenListPage>(
+    http,
+    `/api/tokens?${qs.toString()}`,
+    mapListResult,
+    options?.signal,
+  );
 }

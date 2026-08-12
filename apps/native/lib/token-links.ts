@@ -16,7 +16,11 @@ const PROTOCOLS: TokenProtocol[] = [
 ];
 
 /** Where the user came from — carried so analytics can tell the paths apart. */
-export type TokenOrigin = "buy_list" | "search" | "direct";
+export type TokenOrigin =
+  | "buy_list"
+  | "search"
+  | "token_explorer"
+  | "direct";
 
 /**
  * The route for a token. The id is encoded because it is a single path segment
@@ -33,7 +37,11 @@ export function tokenOriginFromRoute(
   from?: string | string[],
 ): TokenOrigin {
   const value = Array.isArray(from) ? from[0] : from;
-  return value === "buy_list" || value === "search" ? value : "direct";
+  return value === "buy_list" ||
+    value === "search" ||
+    value === "token_explorer"
+    ? value
+    : "direct";
 }
 
 /**

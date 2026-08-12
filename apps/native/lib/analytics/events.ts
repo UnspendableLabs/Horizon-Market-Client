@@ -206,7 +206,7 @@ export function trackProfileAvatarChanged(): void {
  */
 export function trackTokenViewed(props: {
   protocol: string;
-  from: "buy_list" | "search" | "direct";
+  from: "buy_list" | "search" | "token_explorer" | "direct";
 }): void {
   void track(
     "token_viewed",

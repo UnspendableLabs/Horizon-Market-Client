@@ -11,7 +11,7 @@ import { useTokenSearch } from "./useTokenSearch.js";
 import type {
   TokenSearchParams,
   TokenSearchResult,
-  TokenSummary,
+  TokenSearchSummary,
 } from "../../api/tokens.js";
 
 /**
@@ -31,7 +31,7 @@ function stubSearch(
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
 
-function summary(name: string): TokenSummary {
+function summary(name: string): TokenSearchSummary {
   return {
     protocol: "counterparty",
     protocolLabel: "Counterparty",

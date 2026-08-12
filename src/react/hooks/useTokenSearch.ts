@@ -3,7 +3,7 @@ import { useHorizonMarket } from "../context.js";
 import type {
   TokenProtocol,
   TokenSearchSourceStatus,
-  TokenSummary,
+  TokenSearchSummary,
 } from "../../api/tokens.js";
 
 /**
@@ -41,8 +41,14 @@ export interface UseTokenSearchResult {
   /** The raw input value — feed this straight to a text field. */
   query: string;
   setQuery: (query: string) => void;
-  /** Matches for the last settled query. Empty while the query is empty. */
-  results: TokenSummary[];
+  /**
+   * Matches for the last settled query. Empty while the query is empty.
+   *
+   * A search row, not a browse one: it carries the {@link TokenSearchSummary}
+   * `match` describing which field the query hit, which is what lets a result
+   * list say *why* a row is there.
+   */
+  results: TokenSearchSummary[];
   /** True from the first keystroke until the matching response lands. */
   loading: boolean;
   error: string | null;
@@ -75,14 +81,14 @@ export function useTokenSearch(
   const protocolKey = (options?.protocols ?? []).join(",");
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<TokenSummary[]>([]);
+  const [results, setResults] = useState<TokenSearchSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [degraded, setDegraded] = useState(false);
-  const [sources, setSources] = useState<Record<string, TokenSearchSourceStatus>>(
-    {},
-  );
+  const [sources, setSources] = useState<
+    Record<string, TokenSearchSourceStatus>
+  >({});
 
   const seqRef = useRef(0);
 
