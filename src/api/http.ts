@@ -13,6 +13,23 @@ export class HorizonMarketApiError extends Error {
 }
 
 /**
+ * Read the `{ error }` message off a non-2xx raw response.
+ *
+ * `request`/`requestRaw` do this inline; this is the same parse for the
+ * {@link HttpClient.fetchRaw} paths (multipart uploads, binary reads), which see
+ * the {@link Response} rather than the envelope.
+ */
+export async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string } | null;
+    if (body?.error) return body.error;
+  } catch {
+    // not JSON / empty body
+  }
+  return response.statusText || "Unknown error";
+}
+
+/**
  * Serialize a value to JSON, converting bigint values to number or string.
  * BigInt values <= Number.MAX_SAFE_INTEGER are converted to number, larger to string.
  */

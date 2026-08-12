@@ -256,6 +256,65 @@ export type {
   TokenListPage,
 } from "./api/tokens.js";
 
+// Token creation (`/api/creations/*`) — the write counterpart of the tokens
+// API: one request shape composes a Counterparty issuance or an ordinal
+// inscription, and `client.createToken()` runs quote → sign → broadcast over it.
+// The constants are the server's own limits, so a form stops guessing them.
+export {
+  MAX_CREATION_NAME_LENGTH,
+  MAX_CREATION_DESCRIPTION_LENGTH,
+  MAX_CREATION_ATTRIBUTES,
+  MAX_CREATION_ATTRIBUTE_BYTES,
+  MAX_CREATION_MEDIA_BYTES,
+  MAX_INSCRIPTION_BYTES,
+  CREATION_MEDIA_TYPES,
+  commitTxidFromCreationError,
+} from "./api/creations.js";
+export type {
+  CreationType,
+  CreatableType,
+  CreationAttributes,
+  CreationQuote,
+  CreationQuoteParams,
+  CounterpartyCreationQuoteParams,
+  OrdinalsCreationQuoteParams,
+  CounterpartyCreationOptions,
+  OrdinalsCreationOptions,
+  SubmitCreationParams,
+  CreationResult,
+  CreationMediaUpload,
+  CreationMediaResult,
+  UploadCreationMediaOptions,
+} from "./api/creations.js";
+// A failed submit is recoverable ONLY by replaying the same body — see the
+// error's own docblock. `creationRetry` is what reads it back out.
+export {
+  CreationNotBroadcastError,
+  creationRetry,
+} from "./workflows/create.js";
+export type {
+  CreateTokenParams,
+  CreateTokenResult,
+  CreationRetry,
+} from "./workflows/create.js";
+// Local guards, so a create form can reject a bad name before spending a quote
+// (which pins to IPFS before it can fail).
+export {
+  validateCounterpartyAssetName,
+  assertCounterpartyAssetName,
+  validateCreationQuantity,
+  validateCreationAttributes,
+  parentAssetOf,
+  isNumericAssetName,
+  xcpNameFee,
+  isIpfsUri,
+  isFundableCreationAddress,
+  COUNTERPARTY_NUMERIC_MIN,
+  COUNTERPARTY_NUMERIC_MAX,
+} from "./creation-params.js";
+/** Re-encode the creations API's base64 PSBT as the hex every signer here takes. */
+export { psbtBase64ToHex } from "./utils.js";
+
 // Manual sell workflow helper (quote → sign → submit)
 export {
   signAndFinalizeSellPrep,

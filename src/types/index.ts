@@ -455,6 +455,7 @@ export interface BuyQuoteParams {
 }
 
 export type {
+  CreateTokenStep,
   DelistSwapStep,
   FillSwapsStep,
   OpenSellOrderStep,

@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Creating a token.** Every surface this client has ever had reads or trades what
+already exists; issuing a Counterparty asset and inscribing an ordinal were
+browser-only flows under `/create-asset`, sharing nothing but a page. The server
+turned them into one API (UnspendableLabs/Horizon-Market#1164) — the same request
+body for every protocol, every option defaulted — and this release is the client
+half: the three endpoints as typed methods, a `createToken` workflow over them,
+a `useCreateToken` hook, and a **Create** screen in the example mobile app,
+reached from the hamburger menu next to the Token Explorer. The explorer lists
+what exists; this adds to it.
+
+The shape of the flow is the familiar `quote → sign → submit`, with one
+difference that drives most of the design: **there is no side-effect-free
+preview**. A sell or buy quote can be re-composed on every keystroke because
+`preview: true` costs nothing; a creation quote pins a JSON descriptor to IPFS
+(Counterparty) or pulls up to 350 kB of media through a gateway (ordinals),
+behind a session gate, before it can answer. So a quote is taken once per
+attempt, the fee rate is settled *before* it (on the form, not in the confirm
+sheet), and the quote the user approved is handed back to `createToken` rather
+than thrown away and re-composed — which is also what makes the fees on screen
+the fees that get signed.
+
+The other thing worth knowing before calling any of it: **a failed submit must
+never be retried by re-running the workflow.** That composes a second
+transaction — for Counterparty a duplicate issuance against the same UTXOs, and
+for an ordinal a new commit that strands the first one's funds *permanently*,
+because its reveal was pre-signed with a key the server discards at quote time.
+`CreationNotBroadcastError` therefore carries the exact body to re-POST, and
+broadcasting is idempotent, so replaying it is both safe and the only correct
+recovery.
+
+### Added
+
+- **`requestCreationQuote(params)` / `submitCreation(params)` / `uploadCreationMedia(file, { thumbnail? })`** — the `/api/creations/*` surface. One request shape for `counterparty` and `ordinals`, discriminated on `type`, with every option server-defaulted so an untouched advanced section sends no `options` key at all. `image` is always an `ipfs://` URI — that is what lets one field mean the same thing on both chains (Counterparty stores it in a pinned descriptor, an ordinal inscribes the bytes behind it), and `uploadCreationMedia` is how a client without its own pinning gets one. `type: "kontor"` is reserved upstream (501 on signet, 404 elsewhere) and is not creatable here.
+- **`createToken(params, options?)`** — the workflow: validate → quote → sign → broadcast, with progress events under a new `createToken` workflow name. Pass `params.quote` when a quote has already been shown to the user and the quote step is skipped entirely. It funds from the signer's native segwit address by default for both protocols — the cheapest input to spend, always present, and it keeps `public_key` out of the request, which matters because the server validates that key against the funding input's script rather than ignoring a wrong one (an `HDSigner`'s BIP84 and BIP86 keys differ). An ordinal's receive address is filled from the signer's `p2tr`, or fails locally with a clear message rather than a server 400.
+- **`CreationNotBroadcastError` / `creationRetry(err)`** — recovery for a submit that failed, carrying the signed body and, when the transaction did reach the network, the commit txid parsed out of the 502 (a 502 *without* one means nothing was broadcast). `useCreateToken`'s `retry()` replays the submit alone; re-running the workflow is what the error exists to prevent.
+- **`useCreateToken()` (react)** — the data layer for a create screen: form values, repeatable key/value attribute rows collapsed to the wire map (blank rows dropped, duplicates reported instead of silently overwritten), media upload, per-field validation, the quote-then-confirm step machine, progress, and reset/retry. The ordinals rule — one indivisible, locked inscription — is enforced in the hook's state, not in the form's `editable` props, so a custom UI cannot get around it; `"slow"` is withheld from the fee presets for ordinals, whose reveal is signed once and can never be fee-bumped. Any edit, including the fee rate, drops the held quote, so a Back-edit-Create round trip cannot sign against numbers nobody saw.
+- **The XCP name fee is surfaced, not discovered.** A quote's `totalCostSats` is BTC only, while Counterparty charges 0.5 XCP to register a named asset (0.25 for a subasset, free for a numeric `A…` name) — so a short balance used to surface as a generic compose error after the fees had been approved. `xcpNameFee(name)` is that number, and `useCreateToken` reads the wallet's XCP balance to block a creation it positively cannot pay for. Positively: when the balance is unknown — the Counterparty API is not configured for the network, or the read failed — it warns and lets the attempt through, because refusing on a balance nobody could read is worse than a clear warning.
+- **Local guards** — `validateCounterpartyAssetName` (named / numeric / subasset, mirroring the server's rules including the numeric range and the 250-char cap), `validateCreationQuantity`, `validateCreationAttributes` (measured in UTF-8 *bytes*, as the server does), `isIpfsUri`, `isFundableCreationAddress`, `parentAssetOf`, `isNumericAssetName`, plus the server's limits as constants. These exist because the quote endpoint spends real resources before it can fail: a name typo should cost a form hint, not an orphaned pin.
+- **`psbtBase64ToHex(psbt)`** — the creations API is the only endpoint that answers a base64 PSBT, and every signer in this SDK works in hex. Byte-level rather than a bitcoinjs round-trip, and it asserts the magic bytes rather than guessing at the encoding, since a base64 string can consist entirely of hex characters.
+- The example mobile app (`apps/native`) gains a **Create screen** behind a new "Create" entry in the header's hamburger menu. Image (via `expo-image-picker`), name with live per-protocol validation, description, a fee-rate row, and an **Advanced** section behind a chevron: the Counterparty / Ordinals selector, then quantity, divisible and locked — read-only at their defaults under Ordinals rather than hidden, so nothing silently disappears — and the attribute rows with a "+" to add one. Pressing Create takes the quote and opens the same `Modal` the sell and buy flows use, showing the real fees as facts, then the same `WorkflowProgress`. It wears the app's normal chrome and shows the same login gate the Sell and Wallet tabs do, plus the Profile screen's sign-in notice, since both the quote and the upload are session-gated. Two mistakes are caught before they cost a round trip: an iOS HEIC photo, which the API's allowlist refuses, and a file over the 350 kB inscription ceiling — which the server only enforces on the bytes it fetches back at quote time, so an oversized image otherwise uploads happily and fails later.
+
 ## [0.2.11] - 2026-08-11
 
 **Profiles.** horizon.market's profile page — the username you trade under, the bio, the avatar, which of your wallets are public — had no client surface at all: it was a web page talking to its own session, and a mobile client could neither read a profile nor change one. The server side opened that up (UnspendableLabs/Horizon-Market#1149), and this release is the client half: every `/api/profiles/*` endpoint as a typed method, two React hooks over them, and a Profile screen in the example mobile app.

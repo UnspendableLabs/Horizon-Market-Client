@@ -552,11 +552,93 @@ a list that moves, so appended rows are de-duplicated by `canonicalId` and the
 next page is read from `pagedCount` — what the server has sent — rather than from
 `tokens.length`, which a dropped duplicate leaves behind.
 
+### Creating a token
+
+`/api/creations/*` is the write counterpart of the tokens API: **one request
+shape** composes a Counterparty issuance or an ordinal inscription, so a client
+ships one create screen rather than one per protocol. `type: "kontor"` is
+reserved and answers `501` on signet / `404` elsewhere.
+
+```ts
+// 1. Pin the artwork (session-gated, max 10 MB).
+const media = await client.uploadCreationMedia(file, { thumbnail: true });
+
+// 2 & 3. Quote → sign → broadcast, in one call.
+const created = await client.createToken(
+  {
+    type: "counterparty",           // or "ordinals"
+    name: "MYASSET",
+    description: "A picture",
+    image: media.ipfsUrl,           // always an ipfs:// URI
+    attributes: { rarity: "rare" },
+    satsPerVbyte: 5,
+    options: { quantity: "1000", divisible: false, lock: true },
+  },
+  { onProgress: (event) => console.log(event.message) },
+);
+```
+
+`image` is always an `ipfs://` URI — that is what lets one field mean the same
+thing on both chains: Counterparty stores it inside a pinned JSON descriptor, an
+ordinal inscribes the bytes behind it. A gateway `https://…` URL is rejected.
+
+**A quote is a real, metered request.** There is no side-effect-free `preview`
+here: composing pins a descriptor (Counterparty) or pulls up to 350 kB of media
+through a gateway (ordinals), behind a session gate. So take one quote per
+attempt — and when a UI shows the fees before signing, take that quote yourself
+and hand it back:
+
+```ts
+const quote = await client.requestCreationQuote({ /* … */ });   // show quote.totalCostSats
+const created = await client.createToken({ /* same params */, quote });  // skips re-quoting
+```
+
+- `requestCreationQuote(params, options?)` — session-gated. Answers `{ identifier, psbtBase64, inputsToSign, revealTxHex, estimatedFeeSats, totalCostSats }`
+- `submitCreation(params, options?)` — unauthenticated, idempotent; `psbt` (hex or base64) **xor** `txHex`
+- `uploadCreationMedia(file, { thumbnail? })` — session-gated multipart; a `Blob`/`File` or a React Native `{ uri, name, type }`
+- `createToken(params, options?)` — the workflow over all three
+
+Two things a caller has to get right:
+
+**Never retry `createToken` after a submit failure.** It throws
+`CreationNotBroadcastError`, which carries the exact body to re-POST. Re-running
+the workflow composes a *second* transaction — and for an ordinal, the first
+commit's funds are then stranded forever, since its reveal was pre-signed with a
+key the server discarded at quote time.
+
+```ts
+try { await client.createToken(params); }
+catch (err) {
+  const retry = creationRetry(err);
+  if (retry) await client.submitCreation(retry.submit);   // the ONLY safe recovery
+}
+```
+
+**`totalCostSats` is BTC only.** Counterparty charges 0.5 XCP to register a named
+asset (0.25 for a subasset, free for a numeric `A…` name) on top of it, and a
+short balance fails at compose time. `xcpNameFee(name)` is that number.
+
+Local guards, so a typo costs a form hint rather than a pin:
+`validateCounterpartyAssetName`, `validateCreationQuantity`,
+`validateCreationAttributes`, `isIpfsUri`, `isFundableCreationAddress`,
+`parentAssetOf`, `isNumericAssetName`, plus the server's own limits
+(`MAX_CREATION_ATTRIBUTES`, `MAX_CREATION_MEDIA_BYTES`, `MAX_INSCRIPTION_BYTES`,
+`CREATION_MEDIA_TYPES`, …).
+
+In React, `useCreateToken()` is the whole screen's data layer: form values with
+the ordinals rule enforced (quantity 1, indivisible, locked), attribute rows,
+media upload, validation, the quote-then-confirm step machine, progress events,
+the XCP balance check, and a `retry()` that replays the submit alone. The fee
+rate lives on the **form** rather than in the confirm step — with no preview
+endpoint, changing it in a modal would pin a fresh descriptor per twiddle. See
+`apps/native/app/create.tsx` for a complete screen built on it.
+
 ### Workflow Methods
 
 - `openSellOrder(params, options?)` — quote → sign → submit sell listing; returns `{ swap, created, transactions }` (`transactions` = on-chain txs the listing broadcast)
 - `fillSwaps(params, options?)` — quote → sign → submit purchase
 - `delistSwap(swapId, options?)` — start → sign (BIP322) → confirm delist
+- `createToken(params, options?)` — quote → sign → broadcast a new Counterparty asset or ordinal inscription
 - `previewKontorListingFee(address)` — side-effect-free Kontor listing-fee preview
 
 ### REST Helpers

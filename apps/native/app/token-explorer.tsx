@@ -18,6 +18,7 @@ import {
 import { Header } from "../components/Header.js";
 import { StandaloneTabBar } from "../components/TabBar.js";
 import { TokenImage, tokenHasBrandMark } from "../components/TokenImage.js";
+import { ToggleButton, toggleGroupStyle } from "../components/ToggleButton.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import { tokenHref } from "../lib/token-links.js";
 import { formatSatsAsBtc } from "../lib/token-format.js";
@@ -268,29 +269,6 @@ export default function TokenExplorerScreen() {
   );
 }
 
-function ToggleButton({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.toggleButton, active && styles.toggleButtonActive]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-    >
-      <Text style={[styles.toggleText, active && styles.toggleTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function TokenCard({
   token,
   onPress,
@@ -368,28 +346,7 @@ const styles = StyleSheet.create({
   },
   tabTextActive: { color: colors.foreground },
 
-  toggle: {
-    flexDirection: "row",
-    alignSelf: "flex-start",
-    padding: 3,
-    gap: 2,
-    borderRadius: radii.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  toggleButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 1,
-    borderRadius: radii.full,
-  },
-  toggleButtonActive: { backgroundColor: colors.surfaceActive },
-  toggleText: {
-    fontSize: 12,
-    color: colors.muted,
-    fontFamily: fonts.sansSemiBold,
-  },
-  toggleTextActive: { color: colors.foreground },
+  toggle: toggleGroupStyle,
 
   list: { paddingHorizontal: spacing.md, paddingBottom: spacing.lg },
   column: { gap: spacing.md, marginBottom: spacing.md },

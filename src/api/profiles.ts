@@ -1,4 +1,4 @@
-import { HttpClient, HorizonMarketApiError } from "./http.js";
+import { HttpClient, HorizonMarketApiError, readErrorMessage } from "./http.js";
 import { base64 } from "@scure/base";
 import { mapAtomicSwap, type WireAtomicSwap } from "./atomic-swaps.js";
 import type {
@@ -410,17 +410,6 @@ function pageQuery(params?: ProfilePageParams): string {
   if (params?.limit !== undefined) qs.set("limit", String(params.limit));
   const query = qs.toString();
   return query ? `?${query}` : "";
-}
-
-/** Read the `{ error }` message off a non-2xx raw response. */
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string } | null;
-    if (body?.error) return body.error;
-  } catch {
-    // not JSON / empty body
-  }
-  return response.statusText || "Unknown error";
 }
 
 // ─── Authenticated: the caller's own profile ─────────────────────────────────

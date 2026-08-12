@@ -18,6 +18,7 @@ export const SURFACE = {
   profile: "profile_native",
   token: "token_native",
   search: "search_native",
+  create: "create_native",
 } as const;
 
 function withPlatform(surface: string, props?: EventPayload): EventPayload {
@@ -226,6 +227,52 @@ export function trackTokenSearchResultOpened(props: {
       protocol: props.protocol,
       position: props.position,
       query_length: props.queryLength,
+    }),
+  );
+}
+
+// ---- Token creation -------------------------------------------------------
+
+/**
+ * A creation quote came back and the confirm sheet opened. Tracked separately
+ * from the completion because a quote is where the cost first becomes real —
+ * the gap between the two is the drop-off the fee display is responsible for.
+ */
+export function trackCreateQuoted(props: {
+  protocol: string;
+  totalCostSats: number;
+}): void {
+  void track(
+    "token_create_quoted",
+    withPlatform(SURFACE.create, {
+      protocol: props.protocol,
+      total_cost_sats: props.totalCostSats,
+    }),
+  );
+}
+
+export function trackCreateCompleted(props: {
+  protocol: string;
+  identifier: string | null;
+}): void {
+  void track(
+    "token_created",
+    withPlatform(SURFACE.create, {
+      protocol: props.protocol,
+      identifier: props.identifier,
+    }),
+  );
+}
+
+export function trackCreateFailed(props: {
+  protocol: string;
+  error: Error;
+}): void {
+  void track(
+    "token_create_failed",
+    withPlatform(SURFACE.create, {
+      protocol: props.protocol,
+      error: props.error.message,
     }),
   );
 }

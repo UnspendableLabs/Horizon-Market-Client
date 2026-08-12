@@ -57,4 +57,33 @@ describe("public SDK barrel (index.ts)", () => {
   it("re-exports the manual sell-prep helper", () => {
     expect(sdk.signAndFinalizeSellPrep).toBeTypeOf("function");
   });
+
+  it("re-exports the token-creation surface", () => {
+    expect(sdk.CreationNotBroadcastError).toBeTypeOf("function");
+    expect(new sdk.CreationNotBroadcastError({ type: "counterparty" }, null, null))
+      .toBeInstanceOf(Error);
+    expect(sdk.creationRetry).toBeTypeOf("function");
+    expect(sdk.commitTxidFromCreationError).toBeTypeOf("function");
+    expect(sdk.psbtBase64ToHex).toBeTypeOf("function");
+
+    expect(sdk.validateCounterpartyAssetName).toBeTypeOf("function");
+    expect(sdk.assertCounterpartyAssetName).toBeTypeOf("function");
+    expect(sdk.validateCreationQuantity).toBeTypeOf("function");
+    expect(sdk.validateCreationAttributes).toBeTypeOf("function");
+    expect(sdk.parentAssetOf).toBeTypeOf("function");
+    expect(sdk.isNumericAssetName).toBeTypeOf("function");
+    expect(sdk.xcpNameFee).toBeTypeOf("function");
+    expect(sdk.isIpfsUri).toBeTypeOf("function");
+    expect(sdk.isFundableCreationAddress).toBeTypeOf("function");
+
+    expect(sdk.MAX_CREATION_NAME_LENGTH).toBeTypeOf("number");
+    expect(sdk.MAX_CREATION_DESCRIPTION_LENGTH).toBeTypeOf("number");
+    expect(sdk.MAX_CREATION_ATTRIBUTES).toBeTypeOf("number");
+    expect(sdk.MAX_CREATION_ATTRIBUTE_BYTES).toBeTypeOf("number");
+    expect(sdk.MAX_CREATION_MEDIA_BYTES).toBeTypeOf("number");
+    expect(sdk.MAX_INSCRIPTION_BYTES).toBeTypeOf("number");
+    expect(sdk.CREATION_MEDIA_TYPES).toContain("image/png");
+    expect(sdk.COUNTERPARTY_NUMERIC_MIN).toBeTypeOf("bigint");
+    expect(sdk.COUNTERPARTY_NUMERIC_MAX).toBeTypeOf("bigint");
+  });
 });
