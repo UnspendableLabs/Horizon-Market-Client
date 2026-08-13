@@ -74,6 +74,7 @@ describe("public SDK barrel (index.ts)", () => {
     expect(sdk.validateCreationAttributes).toBeTypeOf("function");
     expect(sdk.parentAssetOf).toBeTypeOf("function");
     expect(sdk.isNumericAssetName).toBeTypeOf("function");
+    expect(sdk.randomNumericAssetName).toBeTypeOf("function");
     expect(sdk.xcpNameFee).toBeTypeOf("function");
     expect(sdk.isIpfsUri).toBeTypeOf("function");
     expect(sdk.isFundableCreationAddress).toBeTypeOf("function");

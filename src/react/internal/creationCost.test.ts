@@ -59,4 +59,11 @@ describe("xcpFeeNotice", () => {
     expect(xcpFeeNotice("counterparty", "A95428956661682177")).toBeNull();
     expect(xcpFeeNotice("ordinals", "My inscription")).toBeNull();
   });
+
+  it("says nothing before a name has been typed", () => {
+    // A fee is a fact about a name. Quoting one for the empty string puts a
+    // 0.5 XCP warning — and a red insufficient-balance line — on a form the
+    // user has not touched.
+    expect(xcpFeeNotice("counterparty", "")).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -11,6 +11,8 @@ import {
   View,
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import {
   CREATION_MEDIA_TYPES,
@@ -23,6 +25,8 @@ import {
   useCreateToken,
   useHorizonMarket,
   type CreatableType,
+  type CreationRetryStore,
+  type PersistedCreationRetry,
   type UseCreateTokenResult,
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../components/ConnectPrompt.js";
@@ -75,6 +79,36 @@ function extensionForMediaType(type: string): string {
 }
 
 /**
+ * A recovery outlives the process, in AsyncStorage.
+ *
+ * The body held after a broadcast-but-unconfirmed creation is the only thing
+ * that can finish it — re-composing broadcasts a second transaction, and for an
+ * ordinal strands the first commit's funds forever. React state does not survive
+ * a swipe out of the app switcher, so the hook's refusal to let the user leave is
+ * only worth as much as this is.
+ *
+ * Keyed by network and funding address: a recovery belongs to the wallet that
+ * signed it, and restoring one under another wallet is worse than losing it.
+ */
+function makeRetryStore(key: string): CreationRetryStore {
+  return {
+    async load() {
+      const raw = await AsyncStorage.getItem(key);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as PersistedCreationRetry;
+      } catch {
+        // Unreadable is the same as absent, and leaving it would fail forever.
+        await AsyncStorage.removeItem(key);
+        return null;
+      }
+    },
+    save: (retry) => AsyncStorage.setItem(key, JSON.stringify(retry)),
+    clear: () => AsyncStorage.removeItem(key),
+  };
+}
+
+/**
  * Create screen — reached from the hamburger in the {@link Header}, alongside
  * the Token Explorer: the explorer lists what exists, this adds to it.
  *
@@ -112,16 +146,30 @@ export default function CreateScreen() {
 }
 
 function CreateEditor() {
-  const { isAuthenticated, signInError } = useHorizonMarket();
+  const { isAuthenticated, signInError, addresses, network } =
+    useHorizonMarket();
+
+  // Read by the analytics callbacks below, which are handed to the hook that
+  // produces `create` — reaching for that binding directly would be a reference
+  // into a `const` the same statement is still initializing.
+  const protocolRef = useRef<CreatableType>("counterparty");
+
+  const retryStore = useMemo(
+    () => makeRetryStore(`horizon.create-retry.${network}.${addresses?.p2wpkh}`),
+    [network, addresses?.p2wpkh],
+  );
+
   const create = useCreateToken({
+    retryStore,
     onSuccess: (result) =>
       trackCreateCompleted({
         protocol: result.type,
         identifier: result.identifier,
       }),
     onError: (error) =>
-      trackCreateFailed({ protocol: create.formValues.type, error }),
+      trackCreateFailed({ protocol: protocolRef.current, error }),
   });
+  protocolRef.current = create.formValues.type;
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
@@ -290,26 +338,42 @@ function CreateEditor() {
       <View style={styles.section}>
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Name</Text>
-          <TextInput
-            value={formValues.name}
-            onChangeText={(name) => setFormValues({ name })}
-            placeholder={
-              formValues.type === "counterparty" ? "MYASSET" : "My inscription"
-            }
-            placeholderTextColor={colors.muted}
-            autoCapitalize={
-              formValues.type === "counterparty" ? "characters" : "sentences"
-            }
-            autoCorrect={false}
-            style={styles.input}
-          />
+          <View style={styles.nameRow}>
+            <TextInput
+              value={formValues.name}
+              onChangeText={(name) => setFormValues({ name })}
+              placeholder={
+                formValues.type === "counterparty" ? "MYASSET" : "My inscription"
+              }
+              placeholderTextColor={colors.muted}
+              autoCapitalize={
+                formValues.type === "counterparty" ? "characters" : "sentences"
+              }
+              autoCorrect={false}
+              style={[styles.input, styles.nameInput]}
+            />
+            {/* A numeric A… name is the one Counterparty registers for free, so
+                this is the difference between creating now and topping up XCP
+                first. Ordinals has no asset names, and no generator. */}
+            {create.canGenerateName && (
+              <Pressable
+                onPress={create.generateName}
+                style={styles.generateButton}
+                accessibilityRole="button"
+                accessibilityLabel="Generate a free numeric asset name"
+              >
+                <RefreshIcon color={colors.primary} />
+                <Text style={styles.generateText}>Generate</Text>
+              </Pressable>
+            )}
+          </View>
           <Text
             style={[styles.fieldHint, fieldErrors.name && styles.fieldHintError]}
           >
             {fieldErrors.name && formValues.name.length > 0
               ? fieldErrors.name
               : formValues.type === "counterparty"
-                ? "4–12 uppercase letters (MYASSET), a numeric A… name, or PARENT.child."
+                ? "Generate a free A… name, or pay to pick your own: 4–12 uppercase letters (MYASSET), or PARENT.child."
                 : "Whatever you want the inscription to be called."}
           </Text>
           {xcpFee.notice && (
@@ -602,9 +666,9 @@ function CreateSheet({
           />
           {awaitingReplay && (
             <Text style={styles.fieldHint}>
-              The transaction is already on-chain. Retry re-sends the same one —
-              nothing is signed or paid again, and it is the only way to finish:
-              starting over would broadcast a second transaction.
+              {create.replayRejected
+                ? "The server is refusing this transaction, which usually means it is already confirmed. Save it below before giving up — it is the only copy."
+                : "The transaction is already on-chain. Retry re-sends the same one — nothing is signed or paid again, and it is the only way to finish: starting over would broadcast a second transaction."}
             </Text>
           )}
           {step === "result" && (
@@ -640,9 +704,61 @@ function CreateSheet({
               )}
             </View>
           )}
+          {/* Only once a replay has been tried and failed. Until then Retry is
+              simply the right answer, and this is irreversible: it drops the one
+              body that can finish the creation. So the copy comes first. */}
+          {create.canAbandonReplay && <GiveUp create={create} />}
         </View>
       )}
     </Modal>
+  );
+}
+
+/**
+ * The last resort for a replay the server will not accept: save the signed
+ * transaction, then walk away.
+ *
+ * The alternative is not "stay safe" — it is the user force-quitting the app,
+ * which drops exactly the same body without saying so, and without offering the
+ * copy that could still have finished the job by hand.
+ */
+function GiveUp({ create }: { create: UseCreateTokenResult }) {
+  const [copied, setCopied] = useState(false);
+
+  // Plainly, not through `useSecretClipboard`: that one wipes after a minute,
+  // which is right for a recovery phrase and exactly wrong here. This is not a
+  // secret — anyone holding it can only broadcast a transaction the user already
+  // signed and wants broadcast — and it is being copied precisely so it can be
+  // kept.
+  const copy = async () => {
+    if (!create.pendingSubmitJson) return;
+    await Clipboard.setStringAsync(create.pendingSubmitJson);
+    setCopied(true);
+  };
+
+  return (
+    <View style={styles.giveUp}>
+      <View style={styles.divider} />
+      <Pressable
+        onPress={() => void copy()}
+        style={styles.secondaryButton}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>
+          {copied ? "Copied — keep it somewhere safe" : "Copy the transaction"}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={create.abandonReplay}
+        disabled={!copied}
+        style={[styles.textButton, !copied && styles.buttonDisabled]}
+        accessibilityRole="button"
+      >
+        <Text style={styles.textButtonText}>
+          {copied ? "Give up and start over" : "Copy it first"}
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -722,6 +838,21 @@ function CreateReview({
   );
 }
 
+/** lucide `refresh-cw` — draw another free name. */
+function RefreshIcon({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** lucide `chevron-right`, rotated down when the section is open. */
 function ChevronIcon({ color, open }: { color: string; open: boolean }) {
   return (
@@ -780,6 +911,24 @@ const styles = StyleSheet.create({
   },
 
   field: { gap: spacing.xs },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  nameInput: { flex: 1 },
+  generateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  generateText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontFamily: fonts.sansSemiBold,
+  },
   fieldLabel: {
     fontSize: 13,
     color: colors.mutedStrong,
@@ -913,6 +1062,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   flex1: { flex: 1 },
+  giveUp: { gap: spacing.sm, alignItems: "center" },
   reviewHeader: {
     flexDirection: "row",
     alignItems: "center",

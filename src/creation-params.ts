@@ -1,3 +1,4 @@
+import { randomBytes } from "@noble/hashes/utils.js";
 import { isTaprootAddress } from "./sell-params.js";
 import {
   MAX_CREATION_ATTRIBUTES,
@@ -97,13 +98,35 @@ export function isNumericAssetName(name: string): boolean {
  * XCP Counterparty charges to register `name`: 0.5 for a named asset, 0.25 for a
  * subasset, 0 for a numeric one.
  *
+ * An empty name costs **nothing**, rather than the 0.5 its shape would otherwise
+ * imply: a form has no name to price before one is typed, and quoting a fee for
+ * it means warning about a balance against a registration nobody has asked for.
+ *
  * This is **not** part of a quote's `totalCostSats`, which is BTC only — the
  * Counterparty node refuses at compose time when the balance is short.
  */
 export function xcpNameFee(name: string): number {
+  if (!name.trim()) return 0;
   const parent = parentAssetOf(name);
   if (parent !== null) return 0.25;
   return isNumericAssetName(name) ? 0 : 0.5;
+}
+
+/**
+ * A random numeric asset name — the one form Counterparty registers for **free**,
+ * which is what makes it the way to create without holding XCP.
+ *
+ * Uniform over the whole valid range, and 64 bits wide, so a collision with an
+ * existing issuance is not a case worth handling: the server's `400` covers the
+ * remainder. 32 random bytes are drawn for a ~64-bit range, which puts the
+ * modulo bias below 2⁻¹⁹² — cheaper than a rejection loop and just as uniform in
+ * any sense that matters here.
+ */
+export function randomNumericAssetName(): string {
+  const span = COUNTERPARTY_NUMERIC_MAX - COUNTERPARTY_NUMERIC_MIN + 1n;
+  let draw = 0n;
+  for (const byte of randomBytes(32)) draw = (draw << 8n) | BigInt(byte);
+  return `A${(draw % span) + COUNTERPARTY_NUMERIC_MIN}`;
 }
 
 // ─── Addresses ───────────────────────────────────────────────────────────────

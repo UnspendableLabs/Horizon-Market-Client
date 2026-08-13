@@ -88,6 +88,8 @@ export type {
   CreateTokenFormValues,
   CreateTokenFieldErrors,
   CreateTokenXcpFee,
+  CreationRetryStore,
+  PersistedCreationRetry,
   UseCreateTokenOptions,
   UseCreateTokenResult,
 } from "./useCreateToken.js";

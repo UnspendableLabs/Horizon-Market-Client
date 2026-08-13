@@ -996,6 +996,78 @@ describe("useCreateToken", () => {
 
   // ─── The XCP name fee ──────────────────────────────────────────────────────
 
+  it("says nothing about XCP, and asks nobody, before a name is typed", async () => {
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+
+    // An untouched form used to price the empty name as a 0.5 XCP named
+    // registration: a notice, a balance read, and — on a wallet holding no XCP
+    // — a red "you cannot afford this" over a name that does not exist yet.
+    expect(result.current.xcpFee.requiredXcp).toBe(0);
+    expect(result.current.xcpFee.notice).toBeNull();
+    expect(result.current.xcpFee.sufficient).toBe(true);
+
+    // Past the debounce window, so this is "nobody was asked", not "not yet".
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    expect(client.getCounterpartyBalances).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet while the name is still invalid", async () => {
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+
+    act(() => result.current.setFormValues({ name: "lowercase" }));
+
+    expect(result.current.fieldErrors.name).toBeTruthy();
+    expect(result.current.xcpFee.notice).toBeNull();
+  });
+
+  it("prices the name only once it is one, and frees a generated one", async () => {
+    const { result } = renderHook(() => useCreateToken());
+
+    fillValid(result);
+    await waitFor(() => expect(result.current.xcpFee.requiredXcp).toBe(0.5));
+    expect(result.current.xcpFee.notice).toMatch(/0.5 XCP/);
+
+    // The generator's whole purpose: a name that costs nothing, so the notice
+    // and the balance guard go away with it.
+    act(() => result.current.generateName());
+
+    expect(result.current.formValues.name).toMatch(/^A\d+$/);
+    expect(result.current.fieldErrors.name).toBeUndefined();
+    expect(result.current.xcpFee.requiredXcp).toBe(0);
+    expect(result.current.xcpFee.notice).toBeNull();
+    expect(result.current.canGenerateName).toBe(true);
+  });
+
+  it("drops a held quote when the name is generated", async () => {
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    expect(result.current.quote).not.toBeNull();
+
+    act(() => result.current.generateName());
+
+    // A generated name is an edit like any other: signing the old quote would
+    // issue the name the user just replaced.
+    expect(result.current.quote).toBeNull();
+    expect(result.current.formValues.name).toMatch(/^A\d+$/);
+  });
+
+  it("withdraws the generator under Ordinals, which has no asset names", () => {
+    const { result } = renderHook(() => useCreateToken());
+
+    act(() => result.current.setFormValues({ type: "ordinals" }));
+
+    expect(result.current.canGenerateName).toBe(false);
+  });
+
   it("clears a named issuance the funding address can pay for", async () => {
     const { result } = renderHook(() => useCreateToken());
     fillValid(result);
@@ -1190,6 +1262,201 @@ describe("useCreateToken", () => {
     act(() => result.current.goBack());
     expect(result.current.step).toBe("form");
     expect(result.current.error).toBeNull();
+  });
+
+  // ─── Surviving a restart ───────────────────────────────────────────────────
+  //
+  // Refusing `goBack()` keeps the signed body away from the user; a store keeps
+  // it away from the process. Without one, an OS kill loses the only thing that
+  // can finish a broadcast creation — for an ordinal, permanently.
+
+  function makeStore(initial: unknown = null) {
+    const held = { current: initial as never };
+    return {
+      current: held,
+      load: vi.fn(async () => held.current),
+      save: vi.fn(async (retry: never) => {
+        held.current = retry;
+      }),
+      clear: vi.fn(async () => {
+        held.current = null as never;
+      }),
+    };
+  }
+
+  it("writes a possibly-broadcast submit down, and takes it back on success", async () => {
+    const store = makeStore();
+    const client = makeClient({
+      createToken: vi.fn(async () => {
+        throw new CreationNotBroadcastError(SUBMIT_BODY, "c".repeat(64), null);
+      }),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+
+    await waitFor(() => expect(store.save).toHaveBeenCalled());
+    expect(store.current.current).toMatchObject({
+      submit: SUBMIT_BODY,
+      quote: QUOTE,
+      possiblyBroadcast: true,
+    });
+
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.status).toBe("success"));
+
+    // Nothing left to recover, so nothing left lying around to be restored.
+    await waitFor(() => expect(store.current.current).toBeNull());
+  });
+
+  it("keeps nothing for a submit the server positively rejected", async () => {
+    const store = makeStore();
+    ctxRef.current = makeCtx({
+      client: makeClient({
+        createToken: vi.fn(async () => {
+          throw new CreationNotBroadcastError(
+            SUBMIT_BODY,
+            null,
+            new HorizonMarketApiError(400, "psbt could not be finalised."),
+          );
+        }),
+      }),
+    });
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+
+    // Nothing was broadcast, so re-composing costs a pin and strands nothing —
+    // not worth outliving the session.
+    await waitFor(() => expect(result.current.awaitingReplay).toBe(false));
+    expect(store.save).not.toHaveBeenCalled();
+    expect(store.current.current).toBeNull();
+  });
+
+  it("restores a held recovery onto the failed step, ready to replay", async () => {
+    const store = makeStore({
+      submit: SUBMIT_BODY,
+      commitTxid: "c".repeat(64),
+      possiblyBroadcast: true,
+      quote: QUOTE,
+    });
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+
+    await waitFor(() => expect(result.current.awaitingReplay).toBe(true));
+    expect(result.current.step).toBe("result");
+    expect(result.current.status).toBe("error");
+    expect(result.current.commitTxid).toBe("c".repeat(64));
+    expect(result.current.error?.message).toMatch(/earlier session/);
+
+    // And it finishes the job the dead process could not.
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    expect(client.submitCreation).toHaveBeenCalledWith(SUBMIT_BODY);
+    expect(client.createToken).not.toHaveBeenCalled();
+    expect(result.current.result?.quote).toEqual(QUOTE);
+  });
+
+  it("survives a store that cannot be read", async () => {
+    const store = {
+      load: vi.fn(async () => {
+        throw new Error("AsyncStorage unavailable");
+      }),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+
+    await waitFor(() => expect(store.load).toHaveBeenCalled());
+    expect(result.current.step).toBe("form");
+    expect(result.current.error).toBeNull();
+  });
+
+  // ─── The way out of a replay that will not go through ──────────────────────
+
+  it("refuses to abandon a replay that has not even been tried", async () => {
+    const client = makeClient({
+      createToken: vi.fn(async () => {
+        throw new CreationNotBroadcastError(SUBMIT_BODY, "c".repeat(64), null);
+      }),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+
+    expect(result.current.canAbandonReplay).toBe(false);
+    act(() => result.current.abandonReplay());
+
+    // Retry is still the right answer, and dropping the body is irreversible.
+    expect(result.current.step).toBe("result");
+    expect(result.current.awaitingReplay).toBe(true);
+  });
+
+  it("opens the escape hatch once a replay has failed, and hands over the body", async () => {
+    const store = makeStore();
+    const client = makeClient({
+      createToken: vi.fn(async () => {
+        throw new CreationNotBroadcastError(SUBMIT_BODY, "c".repeat(64), null);
+      }),
+      submitCreation: vi.fn(async () => {
+        // What a node says about a transaction that is already mined — the
+        // 4xx that would otherwise lock the screen forever.
+        throw new HorizonMarketApiError(
+          400,
+          "Transaction already in block chain",
+        );
+      }),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.replayAttempts).toBe(1));
+
+    expect(result.current.replayRejected).toBe(true);
+    expect(result.current.canAbandonReplay).toBe(true);
+    // The one thing that can finish the creation, in a form that can leave the
+    // device before the user gives up on it.
+    expect(result.current.pendingSubmitJson).toContain(SUBMIT_BODY.psbt);
+
+    act(() => result.current.abandonReplay());
+
+    expect(result.current.step).toBe("form");
+    expect(result.current.status).toBe("idle");
+    expect(result.current.awaitingReplay).toBe(false);
+    expect(result.current.pendingSubmitJson).toBeNull();
+    // Walking away means walking away: nothing waits to be restored next time.
+    await waitFor(() => expect(store.current.current).toBeNull());
   });
 
   it("ignores a retry when nothing has failed", () => {

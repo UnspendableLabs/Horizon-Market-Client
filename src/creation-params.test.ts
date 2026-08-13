@@ -5,6 +5,7 @@ import {
   isIpfsUri,
   isNumericAssetName,
   parentAssetOf,
+  randomNumericAssetName,
   validateCounterpartyAssetName,
   validateCreationAttributes,
   validateCreationQuantity,
@@ -67,6 +68,35 @@ describe("parentAssetOf / isNumericAssetName / xcpNameFee", () => {
     expect(xcpNameFee("MYASSET")).toBe(0.5);
     expect(xcpNameFee("PEPENARDO.card")).toBe(0.25);
     expect(xcpNameFee(`A${COUNTERPARTY_NUMERIC_MIN}`)).toBe(0);
+  });
+
+  it("prices a name nobody has typed at nothing", () => {
+    // Otherwise an untouched form reads as a 0.5 XCP registration: it warns
+    // about a balance, and blocks, over a name that does not exist yet.
+    expect(xcpNameFee("")).toBe(0);
+    expect(xcpNameFee("   ")).toBe(0);
+  });
+});
+
+describe("randomNumericAssetName", () => {
+  it("generates a free, valid, in-range numeric name", () => {
+    for (let i = 0; i < 200; i += 1) {
+      const name = randomNumericAssetName();
+      expect(validateCounterpartyAssetName(name)).toBeNull();
+      expect(isNumericAssetName(name)).toBe(true);
+      // The whole point of offering it: this one costs no XCP.
+      expect(xcpNameFee(name)).toBe(0);
+      const value = BigInt(name.slice(1));
+      expect(value).toBeGreaterThanOrEqual(COUNTERPARTY_NUMERIC_MIN);
+      expect(value).toBeLessThanOrEqual(COUNTERPARTY_NUMERIC_MAX);
+    }
+  });
+
+  it("does not repeat itself", () => {
+    const names = new Set(
+      Array.from({ length: 100 }, () => randomNumericAssetName()),
+    );
+    expect(names.size).toBe(100);
   });
 });
 

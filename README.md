@@ -627,6 +627,8 @@ asset (0.25 for a subasset, free for a numeric `A…` name) on top of it, and a
 short balance fails at compose time. `xcpNameFee(name)` is that number, and it is
 owed by the **funding address**: Counterparty debits it from the issuance's
 source, so XCP held elsewhere in the same wallet cannot pay for it.
+`randomNumericAssetName()` draws a free `A…` name, which is what lets a wallet
+holding no XCP at all create one.
 
 Local guards, so a typo costs a form hint rather than a pin:
 `validateCounterpartyAssetName`, `validateCreationQuantity`,
@@ -644,6 +646,22 @@ endpoint, changing it in a modal would pin a fresh descriptor per twiddle. While
 `awaitingReplay` is set the run has one way out and `goBack()` refuses, so a
 screen should hide its Back and dismiss affordances there and leave Retry. See
 `apps/native/app/create.tsx` for a complete screen built on it.
+
+**Pass a `retryStore`.** Refusing `goBack()` keeps the signed body away from the
+user; the store keeps it away from the *process*. It is three JSON methods
+(`load`/`save`/`clear`) over `AsyncStorage`, `localStorage` or a file, keyed by
+network and funding address — without one, an OS kill or a swipe out of the app
+switcher loses the only thing that can finish a broadcast creation, which for an
+ordinal is the permanent stranding the whole replay design exists to prevent. A
+held recovery is restored on mount, straight onto the failed step.
+
+And a replay can be refused rather than merely fail: a node answering
+"transaction already in block chain" for one that *is* mined would otherwise
+leave a screen with no exit at all. `replayRejected` says the last replay came
+back `4xx`, and once `canAbandonReplay` is set — a replay was tried, and failed —
+`abandonReplay()` drops the body and returns to the form. Offer
+`pendingSubmitJson` to be saved first: it is irreversible, and it is the only
+copy.
 
 A quote is metered, so the hook spends one only when it has to: `requestQuote()`
 reuses a held quote (backing out of the confirm sheet and pressing Create again

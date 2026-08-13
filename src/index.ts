@@ -311,6 +311,8 @@ export {
   validateCreationAttributes,
   parentAssetOf,
   isNumericAssetName,
+  // A free name, so creating never requires holding XCP first.
+  randomNumericAssetName,
   xcpNameFee,
   isIpfsUri,
   isFundableCreationAddress,

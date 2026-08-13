@@ -19,6 +19,7 @@ import {
   type CreationRetry,
 } from "../../workflows/create.js";
 import {
+  creationSubmitMayHaveBroadcast,
   MAX_CREATION_ATTRIBUTES,
   MAX_CREATION_DESCRIPTION_LENGTH,
   MAX_CREATION_NAME_LENGTH,
@@ -28,6 +29,7 @@ import {
   type CreationQuote,
 } from "../../api/creations.js";
 import {
+  randomNumericAssetName,
   validateCounterpartyAssetName,
   validateCreationAttributes,
   validateCreationQuantity,
@@ -87,8 +89,49 @@ export interface CreateTokenXcpFee {
   notice: string | null;
 }
 
+/**
+ * A signed submit that failed, in a shape that survives JSON — everything
+ * {@link UseCreateTokenResult.retry} needs to finish the job.
+ *
+ * Only ever written when the transaction may be on-chain, which is the only
+ * case where losing it costs anything.
+ */
+export interface PersistedCreationRetry extends CreationRetry {
+  /** The quote the broadcast transaction was composed from. */
+  quote: CreationQuote;
+}
+
+type Awaitable<T> = T | Promise<T>;
+
+/**
+ * Somewhere durable to keep a recovery across a restart.
+ *
+ * Without one, the body that finishes a broadcast creation lives in React state
+ * alone — and a swipe out of the app switcher, an OS kill, or simply navigating
+ * away takes it with it. For an ordinal that is the permanent loss the whole
+ * replay design exists to prevent, so the guard that refuses `goBack()` is only
+ * worth as much as this is.
+ *
+ * The values are plain JSON: `AsyncStorage`, `localStorage` and a file all work.
+ * Key it by **network and funding address** — a recovery belongs to the wallet
+ * that signed it, and restoring one under another is worse than losing it.
+ */
+export interface CreationRetryStore {
+  load(): Awaitable<PersistedCreationRetry | null>;
+  save(retry: PersistedCreationRetry): Awaitable<void>;
+  clear(): Awaitable<void>;
+}
+
 export interface UseCreateTokenOptions {
   defaultSatsPerVbyte?: number;
+  /**
+   * Where to keep a possibly-broadcast submit so a restart cannot strand it.
+   * A held recovery is restored on mount, straight onto the failed step, with
+   * `retry()` waiting. Strongly recommended — see {@link CreationRetryStore}.
+   *
+   * Must be stable across renders (`useMemo`): it identifies the store.
+   */
+  retryStore?: CreationRetryStore;
   onSuccess?: (result: CreateTokenResult) => void;
   onError?: (error: Error) => void;
 }
@@ -133,6 +176,16 @@ export interface UseCreateTokenResult {
   rateFor: (option: FeeOption) => number | undefined;
   btcUsd: number | null;
 
+  /**
+   * Replace the name with a random numeric `A…` one — the only form Counterparty
+   * registers for free, and therefore the way to create without holding XCP.
+   *
+   * Counterparty only; {@link canGenerateName} says when it applies.
+   */
+  generateName: () => void;
+  /** True on Counterparty, where a free numeric name is a choice worth offering. */
+  canGenerateName: boolean;
+
   // Validation
   fieldErrors: CreateTokenFieldErrors;
   canQuote: boolean;
@@ -157,6 +210,23 @@ export interface UseCreateTokenResult {
    */
   goBack: () => void;
   retry: () => void;
+  /**
+   * Walk away from a replay that will not go through, accepting the loss.
+   *
+   * Only available once a replay has actually been tried and failed
+   * ({@link canAbandonReplay}), because until then "keep retrying" is the right
+   * answer and this one is irreversible: the signed body is dropped, and for an
+   * ordinal that abandons the commit's funds for good. Offer
+   * {@link pendingSubmitJson} to be saved first.
+   *
+   * It exists because the alternative is worse. A replay the server keeps
+   * rejecting — the node answering "transaction already in block chain" for one
+   * that is, in fact, already mined — otherwise leaves the screen with no exit
+   * at all but killing the app, which loses the same body without so much as
+   * saying so.
+   */
+  abandonReplay: () => void;
+  canAbandonReplay: boolean;
   reset: () => void;
 
   steps: WorkflowProgressEvent[];
@@ -188,6 +258,20 @@ export interface UseCreateTokenResult {
    * {@link awaitingReplay} for that.
    */
   commitTxid: string | null;
+  /** How many times `retry()` has replayed the submit and had it fail. */
+  replayAttempts: number;
+  /**
+   * The last replay was refused with a `4xx` — the server rejecting it outright
+   * rather than failing to reach a node. Retrying will keep getting the same
+   * answer, so lead with {@link abandonReplay} rather than with Retry.
+   */
+  replayRejected: boolean;
+  /**
+   * The exact body `retry()` re-POSTs, as JSON — for a Copy affordance, so the
+   * one thing that can finish a broadcast creation can leave the device before
+   * {@link abandonReplay} drops it. `null` when there is nothing held.
+   */
+  pendingSubmitJson: string | null;
   /** mempool.space link to the created transaction, on success. */
   trackUrl: string | null;
 }
@@ -219,16 +303,13 @@ function nextAttributeId(): string {
 }
 
 /**
- * A signed submit that failed, held so every subsequent recovery replays *it*
- * rather than composing a second transaction.
- *
- * It carries its own quote because the replay's result must report the quote the
- * broadcast transaction was actually composed from — which the form's held quote
- * stops being the moment anything is edited.
+ * What a restored recovery says on screen. The run it belongs to is over — its
+ * progress steps died with the process — so the message has to carry the whole
+ * situation on its own.
  */
-interface PendingCreationRetry extends CreationRetry {
-  quote: CreationQuote;
-}
+const RESTORED_MESSAGE =
+  "A creation from an earlier session was signed and sent, and never confirmed. " +
+  "Retry re-sends the same transaction: nothing is signed or paid again.";
 
 /**
  * An ordinal is one indivisible, locked inscription: the API takes no supply
@@ -279,7 +360,9 @@ export function useCreateToken(
   const [result, setResult] = useState<CreateTokenResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [pendingRetry, setPendingRetry] =
-    useState<PendingCreationRetry | null>(null);
+    useState<PersistedCreationRetry | null>(null);
+  const [replayAttempts, setReplayAttempts] = useState(0);
+  const [replayRejected, setReplayRejected] = useState(false);
   const [xcpBalance, setXcpBalance] = useState<number | null>(null);
   const [xcpChecking, setXcpChecking] = useState(false);
 
@@ -289,6 +372,11 @@ export function useCreateToken(
   const quotingRef = useRef(false);
   const uploadingRef = useRef(false);
   const submittingRef = useRef(false);
+
+  // Read by the restore below to tell "nothing has started" from "the user is in
+  // the middle of something", which a stored recovery must never interrupt.
+  const stepRef = useRef(step);
+  stepRef.current = step;
 
   // Everything is funded from — and, for Counterparty, has its XCP name fee
   // debited from — the native segwit address, exactly as `createToken` resolves
@@ -300,6 +388,62 @@ export function useCreateToken(
   // is what we *know*, and it stays true for a failure the server never
   // positively rejected. See `CreationNotBroadcastError`.
   const awaitingReplay = pendingRetry?.possiblyBroadcast ?? false;
+
+  // ─── The recovery, kept across restarts ─────────────────────────────────────
+  //
+  // Refusing `goBack()` protects the signed body from the user; this protects it
+  // from the process. Losing it is the permanent stranding the whole replay
+  // design exists to prevent, and React state does not survive an OS kill.
+
+  const retryStore = options?.retryStore;
+  // Gates the writer below: until the load has settled there is nothing to
+  // mirror, and a `clear()` from the initial `pendingRetry === null` would wipe
+  // exactly what is being read.
+  const [storeLoaded, setStoreLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!retryStore) {
+      setStoreLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => retryStore.load())
+      .catch(() => null)
+      .then((held) => {
+        if (cancelled) return;
+        // Only onto an untouched screen. A recovery arriving mid-flow would
+        // replace a run in progress with an older one — losing the newer body,
+        // which is the very thing this exists to keep.
+        if (held && stepRef.current === "form" && !submittingRef.current) {
+          setPendingRetry(held);
+          setError(new Error(RESTORED_MESSAGE));
+          setStatus("error");
+          setStep("result");
+        }
+        setStoreLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [retryStore]);
+
+  useEffect(() => {
+    if (!retryStore || !storeLoaded) return;
+    // Only a possibly-broadcast body is worth keeping: one the server positively
+    // rejected can be re-composed from the form for the price of a pin.
+    void Promise.resolve()
+      .then(() =>
+        pendingRetry?.possiblyBroadcast
+          ? retryStore.save(pendingRetry)
+          : retryStore.clear(),
+      )
+      .catch(() => {
+        // A recovery that cannot be written down is still a recovery held in
+        // state — degrade to the pre-persistence behaviour rather than failing
+        // the screen over it.
+      });
+  }, [retryStore, storeLoaded, pendingRetry]);
 
   const feeOptions =
     formValues.type === "ordinals" ? ORDINALS_FEE_OPTIONS : ALL_FEE_OPTIONS;
@@ -331,6 +475,12 @@ export function useCreateToken(
     setFeeOptionState(option);
     setQuote(null);
   }, []);
+
+  // A free name is the difference between "create a token" and "hold XCP first",
+  // so it is one tap rather than a paragraph explaining the A… form.
+  const generateName = useCallback(() => {
+    setFormValues({ name: randomNumericAssetName() });
+  }, [setFormValues]);
 
   // ─── Attribute rows ─────────────────────────────────────────────────────────
 
@@ -692,6 +842,8 @@ export function useCreateToken(
       setError(null);
       setResult(null);
       setPendingRetry(null);
+      setReplayAttempts(0);
+      setReplayRejected(false);
       setStatus("loading");
       setStep("progress");
 
@@ -737,7 +889,7 @@ export function useCreateToken(
    * forever. Keeps the failed run's steps on screen and re-runs the last one.
    */
   const replaySubmit = useCallback(
-    async (retryParams: PendingCreationRetry) => {
+    async (retryParams: PersistedCreationRetry) => {
       if (submittingRef.current) return;
       submittingRef.current = true;
       setIsSubmitting(true);
@@ -791,6 +943,8 @@ export function useCreateToken(
           setStatus("success");
           setStep("result");
           setPendingRetry(null);
+          setReplayAttempts(0);
+          setReplayRejected(false);
           optsRef.current?.onSuccess?.(full);
         } catch (err) {
           emit("error");
@@ -801,6 +955,12 @@ export function useCreateToken(
           // Keep the pending retry: the transaction is still on-chain, so
           // replaying it is still the only safe recovery. This error carries no
           // such body of its own, so it must not replace one.
+          setReplayAttempts((n) => n + 1);
+          // A 4xx here is the server refusing this exact body — including the
+          // node answering "already in block chain" for one that is, in fact,
+          // mined. Retrying will keep getting the same answer, so the screen
+          // needs to stop insisting and offer the way out instead.
+          setReplayRejected(!creationSubmitMayHaveBroadcast(e));
           optsRef.current?.onError?.(e);
         }
       } finally {
@@ -827,9 +987,28 @@ export function useCreateToken(
     // goes back to idle with it, rather than leaving a `retry()` live over a run
     // the user walked away from.
     setPendingRetry(null);
+    setReplayAttempts(0);
+    setReplayRejected(false);
     setStatus("idle");
     setStep("form");
   }, [step, status, awaitingReplay]);
+
+  /**
+   * The escape hatch for a replay that will not go through — see the docblock on
+   * {@link UseCreateTokenResult.abandonReplay}. Locked until a replay has been
+   * tried and failed, because before that Retry is simply the right answer.
+   */
+  const canAbandonReplay = awaitingReplay && replayAttempts > 0;
+
+  const abandonReplay = useCallback(() => {
+    if (!canAbandonReplay || submittingRef.current) return;
+    setPendingRetry(null);
+    setReplayAttempts(0);
+    setReplayRejected(false);
+    setError(null);
+    setStatus("idle");
+    setStep("form");
+  }, [canAbandonReplay]);
 
   const retry = useCallback(() => {
     if (status !== "error") return;
@@ -860,6 +1039,8 @@ export function useCreateToken(
     setResult(null);
     setError(null);
     setPendingRetry(null);
+    setReplayAttempts(0);
+    setReplayRejected(false);
   }, []);
 
   const trackUrl =
@@ -888,6 +1069,8 @@ export function useCreateToken(
     feeRate,
     rateFor: (option) => rateForOption(option, estimates),
     btcUsd,
+    generateName,
+    canGenerateName: formValues.type === "counterparty",
     fieldErrors,
     canQuote,
     advancedReadOnly: formValues.type === "ordinals",
@@ -899,6 +1082,8 @@ export function useCreateToken(
     confirmAndCreate,
     goBack,
     retry,
+    abandonReplay,
+    canAbandonReplay,
     reset,
     steps,
     totalSteps,
@@ -908,6 +1093,11 @@ export function useCreateToken(
     error,
     awaitingReplay,
     commitTxid,
+    replayAttempts,
+    replayRejected,
+    pendingSubmitJson: pendingRetry
+      ? JSON.stringify(pendingRetry.submit, null, 2)
+      : null,
     trackUrl,
   };
 }
