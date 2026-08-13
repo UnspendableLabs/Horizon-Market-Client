@@ -14,6 +14,7 @@ import {
   creationRetry,
   type CreateTokenParams,
   type CreateTokenResult,
+  type CreationRetry,
 } from "../../workflows/create.js";
 import {
   MAX_CREATION_ATTRIBUTES,
@@ -68,9 +69,15 @@ export type CreateTokenFieldErrors = Partial<
  * `sufficient: null` means the balance is unknown — the Counterparty API is not
  * configured for this network, or the read failed. That never blocks: a warning
  * beats refusing to create on a balance we could not read.
+ *
+ * The balance is the **funding address's** alone. Counterparty debits the name
+ * fee from the issuance's source address, so XCP sitting on the wallet's taproot
+ * address cannot pay for it — counting it would wave through a creation that
+ * fails at compose time, after the quote has already spent a pin.
  */
 export interface CreateTokenXcpFee {
   requiredXcp: number;
+  /** XCP held by the funding address, or `null` when it could not be read. */
   balanceXcp: number | null;
   sufficient: boolean | null;
   checking: boolean;
@@ -139,6 +146,13 @@ export interface UseCreateTokenResult {
 
   // Confirm → run
   confirmAndCreate: () => Promise<void>;
+  /**
+   * Back to the form — from the confirm step, or from a failure that broadcast
+   * nothing.
+   *
+   * **Refuses while {@link commitTxid} is set**, where `retry()` is the only way
+   * out: see that field.
+   */
   goBack: () => void;
   retry: () => void;
   reset: () => void;
@@ -153,6 +167,12 @@ export interface UseCreateTokenResult {
    * Set when the transaction is on-chain but the server did not confirm the
    * creation — `retry()` then re-sends the same signed transaction rather than
    * composing a new one.
+   *
+   * While it is set the run has exactly one safe exit, and `goBack()` refuses:
+   * returning to the form would drop the body only `retry()` can replay, and the
+   * next Create would compose and broadcast a **second** transaction — for an
+   * ordinal, stranding this one's funds forever. A UI should hide its Back and
+   * dismiss affordances whenever this is non-null, leaving Retry.
    */
   commitTxid: string | null;
   /** mempool.space link to the created transaction, on success. */
@@ -186,6 +206,18 @@ function nextAttributeId(): string {
 }
 
 /**
+ * A signed submit that failed, held so every subsequent recovery replays *it*
+ * rather than composing a second transaction.
+ *
+ * It carries its own quote because the replay's result must report the quote the
+ * broadcast transaction was actually composed from — which the form's held quote
+ * stops being the moment anything is edited.
+ */
+interface PendingCreationRetry extends CreationRetry {
+  quote: CreationQuote;
+}
+
+/**
  * An ordinal is one indivisible, locked inscription: the API takes no supply
  * options for it, so the three Counterparty fields are pinned rather than sent.
  * Enforced here rather than in the form, so a custom UI cannot bypass it.
@@ -211,7 +243,8 @@ function normalize(values: CreateTokenFormValues): CreateTokenFormValues {
 export function useCreateToken(
   options?: UseCreateTokenOptions,
 ): UseCreateTokenResult {
-  const { client, addresses, network, kontorNetwork } = useHorizonMarket();
+  const { client, addresses, network, kontorNetwork, counterpartyApiBaseUrl } =
+    useHorizonMarket();
   const { estimates } = useFeeEstimates();
   const { btcUsd } = usePrices();
 
@@ -232,11 +265,24 @@ export function useCreateToken(
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<CreateTokenResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [commitTxid, setCommitTxid] = useState<string | null>(null);
+  const [pendingRetry, setPendingRetry] =
+    useState<PendingCreationRetry | null>(null);
   const [xcpBalance, setXcpBalance] = useState<number | null>(null);
   const [xcpChecking, setXcpChecking] = useState(false);
 
+  // Refs, not the state flags beside them: two taps land in one React batch, so
+  // the second callback still closes over `quoting === false`. A quote is
+  // metered — the duplicate would pin a descriptor nobody ever signs.
+  const quotingRef = useRef(false);
+  const uploadingRef = useRef(false);
   const submittingRef = useRef(false);
+
+  // Everything is funded from — and, for Counterparty, has its XCP name fee
+  // debited from — the native segwit address, exactly as `createToken` resolves
+  // it. Named once so the quote and the balance check cannot drift apart.
+  const fundingAddress = addresses?.p2wpkh ?? null;
+
+  const commitTxid = pendingRetry?.commitTxid ?? null;
 
   const feeOptions =
     formValues.type === "ordinals" ? ORDINALS_FEE_OPTIONS : ALL_FEE_OPTIONS;
@@ -378,7 +424,7 @@ export function useCreateToken(
   // Read the balance only once there is a fee to cover, and debounce it: the
   // name is typed a character at a time, and this is a live upstream read.
   useEffect(() => {
-    if (!client || !addresses || requiredXcp <= 0) {
+    if (!client || !fundingAddress || requiredXcp <= 0) {
       setXcpBalance(null);
       setXcpChecking(false);
       return;
@@ -386,21 +432,21 @@ export function useCreateToken(
     let cancelled = false;
     setXcpChecking(true);
     const timer = setTimeout(() => {
-      const held = [addresses.p2wpkh, addresses.p2tr].filter(
-        (address): address is string => Boolean(address),
-      );
       void client
-        .getCounterpartyBalances(held)
+        .getCounterpartyBalances([fundingAddress])
         .then((balances) => {
           if (cancelled) return;
-          const xcp = balances.find((row) => row.asset === "XCP");
-          // No XCP row is a real zero; an unconfigured API answers [] and is
-          // handled by the empty-array check below.
-          setXcpBalance(
-            balances.length === 0
-              ? null
-              : Number(xcp?.quantity ?? 0n) / XCP_UNIT,
+          const xcp = balances.find(
+            (row) => row.asset === "XCP" && row.address === fundingAddress,
           );
+          if (xcp) {
+            setXcpBalance(Number(xcp.quantity) / XCP_UNIT);
+            return;
+          }
+          // No row is a real zero *when someone was asked*. Without a configured
+          // Counterparty API the client answers [] without asking anyone, and
+          // reporting that as zero would block a wallet that may well be funded.
+          setXcpBalance(counterpartyApiBaseUrl ? 0 : null);
         })
         .catch(() => {
           // An unreadable balance is not a reason to refuse — see the docblock
@@ -416,7 +462,7 @@ export function useCreateToken(
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [client, addresses, requiredXcp]);
+  }, [client, fundingAddress, requiredXcp, counterpartyApiBaseUrl]);
 
   const xcpFee: CreateTokenXcpFee = {
     requiredXcp,
@@ -440,10 +486,14 @@ export function useCreateToken(
 
   const uploadImage = useCallback(
     async (file: CreationMediaUpload, previewUri?: string) => {
+      // Pinning is as metered as quoting, and the second of two taps would
+      // orphan a CID nothing ever references.
+      if (uploadingRef.current) return false;
       if (!client) {
         setImageError(CLIENT_NOT_INITIALIZED);
         return false;
       }
+      uploadingRef.current = true;
       setUploadingImage(true);
       setImageError(null);
       try {
@@ -466,6 +516,7 @@ export function useCreateToken(
         setImageError(err instanceof Error ? err.message : String(err));
         return false;
       } finally {
+        uploadingRef.current = false;
         setUploadingImage(false);
       }
     },
@@ -507,12 +558,12 @@ export function useCreateToken(
   }, [formValues, attributesMap, feeRate]);
 
   const requestQuote = useCallback(async () => {
-    if (quoting) return;
+    if (quotingRef.current) return;
     if (!client) {
       setError(new Error(CLIENT_NOT_INITIALIZED));
       return;
     }
-    if (!addresses) {
+    if (!addresses || !fundingAddress) {
       setError(new Error("Connect a wallet to create a token."));
       return;
     }
@@ -520,11 +571,12 @@ export function useCreateToken(
       setError(new Error("Add an image before creating."));
       return;
     }
+    quotingRef.current = true;
     setQuoting(true);
     setError(null);
     try {
       const params = buildParams(formValues.image);
-      const address = addresses.p2wpkh;
+      const address = fundingAddress;
       const composed = await client.requestCreationQuote(
         params.type === "counterparty"
           ? {
@@ -557,9 +609,10 @@ export function useCreateToken(
       setError(e);
       optsRef.current?.onError?.(e);
     } finally {
+      quotingRef.current = false;
       setQuoting(false);
     }
-  }, [client, addresses, buildParams, quoting, formValues.image]);
+  }, [client, addresses, fundingAddress, buildParams, formValues.image]);
 
   const costLines = useMemo(
     () => (quote ? creationCostLines(quote, btcUsd) : []),
@@ -595,7 +648,7 @@ export function useCreateToken(
       setTotalSteps(null);
       setError(null);
       setResult(null);
-      setCommitTxid(null);
+      setPendingRetry(null);
       setStatus("loading");
       setStep("progress");
 
@@ -620,7 +673,11 @@ export function useCreateToken(
         setError(e);
         setStatus("error");
         setStep("result");
-        setCommitTxid(creationRetry(e)?.commitTxid ?? null);
+        // Held rather than re-derived from `error` on each retry: a replay that
+        // fails again throws a plain API error carrying no body, and the signed
+        // transaction it replaces is still the only thing safe to re-send.
+        const recovery = creationRetry(e);
+        setPendingRetry(recovery ? { ...recovery, quote } : null);
         optsRef.current?.onError?.(e);
       }
     } finally {
@@ -637,7 +694,7 @@ export function useCreateToken(
    * forever. Keeps the failed run's steps on screen and re-runs the last one.
    */
   const replaySubmit = useCallback(
-    async (retryParams: NonNullable<ReturnType<typeof creationRetry>>) => {
+    async (retryParams: PendingCreationRetry) => {
       if (submittingRef.current) return;
       submittingRef.current = true;
       setIsSubmitting(true);
@@ -680,14 +737,17 @@ export function useCreateToken(
         try {
           const created = await client.submitCreation(retryParams.submit);
           emit("complete");
+          // The quote travels with the retry: it is the one the broadcast
+          // transaction was composed from, which the form's held quote stops
+          // being the moment anything is edited.
           const full: CreateTokenResult = {
             ...created,
-            quote: quote as CreationQuote,
+            quote: retryParams.quote,
           };
           setResult(full);
           setStatus("success");
           setStep("result");
-          setCommitTxid(null);
+          setPendingRetry(null);
           optsRef.current?.onSuccess?.(full);
         } catch (err) {
           emit("error");
@@ -695,9 +755,9 @@ export function useCreateToken(
           setError(e);
           setStatus("error");
           setStep("result");
-          // Keep the commit txid: the transaction is still on-chain, so the
-          // replay is still the only safe recovery. A plain API error from the
-          // retry carries no such body, so it must not overwrite this.
+          // Keep the pending retry: the transaction is still on-chain, so
+          // replaying it is still the only safe recovery. This error carries no
+          // such body of its own, so it must not replace one.
           optsRef.current?.onError?.(e);
         }
       } finally {
@@ -705,36 +765,48 @@ export function useCreateToken(
         setIsSubmitting(false);
       }
     },
-    [client, quote, totalSteps],
+    [client, totalSteps],
   );
 
   const goBack = useCallback(() => {
     if (step === "confirm") {
       setStep("form");
-    } else if (step === "result" && status === "error") {
-      setError(null);
-      setStep("form");
+      return;
     }
-  }, [step, status]);
+    if (step !== "result" || status !== "error") return;
+    // A transaction that reached the network has exactly one safe exit, and it
+    // is forward: `retry()` re-sends it. Going back would drop the body only
+    // that replay can use, and the next Create would compose and broadcast a
+    // SECOND transaction — for an ordinal, stranding this one's funds forever.
+    if (commitTxid !== null) return;
+    setError(null);
+    // Nothing was broadcast, so this attempt is genuinely abandoned: the status
+    // goes back to idle with it, rather than leaving a `retry()` live over a run
+    // the user walked away from.
+    setPendingRetry(null);
+    setStatus("idle");
+    setStep("form");
+  }, [step, status, commitTxid]);
 
   const retry = useCallback(() => {
     if (status !== "error") return;
-    const recovery = creationRetry(error);
-    if (recovery) {
-      void replaySubmit(recovery);
+    if (pendingRetry) {
+      void replaySubmit(pendingRetry);
       return;
     }
     // The failure was before or during signing, so nothing was broadcast and
     // the held quote is still the one the user approved.
     void confirmAndCreate();
-  }, [status, error, replaySubmit, confirmAndCreate]);
+  }, [status, pendingRetry, replaySubmit, confirmAndCreate]);
 
   const reset = useCallback(() => {
     setStep("form");
     setFormValuesState(initialForm);
     setFeeOptionState("normal");
     setQuote(null);
+    quotingRef.current = false;
     setQuoting(false);
+    uploadingRef.current = false;
     setUploadingImage(false);
     setImageError(null);
     setSteps([]);
@@ -744,7 +816,7 @@ export function useCreateToken(
     submittingRef.current = false;
     setResult(null);
     setError(null);
-    setCommitTxid(null);
+    setPendingRetry(null);
   }, []);
 
   const trackUrl =

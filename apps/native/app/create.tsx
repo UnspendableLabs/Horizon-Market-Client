@@ -43,6 +43,37 @@ const PROTOCOLS: { value: CreatableType; label: string }[] = [
 const MEDIA_TYPES: readonly string[] = CREATION_MEDIA_TYPES;
 
 /**
+ * Content type per file extension, for the picker results that report none.
+ *
+ * Deliberately image-only and deliberately short of {@link CREATION_MEDIA_TYPES}:
+ * an extension this cannot name — `.heic` above all — is one to refuse rather
+ * than guess at.
+ */
+const EXTENSION_MEDIA_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+};
+
+function mediaTypeFromUri(uri: string): string | undefined {
+  const extension = uri.split(/[?#]/)[0]?.split(".").pop()?.toLowerCase();
+  return extension ? EXTENSION_MEDIA_TYPES[extension] : undefined;
+}
+
+/** A plausible extension for an accepted content type — the server re-sniffs it. */
+function extensionForMediaType(type: string): string {
+  for (const [extension, value] of Object.entries(EXTENSION_MEDIA_TYPES)) {
+    if (value === type) return extension;
+  }
+  // "image/svg+xml" → "svg", "video/mp4" → "mp4".
+  return type.split("/")[1]?.split("+")[0] ?? "bin";
+}
+
+/**
  * Create screen — reached from the hamburger in the {@link Header}, alongside
  * the Token Explorer: the explorer lists what exists, this adds to it.
  *
@@ -129,11 +160,14 @@ function CreateEditor() {
     if (!asset) return;
 
     // iOS hands back HEIC, which the API refuses — catching it here saves a full
-    // upload round-trip to learn that.
-    const type = asset.mimeType ?? "image/jpeg";
-    if (!MEDIA_TYPES.includes(type)) {
+    // upload round-trip to learn that. The picker does not always report a
+    // mimeType, and defaulting one to JPEG would wave that exact HEIC through
+    // the check meant to catch it, so fall back to the extension and refuse
+    // what neither can name.
+    const type = asset.mimeType ?? mediaTypeFromUri(asset.uri);
+    if (!type || !MEDIA_TYPES.includes(type)) {
       setPickerError(
-        `${type} isn't supported yet — pick a JPEG, PNG, GIF or WebP.`,
+        `${type ?? "That file"} isn't supported yet — pick a JPEG, PNG, GIF or WebP.`,
       );
       return;
     }
@@ -150,7 +184,7 @@ function CreateEditor() {
       {
         uri: asset.uri,
         // Android reports no filename; the extension only has to match the type.
-        name: asset.fileName ?? `token.${type.split("/")[1] ?? "jpg"}`,
+        name: asset.fileName ?? `token.${extensionForMediaType(type)}`,
         type,
       },
       asset.uri,
@@ -511,18 +545,29 @@ function CreateSheet({
 }) {
   const { step, status, isSubmitting } = create;
 
+  // The transaction is on-chain and only its replay can finish the job, so this
+  // failure has no way out but forward: leaving would drop the body Retry
+  // re-sends, and the next Create would broadcast a second transaction. The
+  // hook refuses `goBack()` here too — this is the affordance side of it.
+  const awaitingReplay =
+    step === "result" && status === "error" && create.commitTxid !== null;
+
   const title =
     step === "confirm"
       ? "Confirm"
       : step === "progress"
         ? "Creating…"
         : status === "error"
-          ? "Creation failed"
+          ? // "Failed" would be a lie once the transaction is on-chain: what is
+            // left is the reveal that completes it.
+            awaitingReplay
+            ? "One step left"
+            : "Creation failed"
           : "Token created";
 
   const close = () => {
     // Never mid-broadcast: the transaction is out of the user's hands by then.
-    if (isSubmitting) return;
+    if (isSubmitting || awaitingReplay) return;
     if (step === "confirm" || (step === "result" && status === "error")) {
       create.goBack();
     } else {
@@ -531,7 +576,12 @@ function CreateSheet({
   };
 
   return (
-    <Modal open={step !== "form"} onClose={close} title={title}>
+    <Modal
+      open={step !== "form"}
+      onClose={close}
+      title={title}
+      dismissible={!awaitingReplay}
+    >
       {step === "confirm" ? (
         <CreateReview create={create} quotedIdentifier={quotedIdentifier} />
       ) : (
@@ -547,10 +597,11 @@ function CreateSheet({
             }
             errorMessage={create.error?.message}
           />
-          {create.commitTxid && status === "error" && (
+          {awaitingReplay && (
             <Text style={styles.fieldHint}>
               The transaction is already on-chain. Retry re-sends the same one —
-              nothing is signed or paid again.
+              nothing is signed or paid again, and it is the only way to finish:
+              starting over would broadcast a second transaction.
             </Text>
           )}
           {step === "result" && (
@@ -564,13 +615,16 @@ function CreateSheet({
                   >
                     <Text style={styles.primaryButtonText}>Retry</Text>
                   </Pressable>
-                  <Pressable
-                    onPress={create.goBack}
-                    style={styles.textButton}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.textButtonText}>Back</Text>
-                  </Pressable>
+                  {/* No Back once the transaction is on-chain: see above. */}
+                  {!awaitingReplay && (
+                    <Pressable
+                      onPress={create.goBack}
+                      style={styles.textButton}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.textButtonText}>Back</Text>
+                    </Pressable>
+                  )}
                 </>
               ) : (
                 <Pressable

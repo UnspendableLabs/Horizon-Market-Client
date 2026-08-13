@@ -10,7 +10,11 @@ import {
 import type { ReactNode } from "react";
 import { resolveFetch } from "../api/resolveFetch.js";
 import { HorizonMarketClient } from "../client.js";
-import { DEFAULT_BASE_URL, DEFAULT_ZELD_API_BASE_URL } from "../config.js";
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_COUNTERPARTY_API_BASE_URL,
+  DEFAULT_ZELD_API_BASE_URL,
+} from "../config.js";
 import { HDSigner, LocalSigner, type Signer } from "../crypto/signer.js";
 import { privateKeyToMnemonic } from "../crypto/mnemonic.js";
 import type { Network } from "../types/index.js";
@@ -148,6 +152,14 @@ export interface HorizonMarketContextValue {
   /** Resolved Horizon Market API origin (e.g. for the asset-image endpoint). */
   baseUrl: string;
   ordApiBaseUrl: string | undefined;
+  /**
+   * Counterparty API v2 base URL the client actually reads from, with the
+   * client's own resolution applied. `undefined` means Counterparty balances are
+   * not readable in this app, which is what lets a hook tell "we did not ask"
+   * apart from "the answer was zero" — `useCreateToken` keys off it before
+   * refusing a creation over an XCP balance.
+   */
+  counterpartyApiBaseUrl: string | undefined;
   /**
    * ZeldHash API base URL the client actually reads from, with the client's own
    * resolution applied (the public mainnet API by default on mainnet; on other
@@ -591,6 +603,13 @@ export function HorizonMarketProvider({
     zeldApiBaseUrl ??
     (network === "mainnet" ? DEFAULT_ZELD_API_BASE_URL : undefined);
 
+  // The same mirror for Counterparty, and for the same reason: `useCreateToken`
+  // blocks a creation on a balance it read and warns on one it could not, and
+  // an unconfigured client answers `[]` without asking anyone.
+  const resolvedCounterpartyApiBaseUrl =
+    counterpartyApiBaseUrl ??
+    (network === "mainnet" ? DEFAULT_COUNTERPARTY_API_BASE_URL : undefined);
+
   const value = useMemo<HorizonMarketContextValue>(
     () => ({
       client: authedClient ?? anonClient,
@@ -614,6 +633,7 @@ export function HorizonMarketProvider({
       kontorNetwork,
       baseUrl: baseUrl ?? DEFAULT_BASE_URL,
       ordApiBaseUrl,
+      counterpartyApiBaseUrl: resolvedCounterpartyApiBaseUrl,
       zeldApiBaseUrl: resolvedZeldApiBaseUrl,
       balancesCacheTtlMs,
       balancesRefreshKey,
@@ -621,7 +641,7 @@ export function HorizonMarketProvider({
       fetch: resolvedFetch,
       theme: resolvedTheme,
     }),
-    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, initializeWithSigner, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, resolvedZeldApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
+    [authedClient, anonClient, authState, initialize, initializeWithMnemonic, initializeWithSigner, logout, sessionSource, derivationMode, setDerivationMode, mnemonicWordCount, setMnemonicWordCount, exportMnemonic, session, refreshCredits, signInError, network, kontorNetwork, baseUrl, ordApiBaseUrl, resolvedCounterpartyApiBaseUrl, resolvedZeldApiBaseUrl, balancesCacheTtlMs, balancesRefreshKey, refreshBalances, resolvedFetch, resolvedTheme],
   );
 
   return (

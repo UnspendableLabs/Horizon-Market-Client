@@ -616,7 +616,9 @@ catch (err) {
 
 **`totalCostSats` is BTC only.** Counterparty charges 0.5 XCP to register a named
 asset (0.25 for a subasset, free for a numeric `A…` name) on top of it, and a
-short balance fails at compose time. `xcpNameFee(name)` is that number.
+short balance fails at compose time. `xcpNameFee(name)` is that number, and it is
+owed by the **funding address**: Counterparty debits it from the issuance's
+source, so XCP held elsewhere in the same wallet cannot pay for it.
 
 Local guards, so a typo costs a form hint rather than a pin:
 `validateCounterpartyAssetName`, `validateCreationQuantity`,
@@ -630,7 +632,9 @@ the ordinals rule enforced (quantity 1, indivisible, locked), attribute rows,
 media upload, validation, the quote-then-confirm step machine, progress events,
 the XCP balance check, and a `retry()` that replays the submit alone. The fee
 rate lives on the **form** rather than in the confirm step — with no preview
-endpoint, changing it in a modal would pin a fresh descriptor per twiddle. See
+endpoint, changing it in a modal would pin a fresh descriptor per twiddle. While
+`commitTxid` is set the run has one way out and `goBack()` refuses, so a screen
+should hide its Back and dismiss affordances there and leave Retry. See
 `apps/native/app/create.tsx` for a complete screen built on it.
 
 ### Workflow Methods
