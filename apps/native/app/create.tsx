@@ -13,6 +13,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
+import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import {
   CREATION_MEDIA_TYPES,
@@ -67,15 +68,6 @@ const EXTENSION_MEDIA_TYPES: Record<string, string> = {
 function mediaTypeFromUri(uri: string): string | undefined {
   const extension = uri.split(/[?#]/)[0]?.split(".").pop()?.toLowerCase();
   return extension ? EXTENSION_MEDIA_TYPES[extension] : undefined;
-}
-
-/** A plausible extension for an accepted content type — the server re-sniffs it. */
-function extensionForMediaType(type: string): string {
-  for (const [extension, value] of Object.entries(EXTENSION_MEDIA_TYPES)) {
-    if (value === type) return extension;
-  }
-  // "image/svg+xml" → "svg", "video/mp4" → "mp4".
-  return type.split("/")[1]?.split("+")[0] ?? "bin";
 }
 
 /**
@@ -229,15 +221,13 @@ function CreateEditor() {
         : null,
     );
 
-    await create.uploadImage(
-      {
-        uri: asset.uri,
-        // Android reports no filename; the extension only has to match the type.
-        name: asset.fileName ?? `token.${extensionForMediaType(type)}`,
-        type,
-      },
-      asset.uri,
-    );
+    // Not the `{ uri, name, type }` descriptor React Native takes: Expo's fetch
+    // — the global one since SDK 54 — encodes strings and blobs only, and throws
+    // "Unsupported FormDataPart implementation" on the descriptor. An
+    // `expo-file-system` File is a blob over the same path, and carries the
+    // filename and content type the picker's cache copy already spells out in
+    // its extension.
+    await create.uploadImage(new File(asset.uri), asset.uri);
   };
 
   const selectProtocol = (value: CreatableType) => {

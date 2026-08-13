@@ -1,4 +1,9 @@
-import { HttpClient, HorizonMarketApiError, readErrorMessage } from "./http.js";
+import {
+  HttpClient,
+  HorizonMarketApiError,
+  appendFilePart,
+  readErrorMessage,
+} from "./http.js";
 import type { RequestOptions } from "../types/index.js";
 
 /**
@@ -215,6 +220,8 @@ export interface CreationResult {
 /**
  * A `Blob`/`File`, or a React Native picker result. Structurally the same as
  * `AvatarUpload`, named apart because this endpoint's allowlist is much wider.
+ *
+ * On Expo, prefer the blob: `expo/fetch` cannot encode the `{ uri }` descriptor.
  */
 export type CreationMediaUpload =
   | Blob
@@ -400,6 +407,9 @@ export async function submitCreation(
  * `{ uri, name, type }` picker result; the `Content-Type` header is left to
  * `fetch`, which fills in the multipart boundary.
  *
+ * Under Expo (SDK 54+), whose `fetch` sends blobs only, pass a blob — a
+ * `new File(uri)` from `expo-file-system` — rather than the descriptor.
+ *
  * @throws {HorizonMarketApiError} `400` when the file is missing, over 10 MB, or
  * its type is outside {@link CREATION_MEDIA_TYPES} (declared *or* sniffed);
  * `401` without a session; `500` when pinning fails.
@@ -410,19 +420,10 @@ export async function uploadCreationMedia(
   options?: UploadCreationMediaOptions,
 ): Promise<CreationMediaResult> {
   const form = new FormData();
-  if ("uri" in file) {
-    // React Native's FormData takes a file descriptor object rather than a Blob;
-    // the cast is what every RN upload does.
-    form.append("file", {
-      uri: file.uri,
-      name: file.name ?? "media",
-      type: file.type ?? "application/octet-stream",
-    } as unknown as Blob);
-  } else {
-    const filename = (file as File).name;
-    if (filename) form.append("file", file, filename);
-    else form.append("file", file, "media");
-  }
+  appendFilePart(form, "file", file, {
+    name: "media",
+    type: "application/octet-stream",
+  });
 
   const path = options?.thumbnail
     ? "/api/creations/media?thumbnail=true"

@@ -30,6 +30,50 @@ export async function readErrorMessage(response: Response): Promise<string> {
 }
 
 /**
+ * Append a file part to a multipart form, whichever shape the caller holds.
+ *
+ * The `Blob` test comes first, and deliberately so: `expo-file-system`'s `File`
+ * is a real blob that *also* carries a `uri`, and Expo's `fetch` — the global
+ * one since SDK 54 — encodes strings and blobs only, throwing "Unsupported
+ * FormDataPart implementation" on React Native's `{ uri, name, type }`
+ * descriptor. Testing `uri` first would push that caller down the one branch its
+ * runtime cannot send.
+ */
+export function appendFilePart(
+  form: FormData,
+  field: string,
+  file: Blob | { uri: string; name?: string; type?: string },
+  fallback: { name: string; type: string },
+): void {
+  if (isBlobLike(file)) {
+    const filename = (file as File).name;
+    form.append(field, file, filename || fallback.name);
+    return;
+  }
+  // React Native's own FormData takes a file descriptor object rather than a
+  // blob; the cast is what every RN upload does.
+  form.append(field, {
+    uri: file.uri,
+    name: file.name ?? fallback.name,
+    type: file.type ?? fallback.type,
+  } as unknown as Blob);
+}
+
+/**
+ * Structural, not `instanceof`: the blob a React Native caller has is rarely the
+ * global `Blob` — an `expo-file-system` `File` implements the interface without
+ * extending it.
+ */
+function isBlobLike(value: unknown): value is Blob {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Blob).arrayBuffer === "function" &&
+    typeof (value as Blob).slice === "function"
+  );
+}
+
+/**
  * Serialize a value to JSON, converting bigint values to number or string.
  * BigInt values <= Number.MAX_SAFE_INTEGER are converted to number, larger to string.
  */

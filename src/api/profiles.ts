@@ -1,4 +1,9 @@
-import { HttpClient, HorizonMarketApiError, readErrorMessage } from "./http.js";
+import {
+  HttpClient,
+  HorizonMarketApiError,
+  appendFilePart,
+  readErrorMessage,
+} from "./http.js";
 import { base64 } from "@scure/base";
 import { mapAtomicSwap, type WireAtomicSwap } from "./atomic-swaps.js";
 import type {
@@ -275,6 +280,8 @@ export interface ProfilePageParams {
  * An avatar to upload: a `Blob`/`File` (browser, Node) or a React Native file
  * descriptor (`{ uri }` from an image picker). Re-encoded server-side to a
  * 512×512 PNG, so the source aspect ratio is not preserved. Max 5 MB.
+ *
+ * On Expo, prefer the blob: `expo/fetch` cannot encode the `{ uri }` descriptor.
  */
 export type AvatarUpload =
   | Blob
@@ -525,19 +532,10 @@ export async function uploadMyAvatar(
   options?: RequestOptions,
 ): Promise<AvatarUploadResult> {
   const form = new FormData();
-  if ("uri" in image) {
-    // React Native's FormData takes a file descriptor object rather than a Blob;
-    // the cast is what every RN upload does.
-    form.append("image", {
-      uri: image.uri,
-      name: image.name ?? "avatar.png",
-      type: image.type ?? "image/png",
-    } as unknown as Blob);
-  } else {
-    const filename = (image as File).name;
-    if (filename) form.append("image", image, filename);
-    else form.append("image", image, "avatar.png");
-  }
+  appendFilePart(form, "image", image, {
+    name: "avatar.png",
+    type: "image/png",
+  });
 
   const response = await http.fetchRaw("PUT", "/api/profiles/me/avatar", {
     headers: { Accept: "application/json" },
