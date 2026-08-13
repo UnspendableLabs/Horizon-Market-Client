@@ -64,6 +64,8 @@ describe("public SDK barrel (index.ts)", () => {
       .toBeInstanceOf(Error);
     expect(sdk.creationRetry).toBeTypeOf("function");
     expect(sdk.commitTxidFromCreationError).toBeTypeOf("function");
+    expect(sdk.creationSubmitMayHaveBroadcast).toBeTypeOf("function");
+    expect(sdk.creationQuoteParams).toBeTypeOf("function");
     expect(sdk.psbtBase64ToHex).toBeTypeOf("function");
 
     expect(sdk.validateCounterpartyAssetName).toBeTypeOf("function");

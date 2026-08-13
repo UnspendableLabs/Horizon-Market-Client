@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { HttpClient, HorizonMarketApiError } from "./http.js";
 import {
   commitTxidFromCreationError,
+  creationSubmitMayHaveBroadcast,
   requestCreationQuote,
   submitCreation,
   uploadCreationMedia,
@@ -258,7 +259,7 @@ describe("commitTxidFromCreationError", () => {
     expect(commitTxidFromCreationError(error)).toBe(txid);
   });
 
-  it("answers null for a 502 with no txid — nothing was broadcast", () => {
+  it("answers null for a 502 that names no txid", () => {
     const error = new HorizonMarketApiError(502, "Bitcoin node unreachable.");
     expect(commitTxidFromCreationError(error)).toBeNull();
   });
@@ -269,6 +270,44 @@ describe("commitTxidFromCreationError", () => {
     ).toBeNull();
     expect(commitTxidFromCreationError(new Error(txid))).toBeNull();
     expect(commitTxidFromCreationError(null)).toBeNull();
+  });
+});
+
+describe("creationSubmitMayHaveBroadcast", () => {
+  const txid = "c".repeat(64);
+
+  it("clears only a 4xx — the server rejects before it touches a node", () => {
+    for (const status of [400, 401, 403, 404, 409, 422, 499]) {
+      expect(
+        creationSubmitMayHaveBroadcast(
+          new HorizonMarketApiError(status, "rejected"),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("holds a 502 whether or not it names a txid", () => {
+    // The txid-less branch is the one that matters: read literally it means the
+    // node was unreachable, but that reading rests on the wording of a prose
+    // message, and being wrong strands an ordinal's commit forever.
+    expect(
+      creationSubmitMayHaveBroadcast(
+        new HorizonMarketApiError(502, "Bitcoin node unreachable."),
+      ),
+    ).toBe(true);
+    expect(
+      creationSubmitMayHaveBroadcast(
+        new HorizonMarketApiError(502, `broadcast as ${txid}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("holds anything that never produced a status at all", () => {
+    // A socket closed mid-flight: the POST may well have been served.
+    expect(creationSubmitMayHaveBroadcast(new TypeError("network error"))).toBe(
+      true,
+    );
+    expect(creationSubmitMayHaveBroadcast(null)).toBe(true);
   });
 });
 

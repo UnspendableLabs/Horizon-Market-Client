@@ -19,6 +19,7 @@ import {
   MAX_INSCRIPTION_BYTES,
   Modal,
   WorkflowProgress,
+  formatXcp,
   useCreateToken,
   useHorizonMarket,
   type CreatableType,
@@ -318,8 +319,8 @@ function CreateEditor() {
                 xcpFee.sufficient === false && styles.fieldHintError,
               ]}
             >
-              {xcpFee.sufficient === false
-                ? `${xcpFee.notice} You hold ${xcpFee.balanceXcp} XCP — pick a numeric A… name, or top up.`
+              {xcpFee.sufficient === false && xcpFee.balanceXcp !== null
+                ? `${xcpFee.notice} You hold ${formatXcp(xcpFee.balanceXcp)} XCP — pick a numeric A… name, or top up.`
                 : xcpFee.notice}
             </Text>
           )}
@@ -545,12 +546,11 @@ function CreateSheet({
 }) {
   const { step, status, isSubmitting } = create;
 
-  // The transaction is on-chain and only its replay can finish the job, so this
-  // failure has no way out but forward: leaving would drop the body Retry
+  // The transaction may be on-chain and only its replay can finish the job, so
+  // this failure has no way out but forward: leaving would drop the body Retry
   // re-sends, and the next Create would broadcast a second transaction. The
   // hook refuses `goBack()` here too — this is the affordance side of it.
-  const awaitingReplay =
-    step === "result" && status === "error" && create.commitTxid !== null;
+  const awaitingReplay = create.awaitingReplay;
 
   const title =
     step === "confirm"
@@ -580,7 +580,10 @@ function CreateSheet({
       open={step !== "form"}
       onClose={close}
       title={title}
-      dismissible={!awaitingReplay}
+      // `isSubmitting` too, not just the replay: mid-broadcast `close()` refuses
+      // as well, and a ✕ wired to a handler that does nothing reads as a broken
+      // app rather than a deliberate lock — which is what this prop is for.
+      dismissible={!awaitingReplay && !isSubmitting}
     >
       {step === "confirm" ? (
         <CreateReview create={create} quotedIdentifier={quotedIdentifier} />

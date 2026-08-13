@@ -416,6 +416,55 @@ describe("useCreateToken", () => {
     ]);
   });
 
+  it("reuses the held quote instead of pinning a second identical descriptor", async () => {
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    act(() => result.current.goBack());
+    expect(result.current.step).toBe("form");
+    expect(result.current.quote).toEqual(QUOTE);
+
+    // Back, then Create with nothing edited: the held quote was composed from
+    // these exact values, and quoting again would orphan a pin per round trip.
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    expect(result.current.step).toBe("confirm");
+    expect(client.requestCreationQuote).toHaveBeenCalledTimes(1);
+
+    // An edit drops it, and only then is a fresh quote taken.
+    act(() => result.current.setFormValues({ name: "OTHERASSET" }));
+    expect(result.current.quote).toBeNull();
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    expect(client.requestCreationQuote).toHaveBeenCalledTimes(2);
+  });
+
+  it("will not spend a metered quote on values it already knows are invalid", async () => {
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+    // Lowercase is not a Counterparty asset name. The form disables Create, but
+    // the guard lives here so a custom UI cannot pin a descriptor the server is
+    // certain to reject.
+    act(() => result.current.setFormValues({ name: "not a name" }));
+    expect(result.current.canQuote).toBe(false);
+
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+
+    expect(client.requestCreationQuote).not.toHaveBeenCalled();
+    expect(result.current.step).toBe("form");
+  });
+
   it("refuses to quote or confirm without a client, an image or a wallet", async () => {
     ctxRef.current = makeCtx({ client: null });
     const { result } = renderHook(() => useCreateToken());
@@ -836,12 +885,55 @@ describe("useCreateToken", () => {
     expect(result.current.result?.quote).toEqual(QUOTE);
   });
 
-  it("lets a submit failure that broadcast nothing go back and start over", async () => {
+  it("refuses to leave a 502 that named no txid, either", async () => {
     const client = makeClient({
       createToken: vi.fn(async () => {
-        // A 502 with no txid: the node was unreachable, nothing reached the
-        // network, so re-composing costs a pin but strands nothing.
-        throw new CreationNotBroadcastError(SUBMIT_BODY, null, null);
+        // Read literally this is the node-unreachable branch — but that reading
+        // is a regex over prose, and the cost of being wrong is an ordinal's
+        // commit stranded forever. Held for replay like any other 502.
+        throw new CreationNotBroadcastError(
+          SUBMIT_BODY,
+          null,
+          new HorizonMarketApiError(502, "Bitcoin node unreachable."),
+        );
+      }),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+
+    // Nothing to display, but everything to protect.
+    expect(result.current.commitTxid).toBeNull();
+    expect(result.current.awaitingReplay).toBe(true);
+
+    act(() => result.current.goBack());
+    expect(result.current.step).toBe("result");
+
+    await act(async () => {
+      result.current.retry();
+    });
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    expect(client.submitCreation).toHaveBeenCalledWith(SUBMIT_BODY);
+    expect(client.createToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a submit the server positively rejected go back and start over", async () => {
+    const client = makeClient({
+      createToken: vi.fn(async () => {
+        // A 400: the server validates the PSBT, the reveal and their binding
+        // before it touches a node, so re-composing costs a pin and strands
+        // nothing.
+        throw new CreationNotBroadcastError(
+          SUBMIT_BODY,
+          null,
+          new HorizonMarketApiError(400, "psbt could not be finalised."),
+        );
       }),
     });
     ctxRef.current = makeCtx({ client });
@@ -854,6 +946,7 @@ describe("useCreateToken", () => {
       await result.current.confirmAndCreate();
     });
     expect(result.current.commitTxid).toBeNull();
+    expect(result.current.awaitingReplay).toBe(false);
 
     act(() => result.current.goBack());
     expect(result.current.step).toBe("form");
@@ -980,6 +1073,47 @@ describe("useCreateToken", () => {
     await waitFor(() => expect(result.current.xcpFee.sufficient).toBe(false));
     expect(result.current.xcpFee.balanceXcp).toBe(0);
     expect(result.current.canQuote).toBe(false);
+  });
+
+  it("settles the balance before quoting, not on the debounce's schedule", async () => {
+    const client = makeClient({
+      getCounterpartyBalances: vi.fn(async () => [
+        xcpRow(FUNDING_ADDRESS, 10_000_000n), // 0.1 XCP against a 0.5 fee
+      ]),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+
+    // Straight to Create, inside the debounce window: the live check has not
+    // answered yet, so `sufficient` is still the permissive `null`.
+    expect(result.current.xcpFee.sufficient).toBeNull();
+    expect(result.current.canQuote).toBe(true);
+
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+
+    // Resolved on the spot rather than waved through — the whole point of the
+    // guard is not to spend a pin on a creation that cannot pay its name fee.
+    expect(client.requestCreationQuote).not.toHaveBeenCalled();
+    expect(result.current.error?.message).toMatch(/0\.5 XCP/);
+    expect(result.current.step).toBe("form");
+  });
+
+  it("still quotes when the balance covers the fee, without waiting on the timer", async () => {
+    const client = makeClient();
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken());
+    fillValid(result);
+
+    expect(result.current.xcpFee.sufficient).toBeNull();
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+
+    expect(client.requestCreationQuote).toHaveBeenCalledTimes(1);
+    expect(result.current.step).toBe("confirm");
   });
 
   it("ignores XCP held anywhere but the funding address", async () => {

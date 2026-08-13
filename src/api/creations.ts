@@ -356,13 +356,16 @@ export async function requestCreationQuote(
  * **before** broadcasting anything rather than stranding the commit.
  *
  * Broadcasting is idempotent, so re-posting an identical body after a failure is
- * safe — and for a `502` it is the *only* correct recovery. See
- * `CreationNotBroadcastError` in `workflows/create.ts`.
+ * safe — and for anything but a `4xx` it is the *only* correct recovery. See
+ * `CreationNotBroadcastError` in `workflows/create.ts`, and
+ * {@link creationSubmitMayHaveBroadcast} for which failures those are.
  *
  * @throws {HorizonMarketApiError} `400` (malformed, unsigned, mismatched reveal,
  * or the relay rejecting the transaction — nothing broadcast) or `502` (the
- * commit is on-chain but its reveal was rejected — the message carries the
- * commit txid — or the node was unreachable and nothing was broadcast).
+ * commit is on-chain but its reveal was rejected — the message usually carries
+ * the commit txid — or the node was unreachable). A `502` that names no txid
+ * reads as the latter, but that is a claim about wording, not a guarantee:
+ * treat every `502` as possibly broadcast.
  */
 export async function submitCreation(
   http: HttpClient,
@@ -459,11 +462,12 @@ export async function uploadCreationMedia(
  * The commit txid carried in a `502` "…broadcast as `<txid>`, but its reveal was
  * rejected…" message, or `null`.
  *
- * `null` is the meaningful case: a `502` *without* a txid is the node-unreachable
- * branch, where nothing reached the network at all. The creations API answers
- * flat `{ error: string }` with no machine-readable code, so this is the one
- * place that reads a message — and it reads only the txid, which the server
- * guarantees is present on that branch.
+ * **For display only.** The creations API answers flat `{ error: string }` with
+ * no machine-readable code, so this is the one place that reads a message — and
+ * a regex over prose is fine for naming a transaction the user can go look up,
+ * and far too weak to decide whether one exists. A `null` here means "no txid to
+ * show", *not* "nothing was broadcast"; {@link creationSubmitMayHaveBroadcast}
+ * is the question that gates recovery.
  */
 export function commitTxidFromCreationError(error: unknown): string | null {
   if (!(error instanceof HorizonMarketApiError) || error.status !== 502) {
@@ -471,4 +475,28 @@ export function commitTxidFromCreationError(error: unknown): string | null {
   }
   const match = /\b[0-9a-f]{64}\b/i.exec(error.error);
   return match ? match[0].toLowerCase() : null;
+}
+
+/**
+ * Whether a failed {@link submitCreation} may have put a transaction on the
+ * network — the question that decides whether re-composing is safe.
+ *
+ * Deliberately **not** derived from {@link commitTxidFromCreationError}. That one
+ * reads a txid out of prose, and the two failure modes are wildly asymmetric: a
+ * false "nothing was broadcast" lets the caller compose a *second* transaction,
+ * which for an ordinal strands the first commit's funds permanently, while a
+ * false "something was broadcast" only costs a replay that the server answers
+ * idempotently. So the parse decides what to *show*, never what is *safe*.
+ *
+ * The one thing that positively means nothing was broadcast is the server
+ * answering `4xx`: it validates the PSBT, the reveal and their binding before it
+ * touches a node, so a rejection there happens with nothing sent. Everything
+ * else — a `5xx`, a timeout, a socket closed mid-flight — leaves us unable to
+ * say, and "unable to say" has to read as "it is out there".
+ */
+export function creationSubmitMayHaveBroadcast(error: unknown): boolean {
+  if (error instanceof HorizonMarketApiError) {
+    return !(error.status >= 400 && error.status < 500);
+  }
+  return true;
 }

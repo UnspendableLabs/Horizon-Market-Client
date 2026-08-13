@@ -6,6 +6,16 @@ import type { CreationQuote } from "../../api/creations.js";
 const ORDINAL_POSTAGE_SATS = 546;
 
 /**
+ * XCP with up to 8 decimals and no trailing noise.
+ *
+ * Balances arrive as base units divided by 1e8, so a dust holding renders as
+ * `1e-8` under the default `toString` — a number nobody reads as money.
+ */
+export function formatXcp(value: number): string {
+  return value.toFixed(8).replace(/\.?0+$/, "");
+}
+
+/**
  * Explanations behind the (i) hints on a creation review, so the packaged UI and
  * a custom one say the same thing.
  */

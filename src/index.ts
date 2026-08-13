@@ -269,6 +269,7 @@ export {
   MAX_INSCRIPTION_BYTES,
   CREATION_MEDIA_TYPES,
   commitTxidFromCreationError,
+  creationSubmitMayHaveBroadcast,
 } from "./api/creations.js";
 export type {
   CreationType,
@@ -291,11 +292,15 @@ export type {
 export {
   CreationNotBroadcastError,
   creationRetry,
+  // The one resolution of "which address funds a creation", shared by the quote
+  // and the transaction so the two cannot be composed from different params.
+  creationQuoteParams,
 } from "./workflows/create.js";
 export type {
   CreateTokenParams,
   CreateTokenResult,
   CreationRetry,
+  CreationAddresses,
 } from "./workflows/create.js";
 // Local guards, so a create form can reject a bad name before spending a quote
 // (which pins to IPFS before it can fail).

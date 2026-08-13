@@ -614,6 +614,14 @@ catch (err) {
 }
 ```
 
+`retry.possiblyBroadcast` says whether re-composing could produce a second
+on-chain transaction, and it is the flag to branch on — not `retry.commitTxid`,
+which is a txid scraped out of a prose error message and is there to be shown,
+not trusted. It clears only when the server answered `4xx`, having rejected the
+submit before it touched a node; a `5xx`, a timeout or a dropped connection all
+leave it set, because being wrong in that direction strands an ordinal's commit
+forever while being wrong in the other costs one idempotent replay.
+
 **`totalCostSats` is BTC only.** Counterparty charges 0.5 XCP to register a named
 asset (0.25 for a subasset, free for a numeric `A…` name) on top of it, and a
 short balance fails at compose time. `xcpNameFee(name)` is that number, and it is
@@ -633,9 +641,16 @@ media upload, validation, the quote-then-confirm step machine, progress events,
 the XCP balance check, and a `retry()` that replays the submit alone. The fee
 rate lives on the **form** rather than in the confirm step — with no preview
 endpoint, changing it in a modal would pin a fresh descriptor per twiddle. While
-`commitTxid` is set the run has one way out and `goBack()` refuses, so a screen
-should hide its Back and dismiss affordances there and leave Retry. See
+`awaitingReplay` is set the run has one way out and `goBack()` refuses, so a
+screen should hide its Back and dismiss affordances there and leave Retry. See
 `apps/native/app/create.tsx` for a complete screen built on it.
+
+A quote is metered, so the hook spends one only when it has to: `requestQuote()`
+reuses a held quote (backing out of the confirm sheet and pressing Create again
+re-opens it rather than pinning a second identical descriptor), refuses outright
+while `canQuote` is false, and settles the XCP balance check on the spot instead
+of on its debounce timer — otherwise pressing Create quickly enough walks past
+the very guard that exists to stop a doomed compose.
 
 ### Workflow Methods
 

@@ -191,8 +191,8 @@ export {
   isIpfsUri,
   xcpNameFee,
 } from "../creation-params.js";
-export { creationRetry } from "../workflows/create.js";
-export { creationCostLines, CREATION_FEE_HINTS, xcpFeeNotice } from "./internal/creationCost.js";
+export { creationRetry, type CreationRetry } from "../workflows/create.js";
+export { creationCostLines, CREATION_FEE_HINTS, xcpFeeNotice, formatXcp } from "./internal/creationCost.js";
 export type { CreationCostLine } from "./internal/creationCost.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm

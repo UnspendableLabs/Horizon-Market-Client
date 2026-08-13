@@ -277,7 +277,7 @@ describe("createToken submit failures", () => {
     });
   });
 
-  it("reports no commit txid when nothing was broadcast", async () => {
+  it("reports no commit txid when the failure named none", async () => {
     for (const [status, message] of [
       [502, "Bitcoin node unreachable."],
       [400, "psbt could not be finalised."],
@@ -290,6 +290,34 @@ describe("createToken submit failures", () => {
 
       expect(creationRetry(error)?.commitTxid).toBeNull();
       expect((error as CreationNotBroadcastError).cause).toMatchObject({ status });
+    }
+  });
+
+  it("only a 4xx clears the transaction as never broadcast", async () => {
+    const txid = "c".repeat(64);
+
+    // A 400 is the server rejecting the PSBT before it touches a node.
+    const rejected = await createToken(
+      BASE_PARAMS,
+      http(failing(400, "psbt could not be finalised.")),
+      makeSigner(),
+    ).catch((e: unknown) => e);
+    expect(creationRetry(rejected)?.possiblyBroadcast).toBe(false);
+
+    // A 502 that names no txid reads as "the node was unreachable" — but that
+    // reading is a regex over prose, and being wrong lets the caller compose a
+    // second transaction, which for an ordinal strands the first commit's funds
+    // forever. So it stays held for replay, txid or no txid.
+    for (const message of ["Bitcoin node unreachable.", `broadcast as ${txid}`]) {
+      const unknown = await createToken(
+        BASE_PARAMS,
+        http(failing(502, message)),
+        makeSigner(),
+      ).catch((e: unknown) => e);
+      expect(creationRetry(unknown)?.possiblyBroadcast).toBe(true);
+      expect((unknown as CreationNotBroadcastError).message).toMatch(
+        /nothing is signed or paid again/,
+      );
     }
   });
 

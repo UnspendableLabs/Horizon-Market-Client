@@ -1,6 +1,7 @@
 import type { HttpClient } from "../api/http.js";
 import {
   commitTxidFromCreationError,
+  creationSubmitMayHaveBroadcast,
   requestCreationQuote,
   submitCreation,
   type CounterpartyCreationOptions,
@@ -63,12 +64,21 @@ export interface CreateTokenResult extends CreationResult {
  * UTXOs, and for ordinals a new commit that permanently strands the first one's
  * funds, since its reveal was signed by a key the server discarded at quote time.
  *
- * `commitTxid` is set only when the commit reached the network but its reveal did
- * not. A `null` means nothing was broadcast.
+ * Two fields, because "what do we know" and "what can we show" are different
+ * questions:
+ *
+ * - **`possiblyBroadcast`** is the one to branch on. It is `false` only when the
+ *   server positively rejected the submit before touching a node (a `4xx`);
+ *   a `5xx`, a timeout or a dropped connection all leave it `true`, because an
+ *   unverifiable "nothing happened" is not worth a permanently stranded commit.
+ * - **`commitTxid`** is for display, and is set only when the `502` named one.
+ *   Its absence says nothing about whether anything was broadcast.
  */
 export class CreationNotBroadcastError extends Error {
   readonly submit: SubmitCreationParams;
   readonly commitTxid: string | null;
+  /** Whether re-composing could produce a second on-chain transaction. */
+  readonly possiblyBroadcast: boolean;
   override readonly cause?: unknown;
 
   constructor(
@@ -76,17 +86,24 @@ export class CreationNotBroadcastError extends Error {
     commitTxid: string | null,
     cause: unknown,
   ) {
+    const possiblyBroadcast =
+      commitTxid !== null || creationSubmitMayHaveBroadcast(cause);
     super(
       commitTxid
         ? "Your transaction is on-chain, but the reveal that completes it was " +
             `rejected (commit ${commitTxid}). Retry re-sends the same signed ` +
             "transaction: nothing is signed or paid again."
-        : "The signed transaction could not be submitted. Retry re-sends the " +
+        : possiblyBroadcast
+          ? "The server could not confirm your transaction, and it may already " +
+            "be on-chain. Retry re-sends the same signed one: nothing is " +
+            "signed or paid again."
+          : "The signed transaction could not be submitted. Retry re-sends the " +
             "same one — nothing is signed or paid again.",
     );
     this.name = "CreationNotBroadcastError";
     this.submit = submit;
     this.commitTxid = commitTxid;
+    this.possiblyBroadcast = possiblyBroadcast;
     this.cause = cause;
   }
 }
@@ -96,6 +113,11 @@ export interface CreationRetry {
   /** Re-POST this via `submitCreation` — do not re-run `createToken`. */
   submit: SubmitCreationParams;
   commitTxid: string | null;
+  /**
+   * `true` when re-composing could broadcast a second transaction. Branch on
+   * this, not on `commitTxid` — see {@link CreationNotBroadcastError}.
+   */
+  possiblyBroadcast: boolean;
 }
 
 /**
@@ -104,7 +126,11 @@ export interface CreationRetry {
  */
 export function creationRetry(error: unknown): CreationRetry | null {
   return error instanceof CreationNotBroadcastError
-    ? { submit: error.submit, commitTxid: error.commitTxid }
+    ? {
+        submit: error.submit,
+        commitTxid: error.commitTxid,
+        possiblyBroadcast: error.possiblyBroadcast,
+      }
     : null;
 }
 
@@ -128,7 +154,7 @@ export async function createToken(
   const progress = new WorkflowProgressReporter("createToken", options?.onProgress);
 
   const quoteParams = progress.runSync("validateParams", () =>
-    resolveCreationQuoteParams(params, signer),
+    creationQuoteParams(params, signer.getAddresses()),
   );
   progress.setTotalSteps(params.quote ? 3 : 4);
 
@@ -174,13 +200,24 @@ export async function createToken(
   return { ...result, quote };
 }
 
-/** Fill in what the signer knows, then run every check that needs no chain state. */
-function resolveCreationQuoteParams(
-  params: CreateTokenParams,
-  signer: Signer,
-): CreationQuoteParams {
-  const addresses = signer.getAddresses();
+/** The subset of a signer a creation needs: its addresses and taproot key. */
+export type CreationAddresses = ReturnType<Signer["getAddresses"]>;
 
+/**
+ * Fill in what the wallet knows, then run every check that needs no chain state.
+ *
+ * Exported because the quote and the transaction have to be composed from the
+ * *same* params: a screen that quotes first (to show real fees before asking for
+ * a signature) would otherwise hand-roll this, and a second definition of "which
+ * address funds a creation" is a divergence waiting to sign something other than
+ * what was quoted.
+ *
+ * @throws when a param cannot produce a usable quote — before spending one.
+ */
+export function creationQuoteParams(
+  params: CreateTokenParams,
+  addresses: CreationAddresses,
+): CreationQuoteParams {
   // Fund from native segwit by default, for both protocols: it is the cheapest
   // input to spend, it always exists, and it keeps `public_key` — which the
   // server validates against the input's script — out of the request entirely.
