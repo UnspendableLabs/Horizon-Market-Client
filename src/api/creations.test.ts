@@ -369,6 +369,25 @@ describe("uploadCreationMedia", () => {
     expect(String(form.get("file"))).toContain("[object Object]");
   });
 
+  it("sends a blob that also carries a uri as a blob", async () => {
+    const fetchFn = makeRawFetch(rawResponse(201, { json: { data: WIRE_MEDIA } }));
+
+    // What `expo-file-system`'s `File` is: a blob with a `uri` on it. Expo's
+    // fetch sends blobs and refuses the descriptor, so a value answering to
+    // both has to take the blob branch.
+    await uploadCreationMedia(
+      http(fetchFn),
+      Object.assign(
+        new File([new Uint8Array([1, 2, 3])], "art.png", { type: "image/png" }),
+        { uri: "file:///tmp/art.png" },
+      ),
+    );
+
+    const form = lastCall(fetchFn)[1].body as FormData;
+    expect(form.get("file")).toBeInstanceOf(File);
+    expect((form.get("file") as File).name).toBe("art.png");
+  });
+
   it("defaults name and type for a bare RN uri", async () => {
     const fetchFn = makeRawFetch(rawResponse(201, { json: { data: WIRE_MEDIA } }));
 
