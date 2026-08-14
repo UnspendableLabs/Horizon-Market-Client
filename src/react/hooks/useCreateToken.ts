@@ -227,6 +227,15 @@ export interface UseCreateTokenResult {
    */
   abandonReplay: () => void;
   canAbandonReplay: boolean;
+  /**
+   * Back to an untouched form, discarding the run.
+   *
+   * **Refuses while {@link awaitingReplay} is set**, exactly as {@link goBack}
+   * does — and it matters more here, because this one also drops the held body
+   * from the `retryStore`, so a "Start over" button would be a way around the
+   * refusal that destroys the recovery on disk as well as in memory.
+   * {@link abandonReplay} is the deliberate exit.
+   */
   reset: () => void;
 
   steps: WorkflowProgressEvent[];
@@ -1039,6 +1048,12 @@ export function useCreateToken(
   }, [status, pendingRetry, replaySubmit, confirmAndCreate]);
 
   const reset = useCallback(() => {
+    // The same refusal `goBack()` makes, because this is the same door. It is
+    // the more dangerous one: reset drops `pendingRetry`, and the mirror below
+    // turns that into a `clear()` on the store — so a "Start over" button would
+    // destroy the only body that can finish a broadcast creation, on disk as
+    // well as in memory. `abandonReplay()` is how that is chosen deliberately.
+    if (awaitingReplay) return;
     setStep("form");
     setFormValuesState(initialForm);
     setFeeOptionState("normal");
@@ -1058,7 +1073,7 @@ export function useCreateToken(
     setPendingRetry(null);
     setReplayAttempts(0);
     setReplayRejected(false);
-  }, []);
+  }, [awaitingReplay]);
 
   const trackUrl =
     status === "success" && result?.txid

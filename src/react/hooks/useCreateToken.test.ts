@@ -1537,6 +1537,39 @@ describe("useCreateToken", () => {
     expect(client.createToken).not.toHaveBeenCalled();
   });
 
+  it("refuses to reset away a recovery only a replay can finish", async () => {
+    const store = makeStore();
+    const client = makeClient({
+      createToken: vi.fn(async () => {
+        throw new CreationNotBroadcastError(SUBMIT_BODY, "c".repeat(64), null);
+      }),
+    });
+    ctxRef.current = makeCtx({ client });
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    await act(async () => {
+      await result.current.confirmAndCreate();
+    });
+    await waitFor(() => expect(store.current.current).not.toBeNull());
+    // The mount's own mirror already cleared an empty store once; what matters
+    // is that nothing clears it again from here.
+    const clearsBefore = store.clear.mock.calls.length;
+
+    act(() => result.current.reset());
+
+    // `goBack()` already refuses here; reset would otherwise be the way around
+    // it, and the worse one — it clears the store as well as the state, which is
+    // the permanently stranded commit the whole design exists to prevent.
+    expect(result.current.step).toBe("result");
+    expect(result.current.awaitingReplay).toBe(true);
+    expect(result.current.pendingSubmitJson).toContain(SUBMIT_BODY.psbt);
+    expect(store.clear.mock.calls.length).toBe(clearsBefore);
+    expect(store.current.current).not.toBeNull();
+  });
+
   it("resets every field back to its initial value", async () => {
     const { result } = renderHook(() => useCreateToken());
     fillValid(result);
