@@ -79,6 +79,18 @@ import {
   type TokenSearchParams,
   type TokenSearchResult,
 } from "./api/tokens.js";
+import {
+  requestCreationQuote as apiRequestCreationQuote,
+  submitCreation as apiSubmitCreation,
+  uploadCreationMedia as apiUploadCreationMedia,
+  type CreationMediaResult,
+  type CreationMediaUpload,
+  type CreationQuote,
+  type CreationQuoteParams,
+  type CreationResult,
+  type SubmitCreationParams,
+  type UploadCreationMediaOptions,
+} from "./api/creations.js";
 import { LocalSigner, HDSigner, type Signer } from "./crypto/signer.js";
 import {
   openSellOrder as workflowOpenSellOrder,
@@ -88,6 +100,11 @@ import {
 } from "./workflows/sell.js";
 import { fillSwaps as workflowFillSwaps, type FillSwapsParams } from "./workflows/buy.js";
 import { delistSwap as workflowDelistSwap } from "./workflows/delist.js";
+import {
+  createToken as workflowCreateToken,
+  type CreateTokenParams,
+  type CreateTokenResult,
+} from "./workflows/create.js";
 import type { KontorContext } from "./kontor/context.js";
 // Type-only: erased at compile time, so neither `@kontor/sdk` nor the Kontor
 // pre-flight chunk is pulled into a bundle that never calls these.
@@ -164,6 +181,7 @@ import type {
 
 export type { OpenSellOrderParams } from "./workflows/sell.js";
 export type { FillSwapsParams } from "./workflows/buy.js";
+export type { CreateTokenParams, CreateTokenResult } from "./workflows/create.js";
 export type { CounterpartyBalance } from "./api/counterparty.js";
 export type { ZeldBalance } from "./api/zeld.js";
 export type {
@@ -1049,6 +1067,48 @@ export class HorizonMarketClient {
     return apiListPublicProfilePurchases(this.http, username, params, options);
   }
 
+  // ─── Token creation ─────────────────────────────────────────────────────────
+  //
+  // `/api/creations/*` writes a new token: one request shape composes a
+  // Counterparty issuance or an ordinal inscription. Most callers want the
+  // {@link createToken} workflow below rather than these three directly.
+
+  /**
+   * Compose the unsigned creation transaction.
+   *
+   * **Session-gated** (`signInWithWallet()` first) and metered — composing pins
+   * an IPFS descriptor or fetches the media before it can answer. There is no
+   * side-effect-free preview, so quote once per attempt, not per keystroke.
+   */
+  requestCreationQuote(
+    params: CreationQuoteParams,
+    options?: RequestOptions,
+  ): Promise<CreationQuote> {
+    return apiRequestCreationQuote(this.http, params, options);
+  }
+
+  /**
+   * Broadcast a signed creation. Unauthenticated, and idempotent — re-posting
+   * an identical body after a failure is safe.
+   */
+  submitCreation(
+    params: SubmitCreationParams,
+    options?: RequestOptions,
+  ): Promise<CreationResult> {
+    return apiSubmitCreation(this.http, params, options);
+  }
+
+  /**
+   * Pin a file to IPFS and get the `ipfs://` URI a creation quote's `image`
+   * wants. **Session-gated**; max 10 MB.
+   */
+  uploadCreationMedia(
+    file: CreationMediaUpload,
+    options?: UploadCreationMediaOptions,
+  ): Promise<CreationMediaResult> {
+    return apiUploadCreationMedia(this.http, file, options);
+  }
+
   // ─── Tokens ─────────────────────────────────────────────────────────────────
   //
   // `/api/tokens/*` normalises five unrelated asset types — Counterparty, ZELD,
@@ -1433,5 +1493,24 @@ export class HorizonMarketClient {
       }
     }
     return workflowDelistSwap(swapId, this.http, this.assertSigner(), options);
+  }
+
+  /**
+   * Create a token: quote → sign → broadcast.
+   *
+   * Pass `params.quote` when a quote has already been shown to the user, so the
+   * fees they approved are the fees they sign and one attempt pins one IPFS
+   * descriptor.
+   *
+   * Throws `CreationNotBroadcastError` when the submit fails. Recover with
+   * `creationRetry(err)` and {@link submitCreation} — **never** by calling this
+   * again, which composes and broadcasts a second transaction (and for an
+   * ordinal permanently strands the first commit's funds).
+   */
+  async createToken(
+    params: CreateTokenParams,
+    options?: WorkflowOptions,
+  ): Promise<CreateTokenResult> {
+    return workflowCreateToken(params, this.http, this.assertSigner(), options);
   }
 }

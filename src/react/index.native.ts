@@ -31,6 +31,7 @@ export {
   useTokenActivity,
   useTokenSearch,
   useTokenList,
+  useCreateToken,
   useProfile,
   useProfileWallets,
   useKontorFaucet,
@@ -92,6 +93,16 @@ export type {
   UseTokenSearchResult,
   UseTokenListOptions,
   UseTokenListResult,
+  CreateTokenStepName,
+  CreateTokenStatus,
+  CreateTokenAttribute,
+  CreateTokenFormValues,
+  CreateTokenFieldErrors,
+  CreateTokenXcpFee,
+  CreationRetryStore,
+  PersistedCreationRetry,
+  UseCreateTokenOptions,
+  UseCreateTokenResult,
 } from "./hooks/index.js";
 
 // The profile payloads those two hooks hand back — re-exported here so an app
@@ -154,6 +165,38 @@ export type {
   TokenListParams,
   TokenListPage,
 } from "../api/tokens.js";
+
+// The creation payloads `useCreateToken` works in, plus the local guards and
+// the server's own limits — same rationale as the profile/token blocks above: a
+// create screen validates a name and sizes a file without importing the root
+// entry.
+export type {
+  CreationType,
+  CreatableType,
+  CreationQuote,
+  CreationAttributes,
+  CreationMediaUpload,
+  CreationMediaResult,
+} from "../api/creations.js";
+export type { CreateTokenParams, CreateTokenResult } from "../workflows/create.js";
+export {
+  MAX_CREATION_NAME_LENGTH,
+  MAX_CREATION_DESCRIPTION_LENGTH,
+  MAX_CREATION_ATTRIBUTES,
+  MAX_CREATION_MEDIA_BYTES,
+  MAX_INSCRIPTION_BYTES,
+  CREATION_MEDIA_TYPES,
+} from "../api/creations.js";
+export {
+  validateCounterpartyAssetName,
+  validateCreationQuantity,
+  randomNumericAssetName,
+  isIpfsUri,
+  xcpNameFee,
+} from "../creation-params.js";
+export { creationRetry, type CreationRetry } from "../workflows/create.js";
+export { creationCostLines, CREATION_FEE_HINTS, xcpFeeNotice, formatXcp } from "./internal/creationCost.js";
+export type { CreationCostLine } from "./internal/creationCost.js";
 
 // The sell-review data layer that powers the packaged <SellOrderForm/> confirm
 // step (cost breakdown, live fee-rate selection, fee waiver, and the Kontor

@@ -68,6 +68,16 @@ function isBooted(serial) {
   return run(adb, ['-s', serial, 'shell', 'getprop', 'sys.boot_completed'])?.replace(/\r/g, '') === '1';
 }
 
+/*
+ * `sys.boot_completed` flips before every system service is back, and a device
+ * whose package manager is missing fails the install with a bare
+ * "cmd: Can't find service: package". Ask for the service the install needs.
+ */
+function isReady(serial) {
+  if (!isBooted(serial)) return false;
+  return /found/.test(run(adb, ['-s', serial, 'shell', 'service', 'check', 'package']) ?? '');
+}
+
 /** The AVD name of a running emulator; null for physical devices. */
 function avdNameOf(serial) {
   if (!serial.startsWith('emulator-')) return null;
@@ -110,7 +120,7 @@ function bootAvd(name) {
 
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const serial = connectedSerials().find((it) => avdNameOf(it) === name && isBooted(it));
+    const serial = connectedSerials().find((it) => avdNameOf(it) === name && isReady(it));
     if (serial) return serial;
     sleep(POLL_INTERVAL_MS);
   }
@@ -124,7 +134,7 @@ function resolveTarget() {
     return running ?? bootAvd(forced);
   }
 
-  const connected = connectedSerials().filter(isBooted);
+  const connected = connectedSerials().filter(isReady);
   const alreadyUsable = connected.find((serial) => pageSizeOf(serial) === 4096);
   if (alreadyUsable) return alreadyUsable;
 
@@ -140,25 +150,48 @@ function resolveTarget() {
   return bootAvd(candidates[0]);
 }
 
-const target = resolveTarget();
-if (!target) {
-  console.error('✖ The emulator did not finish booting in time.');
-  process.exit(1);
+/** Resolves a device, boots one if needed, and refuses 16 KB-page targets. */
+function prepareDevice() {
+  const target = resolveTarget();
+  if (!target) {
+    console.error('✖ The emulator did not finish booting in time.');
+    process.exit(1);
+  }
+
+  const serial = connectedSerials().find((it) => it === target || avdNameOf(it) === target);
+  const pageSize = serial ? pageSizeOf(serial) : null;
+  if (pageSize !== 4096) {
+    console.error(
+      `✖ ${target} reports PAGE_SIZE=${pageSize}. A 16 KB-page device installs this app but resolves no activity,\n` +
+        `  so it would only show a black screen. Pick a device built from an android-36 or older system image.`,
+    );
+    process.exit(1);
+  }
+
+  return { serial, avdName: serial ? avdNameOf(serial) : null, expoTarget: serial ? expoTargetFor(serial) : target };
 }
 
-const serial = connectedSerials().find((it) => it === target || avdNameOf(it) === target);
-const pageSize = serial ? pageSizeOf(serial) : null;
-if (pageSize !== 4096) {
-  console.error(
-    `✖ ${target} reports PAGE_SIZE=${pageSize}. A 16 KB-page device installs this app but resolves no activity,\n` +
-      `  so it would only show a black screen. Pick a device built from an android-36 or older system image.`,
-  );
-  process.exit(1);
+function runExpo(expoTarget) {
+  console.log(`› Running on ${expoTarget} (4 KB pages)`);
+  return spawnSync('npx', ['expo', 'run:android', '--device', expoTarget, ...process.argv.slice(2)], {
+    stdio: 'inherit',
+  }).status;
 }
 
-const expoTarget = serial ? expoTargetFor(serial) : target;
-console.log(`› Running on ${expoTarget} (4 KB pages)`);
-const result = spawnSync('npx', ['expo', 'run:android', '--device', expoTarget, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-});
-process.exit(result.status ?? 1);
+const device = prepareDevice();
+let status = runExpo(device.expoTarget);
+
+/*
+ * A cold Gradle build runs for minutes, and an emulator that dies in the
+ * meantime only surfaces at the very end, as an install failure against a
+ * device that is no longer there. Reboot the same AVD and retry once: the build
+ * is up to date by then, so the retry is just the install and launch.
+ */
+if (status !== 0 && device.avdName && !isReady(device.serial)) {
+  console.log(`› ${device.avdName} went away during the build. Rebooting it and retrying the install…`);
+  const serial = bootAvd(device.avdName);
+  status = serial ? runExpo(expoTargetFor(serial)) : null;
+  if (!serial) console.error('✖ The emulator did not finish booting in time.');
+}
+
+process.exit(status ?? 1);

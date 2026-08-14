@@ -50,7 +50,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Pick a photo from your library to use as your Horizon Market profile picture.",
+          "photosPermission": "Pick a photo from your library to use as your Horizon Market profile picture or as a token's artwork.",
           "cameraPermission": false,
           "microphonePermission": false
         }

@@ -327,6 +327,26 @@ describe("uploadMyAvatar", () => {
     expect(file.name).toBe("selfie.jpg");
   });
 
+  it("sends a blob that also carries a uri as a blob", async () => {
+    const fetchFn = makeRawFetch(
+      rawResponse(200, { json: { data: { avatar_url: "https://x/y" } } }),
+    );
+
+    // What `expo-file-system`'s `File` is: a blob with a `uri` on it. Expo's
+    // fetch sends blobs and refuses the descriptor, so a value answering to
+    // both has to take the blob branch.
+    await uploadMyAvatar(
+      http(fetchFn),
+      Object.assign(
+        new File([new Uint8Array([1])], "selfie.jpg", { type: "image/jpeg" }),
+        { uri: "file:///tmp/selfie.jpg" },
+      ),
+    );
+
+    const file = (lastCall(fetchFn)[1].body as FormData).get("image") as File;
+    expect(file.name).toBe("selfie.jpg");
+  });
+
   it("accepts a React Native picker descriptor", async () => {
     const fetchFn = makeRawFetch(
       rawResponse(200, { json: { data: { avatar_url: "https://x/y" } } }),

@@ -552,11 +552,130 @@ a list that moves, so appended rows are de-duplicated by `canonicalId` and the
 next page is read from `pagedCount` — what the server has sent — rather than from
 `tokens.length`, which a dropped duplicate leaves behind.
 
+### Creating a token
+
+`/api/creations/*` is the write counterpart of the tokens API: **one request
+shape** composes a Counterparty issuance or an ordinal inscription, so a client
+ships one create screen rather than one per protocol. `type: "kontor"` is
+reserved and answers `501` on signet / `404` elsewhere.
+
+```ts
+// 1. Pin the artwork (session-gated, max 10 MB).
+const media = await client.uploadCreationMedia(file, { thumbnail: true });
+
+// 2 & 3. Quote → sign → broadcast, in one call.
+const created = await client.createToken(
+  {
+    type: "counterparty",           // or "ordinals"
+    name: "MYASSET",
+    description: "A picture",
+    image: media.ipfsUrl,           // always an ipfs:// URI
+    attributes: { rarity: "rare" },
+    satsPerVbyte: 5,
+    options: { quantity: "1000", divisible: false, lock: true },
+  },
+  { onProgress: (event) => console.log(event.message) },
+);
+```
+
+`image` is always an `ipfs://` URI — that is what lets one field mean the same
+thing on both chains: Counterparty stores it inside a pinned JSON descriptor, an
+ordinal inscribes the bytes behind it. A gateway `https://…` URL is rejected.
+
+**A quote is a real, metered request.** There is no side-effect-free `preview`
+here: composing pins a descriptor (Counterparty) or pulls up to 350 kB of media
+through a gateway (ordinals), behind a session gate. So take one quote per
+attempt — and when a UI shows the fees before signing, take that quote yourself
+and hand it back:
+
+```ts
+const quote = await client.requestCreationQuote({ /* … */ });   // show quote.totalCostSats
+const created = await client.createToken({ /* same params */, quote });  // skips re-quoting
+```
+
+- `requestCreationQuote(params, options?)` — session-gated. Answers `{ identifier, psbtBase64, inputsToSign, revealTxHex, estimatedFeeSats, totalCostSats }`
+- `submitCreation(params, options?)` — unauthenticated, idempotent; `psbt` (hex or base64) **xor** `txHex`
+- `uploadCreationMedia(file, { thumbnail? })` — session-gated multipart; a `Blob`/`File` or a React Native `{ uri, name, type }`
+- `createToken(params, options?)` — the workflow over all three
+
+Two things a caller has to get right:
+
+**Never retry `createToken` after a submit failure.** It throws
+`CreationNotBroadcastError`, which carries the exact body to re-POST. Re-running
+the workflow composes a *second* transaction — and for an ordinal, the first
+commit's funds are then stranded forever, since its reveal was pre-signed with a
+key the server discarded at quote time.
+
+```ts
+try { await client.createToken(params); }
+catch (err) {
+  const retry = creationRetry(err);
+  if (retry) await client.submitCreation(retry.submit);   // the ONLY safe recovery
+}
+```
+
+`retry.possiblyBroadcast` says whether re-composing could produce a second
+on-chain transaction, and it is the flag to branch on — not `retry.commitTxid`,
+which is a txid scraped out of a prose error message and is there to be shown,
+not trusted. It clears only when the server answered `4xx`, having rejected the
+submit before it touched a node; a `5xx`, a timeout or a dropped connection all
+leave it set, because being wrong in that direction strands an ordinal's commit
+forever while being wrong in the other costs one idempotent replay.
+
+**`totalCostSats` is BTC only.** Counterparty charges 0.5 XCP to register a named
+asset (0.25 for a subasset, free for a numeric `A…` name) on top of it, and a
+short balance fails at compose time. `xcpNameFee(name)` is that number, and it is
+owed by the **funding address**: Counterparty debits it from the issuance's
+source, so XCP held elsewhere in the same wallet cannot pay for it.
+`randomNumericAssetName()` draws a free `A…` name, which is what lets a wallet
+holding no XCP at all create one.
+
+Local guards, so a typo costs a form hint rather than a pin:
+`validateCounterpartyAssetName`, `validateCreationQuantity`,
+`validateCreationAttributes`, `isIpfsUri`, `isFundableCreationAddress`,
+`parentAssetOf`, `isNumericAssetName`, plus the server's own limits
+(`MAX_CREATION_ATTRIBUTES`, `MAX_CREATION_MEDIA_BYTES`, `MAX_INSCRIPTION_BYTES`,
+`CREATION_MEDIA_TYPES`, …).
+
+In React, `useCreateToken()` is the whole screen's data layer: form values with
+the ordinals rule enforced (quantity 1, indivisible, locked), attribute rows,
+media upload, validation, the quote-then-confirm step machine, progress events,
+the XCP balance check, and a `retry()` that replays the submit alone. The fee
+rate lives on the **form** rather than in the confirm step — with no preview
+endpoint, changing it in a modal would pin a fresh descriptor per twiddle. While
+`awaitingReplay` is set the run has one way out and `goBack()` refuses, so a
+screen should hide its Back and dismiss affordances there and leave Retry. See
+`apps/native/app/create.tsx` for a complete screen built on it.
+
+**Pass a `retryStore`.** Refusing `goBack()` keeps the signed body away from the
+user; the store keeps it away from the *process*. It is three JSON methods
+(`load`/`save`/`clear`) over `AsyncStorage`, `localStorage` or a file, keyed by
+network and funding address — without one, an OS kill or a swipe out of the app
+switcher loses the only thing that can finish a broadcast creation, which for an
+ordinal is the permanent stranding the whole replay design exists to prevent. A
+held recovery is restored on mount, straight onto the failed step.
+
+And a replay can be refused rather than merely fail: a node answering
+"transaction already in block chain" for one that *is* mined would otherwise
+leave a screen with no exit at all. `replayRejected` says the last replay came
+back `4xx`, and once `canAbandonReplay` is set — a replay was tried, and failed —
+`abandonReplay()` drops the body and returns to the form. Offer
+`pendingSubmitJson` to be saved first: it is irreversible, and it is the only
+copy.
+
+A quote is metered, so the hook spends one only when it has to: `requestQuote()`
+reuses a held quote (backing out of the confirm sheet and pressing Create again
+re-opens it rather than pinning a second identical descriptor), refuses outright
+while `canQuote` is false, and settles the XCP balance check on the spot instead
+of on its debounce timer — otherwise pressing Create quickly enough walks past
+the very guard that exists to stop a doomed compose.
+
 ### Workflow Methods
 
 - `openSellOrder(params, options?)` — quote → sign → submit sell listing; returns `{ swap, created, transactions }` (`transactions` = on-chain txs the listing broadcast)
 - `fillSwaps(params, options?)` — quote → sign → submit purchase
 - `delistSwap(swapId, options?)` — start → sign (BIP322) → confirm delist
+- `createToken(params, options?)` — quote → sign → broadcast a new Counterparty asset or ordinal inscription
 - `previewKontorListingFee(address)` — side-effect-free Kontor listing-fee preview
 
 ### REST Helpers

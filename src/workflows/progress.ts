@@ -138,6 +138,30 @@ const STEP_MESSAGES: AllStepMessages = {
       error: "Kontor offer revocation failed",
     },
   },
+  // Protocol-neutral wording: one screen creates a Counterparty asset and an
+  // ordinal inscription, and the steps are the same either way.
+  createToken: {
+    validateParams: {
+      start: "Validating token details…",
+      complete: "Token details validated",
+      error: "Token detail validation failed",
+    },
+    requestCreationQuote: {
+      start: "Composing the transaction…",
+      complete: "Transaction composed",
+      error: "Composing the transaction failed",
+    },
+    signCreationPsbt: {
+      start: "Signing transaction…",
+      complete: "Transaction signed",
+      error: "Transaction signing failed",
+    },
+    submitCreation: {
+      start: "Broadcasting…",
+      complete: "Token created",
+      error: "Broadcast failed",
+    },
+  },
 };
 
 /**

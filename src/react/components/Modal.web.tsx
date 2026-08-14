@@ -9,6 +9,15 @@ export interface ModalProps {
   onClose: () => void;
   /** Heading shown on the left of the title row, beside the close button. */
   title?: ReactNode;
+  /**
+   * Whether the modal can be dismissed. Defaults to `true`.
+   *
+   * `false` withdraws all three dismiss affordances — the ✕, the backdrop click
+   * and Escape — for the steps that genuinely have one way out (a broadcast
+   * transaction awaiting its replay). A dead ✕ reads as a broken app; this
+   * removes it instead.
+   */
+  dismissible?: boolean;
   /** Max card width in px. Defaults to 450 (matches Horizon Market). */
   maxWidth?: number;
   children: ReactNode;
@@ -24,15 +33,22 @@ export interface ModalProps {
  * (LoginPanel / SellOrderForm / SwapConfirmation) is chrome-less and stacks
  * directly under the title row.
  */
-export function Modal({ open, onClose, title, maxWidth = 450, children }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  dismissible = true,
+  maxWidth = 450,
+  children,
+}: ModalProps) {
   useEffect(() => {
-    if (!open) return;
+    if (!open || !dismissible) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, dismissible, onClose]);
 
   if (!open) return null;
 
@@ -47,21 +63,25 @@ export function Modal({ open, onClose, title, maxWidth = 450, children }: ModalP
       // modal and destroy form state. `mousedown` is keyed on where the gesture
       // STARTED, so only a true backdrop press dismisses.
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (dismissible && e.target === e.currentTarget) onClose();
       }}
       role="presentation"
     >
       <div style={cardStyle} role="dialog" aria-modal="true">
         <div style={ws.modalHeader}>
           {title != null ? <h2 style={ws.modalTitle}>{title}</h2> : <span />}
-          <button
-            type="button"
-            onClick={onClose}
-            style={ws.modalClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          {dismissible ? (
+            <button
+              type="button"
+              onClick={onClose}
+              style={ws.modalClose}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          ) : (
+            <span />
+          )}
         </div>
         {children}
       </div>
