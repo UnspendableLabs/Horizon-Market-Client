@@ -91,12 +91,31 @@ function GridIcon({ color, size = 18 }: { color: string; size?: number }) {
   );
 }
 
-/** Everything the hamburger opens. One entry today; the list is the point. */
+/** lucide `plus` — issue a new token. */
+function PlusIcon({ color, size = 18 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 5v14M5 12h14"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+/** Everything the hamburger opens. The action first, then the destination. */
 const MENU_ITEMS: {
   label: string;
   path: string;
   icon: (props: { color: string }) => ReactElement;
 }[] = [
+  {
+    label: "Create",
+    path: "/create",
+    icon: (props) => <PlusIcon color={props.color} />,
+  },
   {
     label: "Token Explorer",
     path: "/token-explorer",

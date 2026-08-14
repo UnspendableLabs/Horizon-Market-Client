@@ -20,6 +20,15 @@ export interface ModalProps {
   onClose: () => void;
   /** Heading shown on the left of the title row, beside the close button. */
   title?: ReactNode;
+  /**
+   * Whether the modal can be dismissed. Defaults to `true`.
+   *
+   * `false` withdraws all three dismiss affordances — the ✕, the backdrop tap
+   * and the Android back button — for the steps that genuinely have one way out
+   * (a broadcast transaction awaiting its replay). A dead ✕ reads as a broken
+   * app; this removes it instead.
+   */
+  dismissible?: boolean;
   /** Max card width in px. Defaults to 450 (matches Horizon Market). */
   maxWidth?: number;
   children: ReactNode;
@@ -90,6 +99,7 @@ export function Modal({
   open,
   onClose,
   title,
+  dismissible = true,
   maxWidth = 450,
   children,
   style,
@@ -99,15 +109,18 @@ export function Modal({
     () => createSheet(theme, maxWidth),
     [theme, maxWidth],
   );
+  // `onRequestClose` is required on Android — a no-op is what keeps the hardware
+  // back button from dismissing a modal that must not be.
+  const dismiss = dismissible ? onClose : () => {};
 
   return (
     <RNModal
       visible={open}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={dismiss}
     >
-      <Pressable style={sheet.overlay} onPress={onClose}>
+      <Pressable style={sheet.overlay} onPress={dismiss}>
         {/* Stop taps on the card from bubbling to the dismiss-on-backdrop press.
             `accessibilityViewIsModal` mirrors the web's role="dialog"/aria-modal:
             it scopes the screen reader to the card while it's open. */}
@@ -123,15 +136,19 @@ export function Modal({
             ) : (
               <View />
             )}
-            <Pressable
-              onPress={onClose}
-              style={sheet.close}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              hitSlop={8}
-            >
-              <Text style={sheet.closeText}>✕</Text>
-            </Pressable>
+            {dismissible ? (
+              <Pressable
+                onPress={onClose}
+                style={sheet.close}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                hitSlop={8}
+              >
+                <Text style={sheet.closeText}>✕</Text>
+              </Pressable>
+            ) : (
+              <View />
+            )}
           </View>
           <ScrollView style={sheet.body} keyboardShouldPersistTaps="handled">
             {children}

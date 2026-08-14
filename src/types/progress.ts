@@ -1,5 +1,9 @@
 /** Workflow identifier for progress events. */
-export type WorkflowName = "openSellOrder" | "fillSwaps" | "delistSwap";
+export type WorkflowName =
+  | "openSellOrder"
+  | "fillSwaps"
+  | "delistSwap"
+  | "createToken";
 
 /** Phase of a workflow step. */
 export type WorkflowProgressPhase = "start" | "complete" | "error";
@@ -38,10 +42,19 @@ export type DelistSwapStep =
   | "preflightKontor"
   | "revokeKontorOffer";
 
+/** Steps emitted during `createToken`. */
+export type CreateTokenStep =
+  | "validateParams"
+  // Skipped when the caller already holds a quote (the confirm-modal flow).
+  | "requestCreationQuote"
+  | "signCreationPsbt"
+  | "submitCreation";
+
 export type WorkflowStep =
   | OpenSellOrderStep
   | FillSwapsStep
-  | DelistSwapStep;
+  | DelistSwapStep
+  | CreateTokenStep;
 
 /** Map a workflow name to its step union. */
 export type WorkflowStepFor<W extends WorkflowName> = W extends "openSellOrder"
@@ -50,7 +63,9 @@ export type WorkflowStepFor<W extends WorkflowName> = W extends "openSellOrder"
     ? FillSwapsStep
     : W extends "delistSwap"
       ? DelistSwapStep
-      : never;
+      : W extends "createToken"
+        ? CreateTokenStep
+        : never;
 
 /** Optional per-workflow options (e.g. progress reporting). */
 export interface WorkflowOptions {
@@ -87,4 +102,8 @@ export type WorkflowProgressEvent =
   | (WorkflowProgressEventBase & {
       workflow: "delistSwap";
       step: DelistSwapStep;
+    })
+  | (WorkflowProgressEventBase & {
+      workflow: "createToken";
+      step: CreateTokenStep;
     });

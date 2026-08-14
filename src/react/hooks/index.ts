@@ -80,6 +80,19 @@ export type {
   UseTokenListOptions,
   UseTokenListResult,
 } from "./useTokenList.js";
+export { useCreateToken } from "./useCreateToken.js";
+export type {
+  CreateTokenStepName,
+  CreateTokenStatus,
+  CreateTokenAttribute,
+  CreateTokenFormValues,
+  CreateTokenFieldErrors,
+  CreateTokenXcpFee,
+  CreationRetryStore,
+  PersistedCreationRetry,
+  UseCreateTokenOptions,
+  UseCreateTokenResult,
+} from "./useCreateToken.js";
 export { useSwapList, SORT_OPTIONS, SORT_OPTION_LABELS } from "./useSwapList.js";
 export type {
   SwapListOrderBy,

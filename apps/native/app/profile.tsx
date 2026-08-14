@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import {
   isPlaceholderUsername,
@@ -166,11 +167,10 @@ function ProfileEditor() {
     const asset = result.assets[0];
     if (!asset) return;
 
-    const ok = await uploadAvatar({
-      uri: asset.uri,
-      name: asset.fileName ?? "avatar.jpg",
-      type: asset.mimeType ?? "image/jpeg",
-    });
+    // A blob, not React Native's `{ uri, name, type }` descriptor: Expo's fetch
+    // encodes strings and blobs only, and throws "Unsupported FormDataPart
+    // implementation" on the descriptor.
+    const ok = await uploadAvatar(new File(asset.uri));
     if (ok) trackProfileAvatarChanged();
   };
 
