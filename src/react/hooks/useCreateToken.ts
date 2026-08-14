@@ -396,16 +396,24 @@ export function useCreateToken(
   // design exists to prevent, and React state does not survive an OS kill.
 
   const retryStore = options?.retryStore;
-  // Gates the writer below: until the load has settled there is nothing to
-  // mirror, and a `clear()` from the initial `pendingRetry === null` would wipe
-  // exactly what is being read.
-  const [storeLoaded, setStoreLoaded] = useState(false);
+  // Gates the writer below, and holds the store *itself* rather than a "loaded"
+  // flag: a new store is a new key, and the two have to be compared within one
+  // render. A boolean would still read `true` from the commit that swapped the
+  // store — the writer would `clear()` the new one before its `load()` had even
+  // been issued, wiping precisely the body this exists to keep.
+  const [loadedStore, setLoadedStore] = useState<CreationRetryStore | null>(
+    null,
+  );
+  // A held body this mount declined to restore is still the only copy of an
+  // unfinished creation. This withholds the writer's `clear()` from it — see
+  // where it is set.
+  const unrestoredRef = useRef(false);
 
   useEffect(() => {
-    if (!retryStore) {
-      setStoreLoaded(false);
-      return;
-    }
+    // A ref, so it is already false for the writer's very next run: whatever the
+    // previous store held says nothing about this one.
+    unrestoredRef.current = false;
+    if (!retryStore) return;
     let cancelled = false;
     void Promise.resolve()
       .then(() => retryStore.load())
@@ -415,13 +423,19 @@ export function useCreateToken(
         // Only onto an untouched screen. A recovery arriving mid-flow would
         // replace a run in progress with an older one — losing the newer body,
         // which is the very thing this exists to keep.
-        if (held && stepRef.current === "form" && !submittingRef.current) {
-          setPendingRetry(held);
-          setError(new Error(RESTORED_MESSAGE));
-          setStatus("error");
-          setStep("result");
+        if (held) {
+          if (stepRef.current === "form" && !submittingRef.current) {
+            setPendingRetry(held);
+            setError(new Error(RESTORED_MESSAGE));
+            setStatus("error");
+            setStep("result");
+          } else {
+            // Declining to restore it is not a reason to destroy it: it stays on
+            // disk for the next mount that is in a position to offer it.
+            unrestoredRef.current = true;
+          }
         }
-        setStoreLoaded(true);
+        setLoadedStore(retryStore);
       });
     return () => {
       cancelled = true;
@@ -429,21 +443,24 @@ export function useCreateToken(
   }, [retryStore]);
 
   useEffect(() => {
-    if (!retryStore || !storeLoaded) return;
+    // Only ever mirrors into the store this hook has actually read.
+    if (!retryStore || loadedStore !== retryStore) return;
     // Only a possibly-broadcast body is worth keeping: one the server positively
     // rejected can be re-composed from the form for the price of a pin.
+    const held = pendingRetry?.possiblyBroadcast ? pendingRetry : null;
+    // A body this mount declined to restore is never erased, only written over
+    // by one this run owns. Dropping an unresolved recovery is the permanent
+    // loss; keeping one a session too long costs it being offered again.
+    if (!held && unrestoredRef.current) return;
+    unrestoredRef.current = false;
     void Promise.resolve()
-      .then(() =>
-        pendingRetry?.possiblyBroadcast
-          ? retryStore.save(pendingRetry)
-          : retryStore.clear(),
-      )
+      .then(() => (held ? retryStore.save(held) : retryStore.clear()))
       .catch(() => {
         // A recovery that cannot be written down is still a recovery held in
         // state — degrade to the pre-persistence behaviour rather than failing
         // the screen over it.
       });
-  }, [retryStore, storeLoaded, pendingRetry]);
+  }, [retryStore, loadedStore, pendingRetry]);
 
   const feeOptions =
     formValues.type === "ordinals" ? ORDINALS_FEE_OPTIONS : ALL_FEE_OPTIONS;

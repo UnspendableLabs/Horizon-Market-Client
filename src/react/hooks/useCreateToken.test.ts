@@ -9,7 +9,10 @@ import {
 } from "../hook-test-utils.js";
 import { HorizonMarketApiError } from "../../api/http.js";
 import { CreationNotBroadcastError } from "../../workflows/create.js";
-import { useCreateToken } from "./useCreateToken.js";
+import {
+  useCreateToken,
+  type PersistedCreationRetry,
+} from "./useCreateToken.js";
 import {
   MAX_CREATION_ATTRIBUTES,
   MAX_CREATION_DESCRIPTION_LENGTH,
@@ -1371,6 +1374,71 @@ describe("useCreateToken", () => {
     expect(client.submitCreation).toHaveBeenCalledWith(SUBMIT_BODY);
     expect(client.createToken).not.toHaveBeenCalled();
     expect(result.current.result?.quote).toEqual(QUOTE);
+  });
+
+  it("reads a store it has just been handed before it writes to it", async () => {
+    const first = makeStore();
+    // What the second store holds: a stranded creation belonging to the wallet
+    // or network the screen is switching to.
+    const second = makeStore({
+      submit: SUBMIT_BODY,
+      commitTxid: "c".repeat(64),
+      possiblyBroadcast: true,
+      quote: QUOTE,
+    });
+    const { result, rerender } = renderHook(
+      ({ store }) => useCreateToken({ retryStore: store }),
+      { initialProps: { store: first } },
+    );
+    await waitFor(() => expect(first.load).toHaveBeenCalled());
+
+    rerender({ store: second });
+
+    // A new store is a new key. Carrying the previous one's "loaded" across
+    // would fire the mirror against a `pendingRetry` of null the instant the
+    // store changed — a clear() on a body nobody has read yet.
+    await waitFor(() => expect(result.current.awaitingReplay).toBe(true));
+    expect(second.clear).not.toHaveBeenCalled();
+    expect(second.current.current).not.toBeNull();
+  });
+
+  it("leaves a recovery it declined to restore on disk rather than erasing it", async () => {
+    let answer!: (held: PersistedCreationRetry | null) => void;
+    const store = {
+      load: vi.fn(
+        () =>
+          new Promise<PersistedCreationRetry | null>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const { result } = renderHook(() => useCreateToken({ retryStore: store }));
+
+    // The user reaches the confirm sheet before the store gets around to
+    // answering — the one case where a restore would overwrite a live run.
+    fillValid(result);
+    await act(async () => {
+      await result.current.requestQuote();
+    });
+    expect(result.current.step).toBe("confirm");
+
+    await act(async () => {
+      answer({
+        submit: SUBMIT_BODY,
+        commitTxid: "c".repeat(64),
+        possiblyBroadcast: true,
+        quote: QUOTE,
+      });
+    });
+
+    // Not restored, because the newer run wins — and not cleared either, because
+    // it is still the only copy of a creation nobody ever finished. The next
+    // mount that lands on an untouched form is the one that gets to offer it.
+    expect(result.current.step).toBe("confirm");
+    expect(result.current.awaitingReplay).toBe(false);
+    expect(store.clear).not.toHaveBeenCalled();
   });
 
   it("survives a store that cannot be read", async () => {

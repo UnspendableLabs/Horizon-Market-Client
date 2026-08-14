@@ -1,6 +1,7 @@
 {
   "name": "horizon-market-native-app",
   "version": "1.0.0",
+  "private": true,
   "main": "index.ts",
   "expo": {
     "autolinking": {
