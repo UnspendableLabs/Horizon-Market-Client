@@ -102,3 +102,10 @@ export type {
   UseSwapListOptions,
   UseSwapListResult,
 } from "./useSwapList.js";
+export { useReportListing } from "./useReportListing.js";
+export type {
+  ReportListingStatus,
+  ReportListingTarget,
+  UseReportListingOptions,
+  UseReportListingResult,
+} from "./useReportListing.js";

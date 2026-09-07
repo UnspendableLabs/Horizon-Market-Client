@@ -356,6 +356,64 @@ export interface ConfirmDelistResult {
   signature: string | null;
 }
 
+// ─── Listing reports (content moderation) ─────────────────────────────────────
+
+/**
+ * Why a listing is being reported — the server's closed set. Human-readable
+ * labels for each live in `LISTING_REPORT_REASON_LABELS`.
+ */
+export type ListingReportReason =
+  | "scam"
+  | "illegal"
+  | "sexual"
+  | "violence"
+  | "hate"
+  | "impersonation"
+  | "spam"
+  | "other";
+
+/** Params for `reportListing`. */
+export interface ReportListingParams {
+  /**
+   * The listing's atomic-swap `id` — the same `id` every `listSwaps()` item
+   * carries. It is the one identifier that works for every listing type: a
+   * Kontor NFT has no asset name, and an ordinal's asset name is its inscription
+   * id. Any swap the server has ever stored is reportable, open or not.
+   */
+  atomicSwapId: string;
+  reason: ListingReportReason;
+  /** Optional free-text context, at most 2000 characters. */
+  details?: string;
+}
+
+/** Result of `reportListing`. */
+export interface ListingReport {
+  /** The report's id, or `null` on a replay (the server does not re-issue it). */
+  id: string | null;
+  status: "pending";
+  atomicSwapId: string;
+  /**
+   * `true` when this account had already reported this listing: the original
+   * report stands and nothing was added. Not an error — the outcome the reporter
+   * asked for is in place either way.
+   */
+  duplicate: boolean;
+}
+
+/**
+ * What `findReportableListingId` narrows the feed to: the token whose listing
+ * is being reported. Mirrors the filter keys of {@link ListSwapsParams} that
+ * identify an asset — a Counterparty / ordinal / ZELD listing by `assetName`, a
+ * Kontor NFT by `kontorNftId`, KOR by `listingType: "kontor"` +
+ * `kontorAssetKind: "token"`.
+ */
+export interface ReportableListingQuery {
+  assetName?: string;
+  kontorNftId?: string;
+  listingType?: ListingType;
+  kontorAssetKind?: KontorAssetKind;
+}
+
 /** Query params for `listSwaps`. Unset booleans use server defaults. */
 export interface ListSwapsParams {
   assetName?: string;

@@ -27,6 +27,7 @@ import {
 // (and its Kontor WASM) into the bundle — same as lib/analytics/events.ts.
 import type { KontorAssetKind } from "@unspendablelabs/horizon-market-client";
 import { Header } from "../../../components/Header.js";
+import { ReportTokenButton } from "../../../components/ReportTokenButton.js";
 import { StandaloneTabBar } from "../../../components/TabBar.js";
 import { TokenChart } from "../../../components/TokenChart.js";
 import {
@@ -390,6 +391,10 @@ function Hero({ token }: { token: TokenDetail }) {
         </View>
         {token.subtitle && <Text style={styles.subtitle}>{token.subtitle}</Text>}
         {token.tagline && <Text style={styles.tagline}>{token.tagline}</Text>}
+        {/* Under the identity, not in a tab: the report control has to be
+            findable from the moment the artwork is on screen — App Store
+            guideline 1.2 — and a tab is a place the reader has to know to open. */}
+        <ReportTokenButton token={token} />
       </View>
     </View>
   );

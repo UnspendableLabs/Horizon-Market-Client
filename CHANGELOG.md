@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Listing reports.** `client.reportListing({ atomicSwapId, reason, details? })`
+  files a report with Horizon Market's moderators
+  (UnspendableLabs/Horizon-Market#1185, `POST /api/reports`); session-gated, and
+  a replay from the same account answers `duplicate: true` rather than failing.
+  A report names a *listing* — the one key every asset type shares — so
+  `client.findReportableListingId(query)` resolves a token to one of its swaps
+  (open, else sold, else delisted; `null` when it was never listed) and
+  `reportableListingQueryFor(token)` builds that query from a `TokenDetail`.
+  `LISTING_REPORT_REASONS` / `LISTING_REPORT_REASON_LABELS` are the reason
+  catalogue a form offers. React: `useReportListing({ target })`, with
+  `canReport` mirroring the wallet sign-in and an `"unlisted"` outcome distinct
+  from `"error"`.
+- **Native example: Report on the token page.** A **Report** control under the
+  token's name opens a reason + details form (App Store guideline 1.2). With no
+  wallet it points at the Wallet tab's sign-in; while the sign-in lands it
+  waits, as `/profile` does.
+
 ## [0.3.0] - 2026-08-14
 
 **Creating a token.** Every surface this client has ever had reads or trades what
@@ -332,6 +353,7 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.11...v0.3.0
 [0.2.11]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.9...v0.2.10
