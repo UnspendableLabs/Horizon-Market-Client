@@ -215,6 +215,34 @@ export function trackTokenViewed(props: {
   );
 }
 
+/** The token page's Report control was tapped and the form opened. */
+export function trackTokenReportOpened(props: { protocol: string }): void {
+  void track(
+    "token_report_opened",
+    withPlatform(SURFACE.token, { protocol: props.protocol }),
+  );
+}
+
+/**
+ * A report was accepted. The server logs its own `listing_reported` with the
+ * swap and reason; this is the client-side half, so the funnel from "opened
+ * the form" to "sent it" is measurable per platform.
+ */
+export function trackTokenReportSubmitted(props: {
+  protocol: string;
+  reason: string;
+  duplicate: boolean;
+}): void {
+  void track(
+    "token_report_submitted",
+    withPlatform(SURFACE.token, {
+      protocol: props.protocol,
+      reason: props.reason,
+      duplicate: props.duplicate,
+    }),
+  );
+}
+
 /** A search result was tapped — with its rank, to see whether ranking works. */
 export function trackTokenSearchResultOpened(props: {
   protocol: string;

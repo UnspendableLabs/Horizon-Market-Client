@@ -35,6 +35,7 @@ export {
   useProfile,
   useProfileWallets,
   useKontorFaucet,
+  useReportListing,
   usePrices,
   useFeeEstimates,
   SORT_OPTIONS,
@@ -73,6 +74,10 @@ export type {
   UseSwapConfirmationResult,
   KontorFaucetStatus,
   UseKontorFaucetResult,
+  ReportListingStatus,
+  ReportListingTarget,
+  UseReportListingOptions,
+  UseReportListingResult,
   UsePricesResult,
   FeeEstimates,
   UseFeeEstimatesResult,
@@ -262,6 +267,20 @@ export {
 // so funding an account works in a bundle built without the Kontor backend.
 export { KONTOR_FAUCET_AMOUNT_KOR } from "../kontor/faucet.js";
 export type { KontorFaucetResult } from "../kontor/faucet.js";
+// Listing reports: the reason catalogue `useReportListing()` forms offer, and
+// the token → listing-query adapter for reporting from a token page.
+export {
+  LISTING_REPORT_REASONS,
+  LISTING_REPORT_REASON_LABELS,
+  LISTING_REPORT_DETAILS_MAX_LENGTH,
+  reportableListingQueryFor,
+} from "../api/reports.js";
+export type {
+  ListingReport,
+  ListingReportReason,
+  ReportableListingQuery,
+  ReportListingParams,
+} from "../types/index.js";
 export type {
   KontorPreflightTarget,
   KontorPreflightNotice,

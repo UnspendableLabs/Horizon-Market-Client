@@ -135,6 +135,7 @@ function App() {
 | `useBtcBalance`, `useWithdraw`, `usePrices`, `useFeeEstimates` | Headless wallet hooks (balances, withdraw flow, BTC/USD price, fee rates) |
 | `useProfile`, `useProfileWallets` | The account's Horizon Market profile: load, edit username / bio / visibility, upload an avatar, publish or hide each linked wallet. Idle until the wallet sign-in lands (the whole surface is session-gated) |
 | `useToken`, `useTokenChart`, `useTokenActivity`, `useTokenSearch`, `useTokenList` | One token's detail payload, price series and sales, a debounced cross-protocol autocomplete, and a paged browse grid. Protocol-blind: the same hooks serve all five asset types (see [Tokens](#tokens)) |
+| `useReportListing` | Report a listing — or a token, resolved to one of its listings — for moderator review. `canReport` mirrors the wallet sign-in; a never-listed token ends in `"unlisted"` rather than an error. `LISTING_REPORT_REASONS` / `LISTING_REPORT_REASON_LABELS` are the form's options |
 | `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
@@ -483,6 +484,20 @@ Public reads (no authentication; a private and an unknown username both answer
 created with apart from a name the user actually picked. In React, `useProfile()`
 and `useProfileWallets()` wrap all of this (load, edit, avatar upload, wallet
 visibility) for a profile screen.
+
+### Listing reports
+
+`POST /api/reports` — the "report this" every app that shows user-listed content
+needs (App Store guideline 1.2). **Session-gated** (`signInWithWallet()` first),
+so the reporter is identifiable; a replay from the same account is not an error.
+
+- `reportListing({ atomicSwapId, reason, details? }, options?)` — `ListingReport` (`duplicate: true` on a replay). `reason` is one of `LISTING_REPORT_REASONS`; `LISTING_REPORT_REASON_LABELS` names each for a form
+- `findReportableListingId(query, options?)` — a report names a *listing*, the one key every asset type shares, but a token page knows only the asset. This resolves a `ReportableListingQuery` (`assetName` / `kontorNftId` / `listingType` / `kontorAssetKind`) to a swap id: an open offer, else a completed sale, else a delisted one — `null` when the token was never listed
+- `reportableListingQueryFor(token)` — that query, read off a `TokenDetail`'s `offers.atomicSwapsQuery`
+
+In React, `useReportListing({ target })` wraps both — `target` is a swap id or
+the query — and the native example app puts a **Report** control under every
+token's name.
 
 ### Tokens
 

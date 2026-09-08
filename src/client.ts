@@ -20,6 +20,10 @@ import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
 import { requestFeeQuote as apiRequestFeeQuote, type FeeQuoteParams } from "./api/fee-quotes.js";
 import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from "./api/delist.js";
 import {
+  reportListing as apiReportListing,
+  findReportableListingId as apiFindReportableListingId,
+} from "./api/reports.js";
+import {
   requestWalletChallenge as apiRequestWalletChallenge,
   completeWalletSignIn as apiCompleteWalletSignIn,
   walletSignInToken as apiWalletSignInToken,
@@ -162,6 +166,9 @@ import type {
   BuyQuote,
   BuyQuoteParams,
   ConfirmDelistResult,
+  ListingReport,
+  ReportableListingQuery,
+  ReportListingParams,
   CreateSwapResult,
   DelistRequest,
   FeeQuoteBtc,
@@ -1343,6 +1350,36 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<ConfirmDelistResult> {
     return apiConfirmDelist(this.http, requestId, signature, options);
+  }
+
+  // ─── Listing reports ─────────────────────────────────────────────────────────
+
+  /**
+   * Flag a listing for moderator review (`POST /api/reports`).
+   *
+   * **Session-gated** — `signInWithWallet()` first — so the reporter is
+   * identifiable. A replay from the same account is not an error: the result
+   * carries `duplicate: true` and the original report stands.
+   */
+  reportListing(
+    params: ReportListingParams,
+    options?: RequestOptions,
+  ): Promise<ListingReport> {
+    return apiReportListing(this.http, params, options);
+  }
+
+  /**
+   * The atomic-swap id to report when the user is looking at a *token* rather
+   * than a listing: its first open offer, else a completed sale, else a
+   * delisted offer — `null` if the token was never listed. Hand a
+   * `TokenDetail`'s `offers.atomicSwapsQuery` keys through
+   * {@link ReportableListingQuery}, then pass the id to {@link reportListing}.
+   */
+  findReportableListingId(
+    query: ReportableListingQuery,
+    options?: RequestOptions,
+  ): Promise<string | null> {
+    return apiFindReportableListingId(this.http, query, options);
   }
 
   // ─── Workflow methods ────────────────────────────────────────────────────────
