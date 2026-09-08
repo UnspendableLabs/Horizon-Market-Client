@@ -8,14 +8,18 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DEFAULT_NETWORK": "signet",
-        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_devnet"
+        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_devnet",
+        "EXPO_PUBLIC_KONTOR_NFT_CONTRACT": "nft@0.0",
+        "EXPO_PUBLIC_KONTOR_NFT_CONTRACT_SIGNET": "nft@0.0"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_DEFAULT_NETWORK": "mainnet",
-        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_mainnet"
+        "EXPO_PUBLIC_WEB3AUTH_NETWORK": "sapphire_mainnet",
+        "EXPO_PUBLIC_KONTOR_NFT_CONTRACT": "nft@0.0",
+        "EXPO_PUBLIC_KONTOR_NFT_CONTRACT_SIGNET": "nft@0.0"
       }
     }
   },
