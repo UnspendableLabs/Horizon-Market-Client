@@ -26,14 +26,16 @@ npx expo start
 ```
 
 Environment variables use the `EXPO_PUBLIC_*` prefix (inlined by Expo at build
-time) and live in `.env` (gitignored — create it locally). Web3Auth vars are
-**shared** across networks (one login derives both mainnet and signet addresses);
-only the network-specific URLs get a `_SIGNET` twin. The keys are:
+time) and live in `.env` (gitignored — create it locally). Network-specific URLs
+get a `_SIGNET` twin. The Web3Auth vars do NOT: the web app runs a separate
+Web3Auth project per network (mainnet → `sapphire_mainnet`, signet →
+`sapphire_devnet`), each deriving a different key for the same account, so a
+build ships the ONE pair matching its `EXPO_PUBLIC_DEFAULT_NETWORK`. The keys are:
 
 ```
 EXPO_PUBLIC_DEFAULT_NETWORK=mainnet         # mainnet | signet (initial selection)
-EXPO_PUBLIC_WEB3AUTH_CLIENT_ID=...          # shared across networks
-EXPO_PUBLIC_WEB3AUTH_NETWORK=...            # e.g. sapphire_devnet
+EXPO_PUBLIC_WEB3AUTH_CLIENT_ID=...          # the project for THIS build's network
+EXPO_PUBLIC_WEB3AUTH_NETWORK=...            # sapphire_mainnet | sapphire_devnet
 
 # Mainnet (blank API URLs fall back to the example's public defaults)
 EXPO_PUBLIC_HORIZON_MARKET_URL=             # blank → https://horizon.market
@@ -82,14 +84,19 @@ Configuration lives in `eas.json`:
 
 - **`production`** — store build for TestFlight/App Store. **`preview`** — internal
   ad-hoc IPA for direct install on a registered device (never submitted).
-- Test builds default to **signet** (`EXPO_PUBLIC_DEFAULT_NETWORK`); the runtime
-  Settings switch still works.
+- `production` builds **mainnet** (`sapphire_mainnet` Web3Auth); `preview` builds
+  **signet** (`sapphire_devnet`). The runtime Settings switch still flips the
+  market/API network, but NOT the Web3Auth project — so a signet session inside a
+  production build derives from the mainnet key and will not match
+  signet.horizon.market.
 - `submit.production.ios.ascAppId` points at the existing App Store Connect app, so
   `eas submit` never tries to re-create it (creation fails on a fresh org account
   with a `companyName` error).
 - `EXPO_PUBLIC_WEB3AUTH_CLIENT_ID` and `EXPO_PUBLIC_USERMAVEN_API_KEY` are **not**
-  committed — they're EAS environment variables (production + preview). Only
-  non-secret toggles live in `eas.json`.
+  committed — they're EAS environment variables. Only non-secret toggles live in
+  `eas.json`. The client id is registered **twice**, once per environment: the
+  mainnet project on `production`, the devnet one on `preview` (`eas env:list
+  production`).
 
 Two build-specific details also matter:
 
