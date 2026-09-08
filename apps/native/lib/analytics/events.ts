@@ -179,6 +179,34 @@ export function trackNetworkSwitched(from: string, to: string): void {
   );
 }
 
+/** The "Delete account" form was opened from Settings. */
+export function trackAccountDeletionOpened(props: {
+  connected: boolean;
+}): void {
+  void track(
+    "account_deletion_opened",
+    withPlatform(SURFACE.settings, { connected: props.connected }),
+  );
+}
+
+/**
+ * A deletion request was accepted. Deliberately carries neither the email nor
+ * the addresses it named — this is a count of requests, and the request itself
+ * already lives in the admin queue.
+ */
+export function trackAccountDeletionRequested(props: {
+  duplicate: boolean;
+  verified: boolean | null;
+}): void {
+  void track(
+    "account_deletion_requested",
+    withPlatform(SURFACE.settings, {
+      duplicate: props.duplicate,
+      verified: props.verified,
+    }),
+  );
+}
+
 // ---- Profile --------------------------------------------------------------
 
 export function trackProfileSaved(props: {
@@ -212,6 +240,34 @@ export function trackTokenViewed(props: {
   void track(
     "token_viewed",
     withPlatform(SURFACE.token, { protocol: props.protocol, from: props.from }),
+  );
+}
+
+/** The token page's Report control was tapped and the form opened. */
+export function trackTokenReportOpened(props: { protocol: string }): void {
+  void track(
+    "token_report_opened",
+    withPlatform(SURFACE.token, { protocol: props.protocol }),
+  );
+}
+
+/**
+ * A report was accepted. The server logs its own `listing_reported` with the
+ * swap and reason; this is the client-side half, so the funnel from "opened
+ * the form" to "sent it" is measurable per platform.
+ */
+export function trackTokenReportSubmitted(props: {
+  protocol: string;
+  reason: string;
+  duplicate: boolean;
+}): void {
+  void track(
+    "token_report_submitted",
+    withPlatform(SURFACE.token, {
+      protocol: props.protocol,
+      reason: props.reason,
+      duplicate: props.duplicate,
+    }),
   );
 }
 

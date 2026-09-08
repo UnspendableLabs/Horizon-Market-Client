@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.1] - 2026-09-08
+
+**What an app store asks for.** Two endpoints the mobile app needed before it
+could ship: a way to report a listing, and a way to ask for an account to be
+deleted. Neither is a trading feature — both are conditions of being in a store
+at all (guidelines 1.2 and 5.1.1(v)) — and this release is the client half of
+each, plus the screens that use them in the native example.
+
+### Added
+
+- **Listing reports.** `client.reportListing({ atomicSwapId, reason, details? })`
+  files a report with Horizon Market's moderators
+  (UnspendableLabs/Horizon-Market#1185, `POST /api/reports`); session-gated, and
+  a replay from the same account answers `duplicate: true` rather than failing.
+  A report names a *listing* — the one key every asset type shares — so
+  `client.findReportableListingId(query)` resolves a token to one of its swaps
+  (open, else sold, else delisted; `null` when it was never listed) and
+  `reportableListingQueryFor(token)` builds that query from a `TokenDetail`.
+  `LISTING_REPORT_REASONS` / `LISTING_REPORT_REASON_LABELS` are the reason
+  catalogue a form offers. React: `useReportListing({ target })`, with
+  `canReport` mirroring the wallet sign-in and an `"unlisted"` outcome distinct
+  from `"error"`.
+- **Account deletion requests.** `client.requestAccountDeletion({ email?,
+  addresses?, message? })` asks for an account and the data attached to it to be
+  deleted (UnspendableLabs/Horizon-Market#1192, `POST
+  /api/account-deletion-requests`). Deliberately *not* session-gated — App Store
+  guideline 5.1.1(v) requires the option to work for someone who can no longer
+  sign in — so the request names the account by email and/or connected
+  addresses and an admin matches it to a user before anything is deleted. The
+  bearer token still rides along when there is one: a request whose identity the
+  session owns arrives *proven*, which is what lets it take over one somebody
+  else filed for the same identity. Asking twice answers `duplicate: true`
+  rather than failing. `parseAccountDeletionAddresses(raw)` splits a free-text
+  address field; `ACCOUNT_DELETION_MESSAGE_MAX_LENGTH` /
+  `ACCOUNT_DELETION_MAX_ADDRESSES` are the server's limits. React:
+  `useAccountDeletion()`, which names the connected wallet's addresses by
+  default and separates an `"invalid"` empty request from an `"error"`.
+- **Native example: Delete account in Settings.** An **Account** section on the
+  Settings tab opens a form (what deletion does, email, other addresses, an
+  optional message) behind a second confirm step. It works with no wallet
+  connected, which is the case the flow exists for; connected, the wallet's
+  addresses are named for it and the request arrives proven.
+- **Native example: Report on the token page.** A **Report** control under the
+  token's name opens a reason + details form (App Store guideline 1.2). With no
+  wallet it points at the Wallet tab's sign-in; while the sign-in lands it
+  waits, as `/profile` does.
+
 ## [0.3.0] - 2026-08-14
 
 **Creating a token.** Every surface this client has ever had reads or trades what
@@ -332,6 +381,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.11...v0.3.0
 [0.2.11]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.9...v0.2.10

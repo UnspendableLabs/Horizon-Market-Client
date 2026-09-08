@@ -356,6 +356,108 @@ export interface ConfirmDelistResult {
   signature: string | null;
 }
 
+// ─── Listing reports (content moderation) ─────────────────────────────────────
+
+/**
+ * Why a listing is being reported — the server's closed set. Human-readable
+ * labels for each live in `LISTING_REPORT_REASON_LABELS`.
+ */
+export type ListingReportReason =
+  | "scam"
+  | "illegal"
+  | "sexual"
+  | "violence"
+  | "hate"
+  | "impersonation"
+  | "spam"
+  | "other";
+
+/** Params for `reportListing`. */
+export interface ReportListingParams {
+  /**
+   * The listing's atomic-swap `id` — the same `id` every `listSwaps()` item
+   * carries. It is the one identifier that works for every listing type: a
+   * Kontor NFT has no asset name, and an ordinal's asset name is its inscription
+   * id. Any swap the server has ever stored is reportable, open or not.
+   */
+  atomicSwapId: string;
+  reason: ListingReportReason;
+  /** Optional free-text context, at most 2000 characters. */
+  details?: string;
+}
+
+/** Result of `reportListing`. */
+export interface ListingReport {
+  /** The report's id, or `null` on a replay (the server does not re-issue it). */
+  id: string | null;
+  status: "pending";
+  atomicSwapId: string;
+  /**
+   * `true` when this account had already reported this listing: the original
+   * report stands and nothing was added. Not an error — the outcome the reporter
+   * asked for is in place either way.
+   */
+  duplicate: boolean;
+}
+
+// ─── Account deletion (App Store guideline 5.1.1(v)) ─────────────────────────
+
+/** Params for `requestAccountDeletion`. At least one of `email` / `addresses`. */
+export interface AccountDeletionRequestParams {
+  /** The email the account signs in with, if any. */
+  email?: string;
+  /**
+   * Bitcoin addresses the account connected. Deduplicated and case-folded by
+   * the server, which accepts at most
+   * {@link ACCOUNT_DELETION_MAX_ADDRESSES} of them.
+   */
+  addresses?: string[];
+  /**
+   * Free text for the admin who handles the request — at most
+   * {@link ACCOUNT_DELETION_MESSAGE_MAX_LENGTH} characters. Dropped once the
+   * request is resolved.
+   */
+  message?: string;
+}
+
+/** Result of `requestAccountDeletion`. */
+export interface AccountDeletionRequest {
+  /**
+   * The request's id, or `null` when this identity already had a pending
+   * request — the server does not re-issue the standing row's id.
+   */
+  id: string | null;
+  status: "pending";
+  /**
+   * `true` when a request for this identity was already pending. Not an error:
+   * the earlier request is the one in the queue, and it still stands. Worth
+   * saying out loud, though — the message just typed is not what an admin will
+   * read.
+   */
+  duplicate: boolean;
+  /**
+   * Whether the server could tie the request to the caller's own session, or
+   * `null` when it did not say (only the duplicate answer reports it). A
+   * verified request is the only kind that proves ownership; an unverified one
+   * is a support ticket a human has to match by hand.
+   */
+  verified: boolean | null;
+}
+
+/**
+ * What `findReportableListingId` narrows the feed to: the token whose listing
+ * is being reported. Mirrors the filter keys of {@link ListSwapsParams} that
+ * identify an asset — a Counterparty / ordinal / ZELD listing by `assetName`, a
+ * Kontor NFT by `kontorNftId`, KOR by `listingType: "kontor"` +
+ * `kontorAssetKind: "token"`.
+ */
+export interface ReportableListingQuery {
+  assetName?: string;
+  kontorNftId?: string;
+  listingType?: ListingType;
+  kontorAssetKind?: KontorAssetKind;
+}
+
 /** Query params for `listSwaps`. Unset booleans use server defaults. */
 export interface ListSwapsParams {
   assetName?: string;

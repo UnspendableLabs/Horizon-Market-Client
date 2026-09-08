@@ -20,6 +20,11 @@ import { requestBuyQuote as apiRequestBuyQuote } from "./api/buy-quotes.js";
 import { requestFeeQuote as apiRequestFeeQuote, type FeeQuoteParams } from "./api/fee-quotes.js";
 import { startDelist as apiStartDelist, confirmDelist as apiConfirmDelist } from "./api/delist.js";
 import {
+  reportListing as apiReportListing,
+  findReportableListingId as apiFindReportableListingId,
+} from "./api/reports.js";
+import { requestAccountDeletion as apiRequestAccountDeletion } from "./api/account-deletion.js";
+import {
   requestWalletChallenge as apiRequestWalletChallenge,
   completeWalletSignIn as apiCompleteWalletSignIn,
   walletSignInToken as apiWalletSignInToken,
@@ -162,6 +167,11 @@ import type {
   BuyQuote,
   BuyQuoteParams,
   ConfirmDelistResult,
+  AccountDeletionRequest,
+  AccountDeletionRequestParams,
+  ListingReport,
+  ReportableListingQuery,
+  ReportListingParams,
   CreateSwapResult,
   DelistRequest,
   FeeQuoteBtc,
@@ -1343,6 +1353,58 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<ConfirmDelistResult> {
     return apiConfirmDelist(this.http, requestId, signature, options);
+  }
+
+  // ─── Listing reports ─────────────────────────────────────────────────────────
+
+  /**
+   * Flag a listing for moderator review (`POST /api/reports`).
+   *
+   * **Session-gated** — `signInWithWallet()` first — so the reporter is
+   * identifiable. A replay from the same account is not an error: the result
+   * carries `duplicate: true` and the original report stands.
+   */
+  reportListing(
+    params: ReportListingParams,
+    options?: RequestOptions,
+  ): Promise<ListingReport> {
+    return apiReportListing(this.http, params, options);
+  }
+
+  /**
+   * The atomic-swap id to report when the user is looking at a *token* rather
+   * than a listing: its first open offer, else a completed sale, else a
+   * delisted offer — `null` if the token was never listed. Hand a
+   * `TokenDetail`'s `offers.atomicSwapsQuery` keys through
+   * {@link ReportableListingQuery}, then pass the id to {@link reportListing}.
+   */
+  findReportableListingId(
+    query: ReportableListingQuery,
+    options?: RequestOptions,
+  ): Promise<string | null> {
+    return apiFindReportableListingId(this.http, query, options);
+  }
+
+  // ─── Account deletion ────────────────────────────────────────────────────────
+
+  /**
+   * Ask for an account to be deleted (`POST /api/account-deletion-requests`).
+   *
+   * **Not session-gated** — App Store guideline 5.1.1(v) wants the option to
+   * work for someone who can no longer sign in — so the request names the
+   * account by email and/or the addresses it connected, and an admin matches it
+   * to a user before anything is deleted. Sign in first when you can:
+   * a request whose identity the session owns is recorded as proven, which is
+   * what lets it take over one somebody else filed for the same identity.
+   *
+   * Asking twice is not an error: the result carries `duplicate: true` and the
+   * standing request keeps its place in the queue.
+   */
+  requestAccountDeletion(
+    params: AccountDeletionRequestParams,
+    options?: RequestOptions,
+  ): Promise<AccountDeletionRequest> {
+    return apiRequestAccountDeletion(this.http, params, options);
   }
 
   // ─── Workflow methods ────────────────────────────────────────────────────────
