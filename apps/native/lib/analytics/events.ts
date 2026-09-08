@@ -179,6 +179,34 @@ export function trackNetworkSwitched(from: string, to: string): void {
   );
 }
 
+/** The "Delete account" form was opened from Settings. */
+export function trackAccountDeletionOpened(props: {
+  connected: boolean;
+}): void {
+  void track(
+    "account_deletion_opened",
+    withPlatform(SURFACE.settings, { connected: props.connected }),
+  );
+}
+
+/**
+ * A deletion request was accepted. Deliberately carries neither the email nor
+ * the addresses it named — this is a count of requests, and the request itself
+ * already lives in the admin queue.
+ */
+export function trackAccountDeletionRequested(props: {
+  duplicate: boolean;
+  verified: boolean | null;
+}): void {
+  void track(
+    "account_deletion_requested",
+    withPlatform(SURFACE.settings, {
+      duplicate: props.duplicate,
+      verified: props.verified,
+    }),
+  );
+}
+
 // ---- Profile --------------------------------------------------------------
 
 export function trackProfileSaved(props: {

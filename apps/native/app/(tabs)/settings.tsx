@@ -12,6 +12,7 @@ import Svg, { Path } from "react-native-svg";
 import { NETWORKS, type UiNetwork } from "../../lib/networks.js";
 import { useNetwork } from "../../lib/network-context.js";
 import { DerivationSettings } from "../../components/DerivationSettings.js";
+import { DeleteAccount } from "../../components/DeleteAccount.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
 import {
   hasAnalyticsConsent,
@@ -148,6 +149,9 @@ export default function SettingsScreen() {
           </View>
         </View>
       </View>
+
+      {/* Account: the App Store's required in-app account-deletion path */}
+      <DeleteAccount />
 
       {/* About: legal links + socials + copyright (from the old footer) */}
       <View style={styles.section}>

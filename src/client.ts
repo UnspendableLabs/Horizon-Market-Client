@@ -23,6 +23,7 @@ import {
   reportListing as apiReportListing,
   findReportableListingId as apiFindReportableListingId,
 } from "./api/reports.js";
+import { requestAccountDeletion as apiRequestAccountDeletion } from "./api/account-deletion.js";
 import {
   requestWalletChallenge as apiRequestWalletChallenge,
   completeWalletSignIn as apiCompleteWalletSignIn,
@@ -166,6 +167,8 @@ import type {
   BuyQuote,
   BuyQuoteParams,
   ConfirmDelistResult,
+  AccountDeletionRequest,
+  AccountDeletionRequestParams,
   ListingReport,
   ReportableListingQuery,
   ReportListingParams,
@@ -1380,6 +1383,28 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<string | null> {
     return apiFindReportableListingId(this.http, query, options);
+  }
+
+  // ─── Account deletion ────────────────────────────────────────────────────────
+
+  /**
+   * Ask for an account to be deleted (`POST /api/account-deletion-requests`).
+   *
+   * **Not session-gated** — App Store guideline 5.1.1(v) wants the option to
+   * work for someone who can no longer sign in — so the request names the
+   * account by email and/or the addresses it connected, and an admin matches it
+   * to a user before anything is deleted. Sign in first when you can:
+   * a request whose identity the session owns is recorded as proven, which is
+   * what lets it take over one somebody else filed for the same identity.
+   *
+   * Asking twice is not an error: the result carries `duplicate: true` and the
+   * standing request keeps its place in the queue.
+   */
+  requestAccountDeletion(
+    params: AccountDeletionRequestParams,
+    options?: RequestOptions,
+  ): Promise<AccountDeletionRequest> {
+    return apiRequestAccountDeletion(this.http, params, options);
   }
 
   // ─── Workflow methods ────────────────────────────────────────────────────────

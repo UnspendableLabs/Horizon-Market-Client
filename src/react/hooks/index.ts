@@ -109,3 +109,9 @@ export type {
   UseReportListingOptions,
   UseReportListingResult,
 } from "./useReportListing.js";
+export { useAccountDeletion } from "./useAccountDeletion.js";
+export type {
+  AccountDeletionStatus,
+  UseAccountDeletionOptions,
+  UseAccountDeletionResult,
+} from "./useAccountDeletion.js";
