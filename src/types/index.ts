@@ -400,6 +400,50 @@ export interface ListingReport {
   duplicate: boolean;
 }
 
+// ─── Account deletion (App Store guideline 5.1.1(v)) ─────────────────────────
+
+/** Params for `requestAccountDeletion`. At least one of `email` / `addresses`. */
+export interface AccountDeletionRequestParams {
+  /** The email the account signs in with, if any. */
+  email?: string;
+  /**
+   * Bitcoin addresses the account connected. Deduplicated and case-folded by
+   * the server, which accepts at most
+   * {@link ACCOUNT_DELETION_MAX_ADDRESSES} of them.
+   */
+  addresses?: string[];
+  /**
+   * Free text for the admin who handles the request — at most
+   * {@link ACCOUNT_DELETION_MESSAGE_MAX_LENGTH} characters. Dropped once the
+   * request is resolved.
+   */
+  message?: string;
+}
+
+/** Result of `requestAccountDeletion`. */
+export interface AccountDeletionRequest {
+  /**
+   * The request's id, or `null` when this identity already had a pending
+   * request — the server does not re-issue the standing row's id.
+   */
+  id: string | null;
+  status: "pending";
+  /**
+   * `true` when a request for this identity was already pending. Not an error:
+   * the earlier request is the one in the queue, and it still stands. Worth
+   * saying out loud, though — the message just typed is not what an admin will
+   * read.
+   */
+  duplicate: boolean;
+  /**
+   * Whether the server could tie the request to the caller's own session, or
+   * `null` when it did not say (only the duplicate answer reports it). A
+   * verified request is the only kind that proves ownership; an unverified one
+   * is a support ticket a human has to match by hand.
+   */
+  verified: boolean | null;
+}
+
 /**
  * What `findReportableListingId` narrows the feed to: the token whose listing
  * is being reported. Mirrors the filter keys of {@link ListSwapsParams} that

@@ -36,6 +36,7 @@ export {
   useProfileWallets,
   useKontorFaucet,
   useReportListing,
+  useAccountDeletion,
   usePrices,
   useFeeEstimates,
   SORT_OPTIONS,
@@ -78,6 +79,9 @@ export type {
   ReportListingTarget,
   UseReportListingOptions,
   UseReportListingResult,
+  AccountDeletionStatus,
+  UseAccountDeletionOptions,
+  UseAccountDeletionResult,
   UsePricesResult,
   FeeEstimates,
   UseFeeEstimatesResult,
@@ -280,6 +284,17 @@ export type {
   ListingReportReason,
   ReportableListingQuery,
   ReportListingParams,
+} from "../types/index.js";
+// Account deletion (App Store guideline 5.1.1(v)): the server limits a
+// deletion form has to respect, and the parser for its free-text address field.
+export {
+  parseAccountDeletionAddresses,
+  ACCOUNT_DELETION_MESSAGE_MAX_LENGTH,
+  ACCOUNT_DELETION_MAX_ADDRESSES,
+} from "../api/account-deletion.js";
+export type {
+  AccountDeletionRequest,
+  AccountDeletionRequestParams,
 } from "../types/index.js";
 export type {
   KontorPreflightTarget,

@@ -86,6 +86,15 @@ export {
   LISTING_REPORT_REASON_LABELS,
   LISTING_REPORT_DETAILS_MAX_LENGTH,
 } from "./api/reports.js";
+// Account deletion (App Store guideline 5.1.1(v)) — the bare wire call behind
+// `client.requestAccountDeletion()`, its server limits, and the free-text
+// address parser a deletion form needs.
+export {
+  requestAccountDeletion,
+  parseAccountDeletionAddresses,
+  ACCOUNT_DELETION_MESSAGE_MAX_LENGTH,
+  ACCOUNT_DELETION_MAX_ADDRESSES,
+} from "./api/account-deletion.js";
 export type {
   PsbtSellOrderParams,
   SellBroadcastTx,
@@ -128,6 +137,8 @@ export type { Keystore } from "./crypto/keystore.js";
 
 // Domain types
 export type {
+  AccountDeletionRequest,
+  AccountDeletionRequestParams,
   AtomicSwap,
   AssetNameSearchResult,
   AtomicSwapCreateRequest,

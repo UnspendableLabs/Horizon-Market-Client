@@ -136,6 +136,7 @@ function App() {
 | `useProfile`, `useProfileWallets` | The account's Horizon Market profile: load, edit username / bio / visibility, upload an avatar, publish or hide each linked wallet. Idle until the wallet sign-in lands (the whole surface is session-gated) |
 | `useToken`, `useTokenChart`, `useTokenActivity`, `useTokenSearch`, `useTokenList` | One token's detail payload, price series and sales, a debounced cross-protocol autocomplete, and a paged browse grid. Protocol-blind: the same hooks serve all five asset types (see [Tokens](#tokens)) |
 | `useReportListing` | Report a listing — or a token, resolved to one of its listings — for moderator review. `canReport` mirrors the wallet sign-in; a never-listed token ends in `"unlisted"` rather than an error. `LISTING_REPORT_REASONS` / `LISTING_REPORT_REASON_LABELS` are the form's options |
+| `useAccountDeletion` | Ask for the account to be deleted (App Store guideline 5.1.1(v)). Files a *request* a human acts on, not a delete. Names the connected wallet's addresses by default, and works with no wallet at all — the case it exists for |
 | `useKontorFaucet` | The signet KOR faucet — how a wallet with no KOR gets the gas every Kontor op needs. `available` is false off signet; plain HTTP, no `@kontor/sdk` behind it |
 | `korCostForGas`, `maxListableKor`, `detachGasLimitFromBlob` | Kontor gas pricing — pure arithmetic, no `@kontor/sdk` behind it, so a WASM-free bundle can still show what an op costs |
 | `LoginPanel` | Email + Web3Auth-style `getPrivateKey` flow |
@@ -498,6 +499,30 @@ so the reporter is identifiable; a replay from the same account is not an error.
 In React, `useReportListing({ target })` wraps both — `target` is a swap id or
 the query — and the native example app puts a **Report** control under every
 token's name.
+
+### Account deletion
+
+`POST /api/account-deletion-requests` — the in-app "delete my account" Apple
+requires (App Store guideline 5.1.1(v)). **Not session-gated**, deliberately:
+the option has to work for someone who can no longer sign in, so the request
+names the account by email and/or the addresses it connected and an admin
+matches it to a user before anything is deleted. Nothing is deleted by this
+call.
+
+- `requestAccountDeletion({ email?, addresses?, message? }, options?)` — `AccountDeletionRequest`. At least one of `email` / `addresses`; `duplicate: true` when a request for this identity was already pending, and the standing one keeps its place in the queue
+- `parseAccountDeletionAddresses(raw)` — split a free-text address field (one per line, or comma/semicolon separated) into that list
+- `ACCOUNT_DELETION_MESSAGE_MAX_LENGTH`, `ACCOUNT_DELETION_MAX_ADDRESSES` — the server's limits
+
+Sign in first when you can. The bearer token rides along, and a request whose
+identity the session owns is recorded as *proven* — which is what lets a real
+owner's request take over one a stranger filed for the same identity. Signing in
+as somebody else proves nothing, and the server checks.
+
+In React, `useAccountDeletion()` wraps it: `walletAddresses` are the addresses it
+will name, `canProveOwnership` says whether the request will arrive proven, and
+an empty request lands in `"invalid"` rather than `"error"` — a field to fill in,
+not a button to press again. The native example app puts it under **Account** on
+the Settings tab, behind a confirm step.
 
 ### Tokens
 
