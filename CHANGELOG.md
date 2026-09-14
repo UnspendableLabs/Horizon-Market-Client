@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Native example: iPhone only.** `ios.supportsTablet` is now `false`, so the
+  App Store build targets iPhone alone. With iPad in the device family, App
+  Store Connect would not accept a submission without 13-inch iPad screenshots,
+  and App Review would test the app on an iPad, where the portrait phone layout
+  was never designed to run. iPads can still install it in iPhone compatibility
+  mode. Dropping a device family is only allowed before an app's first public
+  release, which is why this happens now.
+
 ## [0.3.1] - 2026-09-08
 
 **What an app store asks for.** Two endpoints the mobile app needed before it
