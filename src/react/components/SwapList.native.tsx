@@ -49,7 +49,15 @@ export interface SwapListStyles {
   confirmation?: SwapConfirmationStyles;
 }
 
-export interface SwapListProps extends UseSwapListOptions {
+/**
+ * `defaultGroupBy` is deliberately omitted from {@link UseSwapListOptions}
+ * here: this component renders the flat grid only. Left in, it would typecheck
+ * and then quietly degrade — one representative listing per token, with no
+ * offer count and no floor price, under a pagination footer counting tokens.
+ * A grouped grid is a different renderer; drive it from `useSwapList` directly.
+ */
+export interface SwapListProps
+  extends Omit<UseSwapListOptions, "defaultGroupBy"> {
   /**
    * Platform-specific function to obtain the wallet private key.
    * Required for the login modal shown when an unauthenticated user clicks Buy.

@@ -16,6 +16,12 @@ export type SwapListOrder = "asc" | "desc";
  *
  * A union of one for now — it is the axis, not the only conceivable value, and
  * naming it keeps `groupBy: true`-style booleans out of the public API.
+ *
+ * Adding a second value takes two changes beyond this line, because today the
+ * axis is implied by the endpoint rather than sent: `ListSwapGroupsParams` needs
+ * a group-by field and `appendSwapListParams` needs to emit it, or every axis
+ * issues a byte-identical request and the UI reports a grouping the server
+ * never applied. (`useSwapList` already re-fetches on an axis change.)
  */
 export type SwapGroupBy = "asset";
 

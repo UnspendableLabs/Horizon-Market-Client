@@ -31,7 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Sorting applies to the group: `created_at` ranks a token by its newest offer
   descending and its oldest ascending, while the price sorts rank it by its
-  floor. `total` and pagination count tokens, not listings.
+  floor. `total` and pagination count tokens, not listings. Facet counts stay
+  per listing in both shapes — the facets endpoint rolls up offers — so label
+  them as offers rather than next to a token `total`. The bundled `SwapList`
+  renders the flat grid only and does not accept `defaultGroupBy`; a grouped
+  grid is its own renderer over `useSwapList`.
 
 ### Changed
 

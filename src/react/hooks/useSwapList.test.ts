@@ -1676,4 +1676,107 @@ describe("useSwapList — grouped browse feed", () => {
       }),
     );
   });
+
+  it("removeSwap drops the tile from groups and swaps alike", async () => {
+    const listSwapGroups = vi.fn().mockResolvedValue(
+      groupsResult(
+        [
+          group("counterparty:A", swap({ id: "a" })),
+          group("counterparty:B", swap({ id: "b" })),
+        ],
+        2,
+      ),
+    );
+    ctxRef.current = ctxWithGroups(vi.fn(), listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+    expect(result.current.total).toBe(2);
+
+    // A buy on the floor listing of token A. `swaps` carries the groups'
+    // representatives index for index, so pruning one array without the other
+    // would leave the grid showing a tile for a listing already bought.
+    act(() => result.current.removeSwap("a"));
+
+    await waitFor(() => expect(result.current.groups).toHaveLength(1));
+    expect(result.current.groups?.map((g) => g.key)).toEqual(["counterparty:B"]);
+    expect(result.current.swaps.map((s) => s.id)).toEqual(["b"]);
+    // One token left the feed, so the token count moves by one.
+    expect(result.current.total).toBe(1);
+  });
+
+  it("reports grouped only once a grouped result is in hand", async () => {
+    let release: (v: unknown) => void = () => {};
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.setGroupBy("asset"));
+    await waitFor(() => expect(listSwapGroups).toHaveBeenCalled());
+
+    // Mid-flight the intent has moved but the data has not. `grouped` must
+    // follow the data, or `grouped ? groups.map(…) : swaps.map(…)` — the
+    // natural way to read this pair — dereferences null for a frame.
+    expect(result.current.grouped).toBe(false);
+    expect(result.current.groups).toBeNull();
+    // The requested axis is still what the toggle should render as selected.
+    expect(result.current.groupBy).toBe("asset");
+
+    await act(async () => {
+      release(groupsResult([group("counterparty:A", swap({ id: "a" }))]));
+    });
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+    expect(result.current.groups).toHaveLength(1);
+  });
+
+  it("does not resurface groups from before a failed flat round trip", async () => {
+    let release: (v: unknown) => void = () => {};
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValueOnce(
+        groupsResult([group("counterparty:STALE", swap({ id: "a" }))]),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+    const listSwaps = vi.fn().mockRejectedValue(new Error("flat fetch failed"));
+    ctxRef.current = makeCtx({
+      client: { listSwaps, listSwapGroups } as unknown as Client,
+      addresses: { p2wpkh: "bc1qme", p2tr: "bc1pme", publicKey: "02ab" },
+    });
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    // The flat fetch fails, so its success path — once the only place that
+    // cleared `groups` — never runs.
+    act(() => result.current.setShowMySwaps(true));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    act(() => result.current.setShowMySwaps(false));
+    await waitFor(() => expect(listSwapGroups).toHaveBeenCalledTimes(2));
+
+    // Groups from before the round trip must not be served as the current feed
+    // while the real grouped fetch is still in flight.
+    expect(result.current.groups).toBeNull();
+    expect(result.current.grouped).toBe(false);
+
+    await act(async () => {
+      release(groupsResult([group("counterparty:FRESH", swap({ id: "b" }))]));
+    });
+    await waitFor(() =>
+      expect(result.current.groups?.[0]?.key).toBe("counterparty:FRESH"),
+    );
+  });
 });

@@ -267,9 +267,14 @@ function mapSwapGroup(wire: WireSwapGroup): SwapGroup {
 }
 
 /**
- * Append the filter params shared by `listSwaps` and `getSwapFacets` to a query
- * string (everything that narrows the result set — not pagination, sort, or the
+ * Append the filter params shared by every swap query to a query string
+ * (everything that narrows the result set — not pagination, sort, or the
  * address-scoping params that only `listSwaps` understands).
+ *
+ * Called by `appendSwapListParams` (and so by BOTH `listSwaps` and
+ * `listSwapGroups`) and by `getSwapFacets`: a filter added here reaches
+ * `/api/atomic-swaps`, `/api/atomic-swaps/groups` and `/api/atomic-swaps/facets`
+ * alike.
  */
 function appendSwapFilterParams(
   qs: URLSearchParams,

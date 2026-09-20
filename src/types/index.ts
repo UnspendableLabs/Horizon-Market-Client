@@ -224,7 +224,11 @@ export interface SwapGroup {
 export type ListSwapGroupsParams = Omit<ListSwapsParams, "pendingAddress">;
 
 export interface ListSwapGroupsResult {
-  /** Total matching **tokens**, not listings. */
+  /**
+   * Total matching **tokens**, not listings. Identical to `pagination.total`,
+   * which is the one to page on — mirrors {@link ListSwapsResult}, where the
+   * same number is returned under both names.
+   */
   count: number;
   groups: SwapGroup[];
   pagination: Pagination;

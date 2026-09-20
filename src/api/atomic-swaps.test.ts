@@ -719,8 +719,11 @@ describe("listSwapGroups", () => {
     });
     const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
 
+    // Hand it the very key the type omits — anything less asserts nothing,
+    // since a query string cannot contain a param that was never supplied.
     await listSwapGroups(http, {
       assetName: "RAREPEPE",
+      pendingAddress: "bc1qexamplependingaddress",
     } as Parameters<typeof listSwapGroups>[1]);
 
     const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
