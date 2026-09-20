@@ -123,6 +123,16 @@ export interface UseSwapListOptions {
   /** Initial collection-slug filter. Null (default) = all collections. */
   defaultCollection?: string | null;
   /**
+   * Initial token filter, as a canonical id ({@link SwapGroup.key} /
+   * {@link AssetFacet.key}). Null (default) = every token.
+   *
+   * Settable, unlike {@link assetName}: this is the dimension a faceted sidebar
+   * drives, and the jump a grouped tile's "N offers" performs — both of which
+   * have to narrow the feed *in place*, keeping the sort, the price range and
+   * the sidebar itself, rather than navigating to a pinned view.
+   */
+  defaultAssetKey?: string | null;
+  /**
    * Start the browse feed aggregated by token ({@link SwapGroupBy}) instead of
    * listing every offer separately. Null (the default) keeps the flat feed, so
    * a client that does not opt in behaves exactly as before.
@@ -245,6 +255,21 @@ export interface UseSwapListResult {
    */
   groupBy: SwapGroupBy | null;
   setGroupBy: (g: SwapGroupBy | null) => void;
+  /**
+   * Active token filter as a canonical id, or null for every token. Pair with
+   * {@link SwapFacets.asset}, whose rows carry the keys to pass to
+   * {@link setAssetKey}.
+   */
+  assetKey: string | null;
+  /**
+   * Narrow the feed to one token (null clears it) and reset to the first page.
+   *
+   * Selecting a token also turns grouping off for as long as it is set: a
+   * grouped grid of one token is one tile, and asking for a token's offers is
+   * precisely asking to see them individually. Clearing it restores whatever
+   * {@link groupBy} was.
+   */
+  setAssetKey: (key: string | null) => void;
   /** Active collection-slug filter, or null for all collections. */
   collection: string | null;
   /** Set the collection-slug filter (null clears it) and reset to the first page. */
@@ -327,6 +352,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultPriceMin = null,
     defaultPriceMax = null,
     defaultCollection = null,
+    defaultAssetKey = null,
     defaultGroupBy = null,
     limit = DEFAULT_LIMIT,
     includePendingOrders = false,
@@ -358,6 +384,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [collection, setCollectionState] = useState<string | null>(
     defaultCollection,
   );
+  const [assetKey, setAssetKeyState] = useState<string | null>(defaultAssetKey);
   const [groupBy, setGroupByState] = useState<SwapGroupBy | null>(
     defaultGroupBy,
   );
@@ -419,7 +446,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   // than about tokens, and both have fetch paths (multi-address merge, seller
   // scoping) that no per-token aggregate replaces — so either one suspends
   // grouping while it is on, without disturbing `groupBy` itself.
-  const isGrouped = groupBy !== null && !showMySwaps && !showSold;
+  const isGrouped =
+    groupBy !== null && !showMySwaps && !showSold && assetKey === null;
 
   // The one rule for "can a user actually take this listing": no buy already
   // settling in a mempool, no anomaly flag, and not bought/delisted earlier in
@@ -471,6 +499,11 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
   const setCollection = useCallback((slug: string | null) => {
     setCollectionState(slug);
+    setPageState(0);
+  }, []);
+
+  const setAssetKey = useCallback((key: string | null) => {
+    setAssetKeyState(key);
     setPageState(0);
   }, []);
 
@@ -568,6 +601,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       assetName,
       kontorNftId,
       kontorAssetKind,
+      assetKey: assetKey ?? undefined,
       listingType: listingType ?? undefined,
       priceMin: priceMin ?? undefined,
       priceMax: priceMax ?? undefined,
@@ -719,6 +753,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     priceMin,
     priceMax,
     collection,
+    assetKey,
     isGrouped,
     // `groupBy` rides along with `isGrouped` so that widening SwapGroupBy past
     // its single value re-runs the fetch on an axis change. Sending the axis is
@@ -755,6 +790,10 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       priceMin: priceMin ?? undefined,
       priceMax: priceMax ?? undefined,
       collection: collection ?? undefined,
+      // Sent so the OTHER dimensions are counted for the selected token; the
+      // asset dimension itself is counted excluding it, server-side, so its
+      // sibling rows keep clickable counts while one is active.
+      assetKey: assetKey ?? undefined,
     };
     const facetParams: SwapFacetsParams = showSold
       ? { ...facetFilters, sales: true }
@@ -780,6 +819,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     priceMin,
     priceMax,
     collection,
+    assetKey,
     refreshKey,
   ]);
 
@@ -992,6 +1032,8 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     grouped: groupedResult,
     groupBy,
     setGroupBy,
+    assetKey,
+    setAssetKey,
     collection,
     setCollection,
     facets,
