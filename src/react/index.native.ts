@@ -89,6 +89,7 @@ export type {
   SwapListOrder,
   SwapListingType,
   SortOption,
+  SwapGroupBy,
   UseSwapListOptions,
   UseSwapListResult,
   UseProfileResult,

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Grouped buy feed: one tile per token, not per listing.** New
+  `client.listSwapGroups()` and a `defaultGroupBy: "asset"` option on
+  `useSwapList()` return the marketplace aggregated by token — each
+  `SwapGroup` carrying its open-offer count, its floor prices
+  (`floorPrice`, `floorPricePerUnit`, `floorPricePerKor`) and the cheapest
+  listing itself in `swap`, so a tile renders and a buy opens without a second
+  request. A flat feed sorted by recency is dominated by whichever fungible
+  assets carry the most listings — XCP and ZELD crowd out every 1-of-1 — and a
+  grouped grid gives a token one tile whether it has one open offer or four
+  hundred. `key` is the canonical token id (`counterparty:RAREPEPE`,
+  `ordinals:<id>`, `zeld:ZELD`, `kontor:KOR`, `kontor-nft:<id>`), matching the
+  tokens API.
+
+  Grouping is opt-in and browse-only: without `defaultGroupBy` nothing changes
+  for existing clients, and while "My swaps" or "Sold" is on the hook falls back
+  to the flat feed (`grouped` reports which shape the current result is in)
+  without disturbing the requested `groupBy`. `swaps` stays populated in both
+  shapes — in grouped mode with the groups' representative listings, in order —
+  so buy/delist, `removeSwap` and `isItemMySwap` work unchanged either way.
+
+  Sorting applies to the group: `created_at` ranks a token by its newest offer
+  descending and its oldest ascending, while the price sorts rank it by its
+  floor. `total` and pagination count tokens, not listings. Facet counts stay
+  per listing in both shapes — the facets endpoint rolls up offers — so label
+  them as offers rather than next to a token `total`. The bundled `SwapList`
+  renders the flat grid only and does not accept `defaultGroupBy`; a grouped
+  grid is its own renderer over `useSwapList`.
+
 ### Changed
 
 - **Native example: iPhone only.** `ios.supportsTablet` is now `false`, so the

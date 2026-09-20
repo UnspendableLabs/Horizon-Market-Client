@@ -1497,3 +1497,286 @@ describe("useSwapList — facets", () => {
     expect(getSwapFacets.mock.calls.length).toBe(callsBefore);
   });
 });
+
+// ─── Grouped browse feed (`groupBy: "asset"`) ────────────────────────────────
+
+function group(
+  key: string,
+  representative: AtomicSwap,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    key,
+    listingType: representative.listingType,
+    offerCount: 3,
+    floorPrice: representative.price,
+    floorPricePerUnit: representative.pricePerUnit,
+    floorPricePerKor: null,
+    lastListedAt: representative.createdAt,
+    firstListedAt: representative.createdAt,
+    swap: representative,
+    ...overrides,
+  };
+}
+
+function groupsResult(
+  groups: ReturnType<typeof group>[],
+  total = groups.length,
+) {
+  return { count: total, groups, pagination: { total, offset: 0, limit: null } };
+}
+
+function ctxWithGroups(
+  listSwaps: ReturnType<typeof vi.fn>,
+  listSwapGroups: ReturnType<typeof vi.fn>,
+): HorizonMarketContextValue {
+  return makeCtx({
+    client: { listSwaps, listSwapGroups } as unknown as Client,
+  });
+}
+
+describe("useSwapList — grouped browse feed", () => {
+  it("does not group unless asked, so existing clients are untouched", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi.fn();
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(listSwapGroups).not.toHaveBeenCalled();
+    expect(listSwaps).toHaveBeenCalled();
+    expect(result.current.grouped).toBe(false);
+    expect(result.current.groups).toBeNull();
+  });
+
+  it("fetches groups and mirrors the representatives into `swaps`", async () => {
+    const a = swap({ id: "a", assetName: "RAREPEPE" });
+    const b = swap({ id: "b", assetName: "PEPECASH" });
+    const listSwapGroups = vi.fn().mockResolvedValue(
+      groupsResult([
+        group("counterparty:RAREPEPE", a, { offerCount: 412 }),
+        group("counterparty:PEPECASH", b, { offerCount: 1 }),
+      ], 57),
+    );
+    ctxRef.current = ctxWithGroups(vi.fn(), listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.grouped).toBe(true);
+    expect(result.current.groups?.map((g) => g.key)).toEqual([
+      "counterparty:RAREPEPE",
+      "counterparty:PEPECASH",
+    ]);
+    expect(result.current.groups?.[0].offerCount).toBe(412);
+    // `swaps` carries the representatives in group order, so buy/delist and
+    // isItemMySwap work in either shape.
+    expect(result.current.swaps.map((s) => s.id)).toEqual(["a", "b"]);
+    // The total counts tokens, not listings.
+    expect(result.current.total).toBe(57);
+  });
+
+  it("drops a group whose representative is not buyable, and adjusts the total", async () => {
+    const listSwapGroups = vi.fn().mockResolvedValue(
+      groupsResult(
+        [
+          group("counterparty:A", swap({ id: "a" })),
+          group("counterparty:B", swap({ id: "b", pending: true })),
+          group("counterparty:C", swap({ id: "c", anomalous: true })),
+        ],
+        30,
+      ),
+    );
+    ctxRef.current = ctxWithGroups(vi.fn(), listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.groups?.map((g) => g.key)).toEqual(["counterparty:A"]);
+    expect(result.current.total).toBe(28);
+  });
+
+  it("falls back to the flat feed for My swaps, keeping the requested grouping", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValue(groupsResult([group("counterparty:A", swap({ id: "a" }))]));
+    ctxRef.current = makeCtx({
+      client: { listSwaps, listSwapGroups } as unknown as Client,
+      addresses: { p2wpkh: "bc1qme", p2tr: "bc1pme", publicKey: "02ab" },
+    });
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    act(() => result.current.setShowMySwaps(true));
+    await waitFor(() => expect(result.current.grouped).toBe(false));
+
+    expect(listSwaps).toHaveBeenCalled();
+    expect(result.current.groups).toBeNull();
+    // The toggle itself is untouched, so turning "My swaps" back off restores
+    // the grid rather than silently resetting the control.
+    expect(result.current.groupBy).toBe("asset");
+
+    act(() => result.current.setShowMySwaps(false));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+  });
+
+  it("falls back to the flat feed for Sold", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValue(groupsResult([group("counterparty:A", swap({ id: "a" }))]));
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    act(() => result.current.setShowSold(true));
+    await waitFor(() => expect(result.current.grouped).toBe(false));
+    expect(listSwaps).toHaveBeenCalled();
+  });
+
+  it("resets to the first page when the grouping changes", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })], 500));
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValue(groupsResult([group("counterparty:A", swap({ id: "a" }))], 500));
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.setPage(3));
+    await waitFor(() => expect(result.current.page).toBe(3));
+
+    // Tokens and listings paginate over different things, so an offset carried
+    // across the switch would land on an unrelated page.
+    act(() => result.current.setGroupBy(null));
+    await waitFor(() => expect(result.current.page).toBe(0));
+    expect(result.current.grouped).toBe(false);
+  });
+
+  it("sends the same filters and sort as the flat feed", async () => {
+    const listSwapGroups = vi.fn().mockResolvedValue(groupsResult([]));
+    ctxRef.current = ctxWithGroups(vi.fn(), listSwapGroups);
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultGroupBy: "asset", defaultListingType: "ordinal" }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(listSwapGroups).toHaveBeenCalledWith(
+      expect.objectContaining({
+        listingType: "ordinal",
+        funded: true,
+        filled: false,
+        delisted: false,
+      }),
+    );
+  });
+
+  it("removeSwap drops the tile from groups and swaps alike", async () => {
+    const listSwapGroups = vi.fn().mockResolvedValue(
+      groupsResult(
+        [
+          group("counterparty:A", swap({ id: "a" })),
+          group("counterparty:B", swap({ id: "b" })),
+        ],
+        2,
+      ),
+    );
+    ctxRef.current = ctxWithGroups(vi.fn(), listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+    expect(result.current.total).toBe(2);
+
+    // A buy on the floor listing of token A. `swaps` carries the groups'
+    // representatives index for index, so pruning one array without the other
+    // would leave the grid showing a tile for a listing already bought.
+    act(() => result.current.removeSwap("a"));
+
+    await waitFor(() => expect(result.current.groups).toHaveLength(1));
+    expect(result.current.groups?.map((g) => g.key)).toEqual(["counterparty:B"]);
+    expect(result.current.swaps.map((s) => s.id)).toEqual(["b"]);
+    // One token left the feed, so the token count moves by one.
+    expect(result.current.total).toBe(1);
+  });
+
+  it("reports grouped only once a grouped result is in hand", async () => {
+    let release: (v: unknown) => void = () => {};
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.setGroupBy("asset"));
+    await waitFor(() => expect(listSwapGroups).toHaveBeenCalled());
+
+    // Mid-flight the intent has moved but the data has not. `grouped` must
+    // follow the data, or `grouped ? groups.map(…) : swaps.map(…)` — the
+    // natural way to read this pair — dereferences null for a frame.
+    expect(result.current.grouped).toBe(false);
+    expect(result.current.groups).toBeNull();
+    // The requested axis is still what the toggle should render as selected.
+    expect(result.current.groupBy).toBe("asset");
+
+    await act(async () => {
+      release(groupsResult([group("counterparty:A", swap({ id: "a" }))]));
+    });
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+    expect(result.current.groups).toHaveLength(1);
+  });
+
+  it("does not resurface groups from before a failed flat round trip", async () => {
+    let release: (v: unknown) => void = () => {};
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValueOnce(
+        groupsResult([group("counterparty:STALE", swap({ id: "a" }))]),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+    const listSwaps = vi.fn().mockRejectedValue(new Error("flat fetch failed"));
+    ctxRef.current = makeCtx({
+      client: { listSwaps, listSwapGroups } as unknown as Client,
+      addresses: { p2wpkh: "bc1qme", p2tr: "bc1pme", publicKey: "02ab" },
+    });
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    // The flat fetch fails, so its success path — once the only place that
+    // cleared `groups` — never runs.
+    act(() => result.current.setShowMySwaps(true));
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    act(() => result.current.setShowMySwaps(false));
+    await waitFor(() => expect(listSwapGroups).toHaveBeenCalledTimes(2));
+
+    // Groups from before the round trip must not be served as the current feed
+    // while the real grouped fetch is still in flight.
+    expect(result.current.groups).toBeNull();
+    expect(result.current.grouped).toBe(false);
+
+    await act(async () => {
+      release(groupsResult([group("counterparty:FRESH", swap({ id: "b" }))]));
+    });
+    await waitFor(() =>
+      expect(result.current.groups?.[0]?.key).toBe("counterparty:FRESH"),
+    );
+  });
+});

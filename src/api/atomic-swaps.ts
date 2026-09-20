@@ -15,6 +15,9 @@ import type {
   RequestOptions,
   SwapFacets,
   SwapFacetsParams,
+  SwapGroup,
+  ListSwapGroupsParams,
+  ListSwapGroupsResult,
   PriceBucketFacet,
   CollectionFacet,
 } from "../types/index.js";
@@ -88,6 +91,24 @@ interface WirePagination {
 interface WireListSwapsResult {
   count: number;
   atomic_swaps: WireAtomicSwap[];
+  pagination: WirePagination;
+}
+
+interface WireSwapGroup {
+  group_key: string;
+  listing_type: ListingType;
+  offer_count: number;
+  floor_price_sats: number | null;
+  floor_price_per_unit_sats: number | null;
+  floor_price_per_kor_sats: number | null;
+  last_listed_at: string;
+  first_listed_at: string;
+  swap: WireAtomicSwap;
+}
+
+interface WireListSwapGroupsResult {
+  count: number;
+  groups: WireSwapGroup[];
   pagination: WirePagination;
 }
 
@@ -231,10 +252,29 @@ function mapCollectionFacet(wire: WireCollectionFacet): CollectionFacet {
   return { slug: wire.slug, name: wire.name, count: wire.count };
 }
 
+function mapSwapGroup(wire: WireSwapGroup): SwapGroup {
+  return {
+    key: wire.group_key,
+    listingType: wire.listing_type,
+    offerCount: wire.offer_count,
+    floorPrice: wire.floor_price_sats,
+    floorPricePerUnit: wire.floor_price_per_unit_sats,
+    floorPricePerKor: wire.floor_price_per_kor_sats,
+    lastListedAt: wire.last_listed_at,
+    firstListedAt: wire.first_listed_at,
+    swap: mapAtomicSwap(wire.swap),
+  };
+}
+
 /**
- * Append the filter params shared by `listSwaps` and `getSwapFacets` to a query
- * string (everything that narrows the result set — not pagination, sort, or the
+ * Append the filter params shared by every swap query to a query string
+ * (everything that narrows the result set — not pagination, sort, or the
  * address-scoping params that only `listSwaps` understands).
+ *
+ * Called by `appendSwapListParams` (and so by BOTH `listSwaps` and
+ * `listSwapGroups`) and by `getSwapFacets`: a filter added here reaches
+ * `/api/atomic-swaps`, `/api/atomic-swaps/groups` and `/api/atomic-swaps/facets`
+ * alike.
  */
 function appendSwapFilterParams(
   qs: URLSearchParams,
@@ -260,12 +300,19 @@ function appendSwapFilterParams(
     qs.set("sales", params.sales ? "true" : "false");
 }
 
-export async function listSwaps(
-  http: HttpClient,
-  params: ListSwapsParams = {},
-  options?: RequestOptions,
-): Promise<ListSwapsResult> {
-  const qs = new URLSearchParams();
+/**
+ * Everything `/api/atomic-swaps` and `/api/atomic-swaps/groups` both accept:
+ * the listing-only filters, the shared filters, sort and pagination.
+ *
+ * Shared so the two endpoints cannot drift — a grouped tile and the listing
+ * page it links to have to describe the same set of offers. `pendingAddress` is
+ * deliberately **not** here: it decorates the listing feed and the groups
+ * endpoint rejects it.
+ */
+function appendSwapListParams(
+  qs: URLSearchParams,
+  params: ListSwapsParams | ListSwapGroupsParams,
+): void {
   if (params.assetName !== undefined) qs.set("asset_name", params.assetName);
   if (params.kontorNftId !== undefined)
     qs.set("kontor_nft_id", params.kontorNftId);
@@ -281,6 +328,20 @@ export async function listSwaps(
     qs.set("seller_address", params.sellerAddress);
   if (params.buyerAddress !== undefined)
     qs.set("buyer_address", params.buyerAddress);
+  appendSwapFilterParams(qs, params);
+  if (params.order !== undefined) qs.set("order", params.order);
+  if (params.orderBy !== undefined) qs.set("order_by", params.orderBy);
+  if (params.offset !== undefined) qs.set("offset", params.offset.toString());
+  if (params.limit !== undefined) qs.set("limit", params.limit.toString());
+}
+
+export async function listSwaps(
+  http: HttpClient,
+  params: ListSwapsParams = {},
+  options?: RequestOptions,
+): Promise<ListSwapsResult> {
+  const qs = new URLSearchParams();
+  appendSwapListParams(qs, params);
   if (params.pendingAddress !== undefined) {
     // The API accepts a comma-separated list; an order matching any address is
     // prioritized. Sending all of a wallet's addresses in one query avoids the
@@ -291,12 +352,6 @@ export async function listSwaps(
     if (pendingAddresses.length > 0)
       qs.set("pending_address", pendingAddresses.join(","));
   }
-  appendSwapFilterParams(qs, params);
-  if (params.order !== undefined) qs.set("order", params.order);
-  if (params.orderBy !== undefined) qs.set("order_by", params.orderBy);
-  if (params.offset !== undefined)
-    qs.set("offset", params.offset.toString());
-  if (params.limit !== undefined) qs.set("limit", params.limit.toString());
 
   const query = qs.toString();
   const path = query
@@ -313,6 +368,41 @@ export async function listSwaps(
   return {
     count: wire.count,
     atomicSwaps: wire.atomic_swaps.map(mapAtomicSwap),
+    pagination: mapPagination(wire.pagination),
+  };
+}
+
+/**
+ * The buy feed aggregated by token: one {@link SwapGroup} per token, carrying
+ * its offer count, its floor prices and the cheapest listing itself.
+ *
+ * Same filters as {@link listSwaps} (minus `pendingAddress`), so a grouped grid
+ * and a `listSwaps` call narrowed to one asset agree on which offers exist —
+ * which is what lets a tile link to that token's order book.
+ */
+export async function listSwapGroups(
+  http: HttpClient,
+  params: ListSwapGroupsParams = {},
+  options?: RequestOptions,
+): Promise<ListSwapGroupsResult> {
+  const qs = new URLSearchParams();
+  appendSwapListParams(qs, params);
+
+  const query = qs.toString();
+  const path = query
+    ? `/api/atomic-swaps/groups?${query}`
+    : "/api/atomic-swaps/groups";
+
+  const wire = await http.request<WireListSwapGroupsResult>(
+    "GET",
+    path,
+    undefined,
+    options?.signal,
+  );
+
+  return {
+    count: wire.count,
+    groups: wire.groups.map(mapSwapGroup),
     pagination: mapPagination(wire.pagination),
   };
 }
