@@ -263,6 +263,27 @@ export interface CollectionFacet {
  * dimension is counted excluding its *own* active selection — so sibling options
  * keep clickable, non-zero counts — while the other active filters still apply.
  */
+/**
+ * One token in {@link SwapFacets.asset} — a filterable row in a faceted
+ * sidebar, and the same token a grouped tile stands for.
+ */
+export interface AssetFacet {
+  /**
+   * Canonical token id (`counterparty:RAREPEPE`, `zeld:ZELD`, `kontor:KOR`, …)
+   * — identical to {@link SwapGroup.key}, and what to pass back as
+   * {@link ListSwapsParams.assetKey} to filter to this token.
+   */
+  key: string;
+  /**
+   * The token's asset name, or null for a token that has none (KOR). Present
+   * for labelling; `key` is what filters.
+   */
+  assetName: string | null;
+  listingType: ListingType;
+  /** Open offers on this token under the current filters. Always > 1. */
+  count: number;
+}
+
 export interface SwapFacets {
   /** Count of matching listings per listing type. */
   type: Record<ListingType, number>;
@@ -270,6 +291,15 @@ export interface SwapFacets {
   price: PriceBucketFacet[];
   /** Collections with at least one matching open listing, with counts. */
   collection: CollectionFacet[];
+  /**
+   * Tokens with **more than one** open offer, most offers first — the ones a
+   * grouped tile shows an "N offers" link for, so a sidebar can offer the same
+   * jump as a filter. Capped server-side.
+   *
+   * Single-offer tokens are excluded on purpose: such a tile already is its
+   * whole book, and including them would list every 1-of-1 inscription id.
+   */
+  asset: AssetFacet[];
 }
 
 /**
@@ -282,6 +312,7 @@ export type SwapFacetsParams = Pick<
   | "priceMin"
   | "priceMax"
   | "collection"
+  | "assetKey"
   | "search"
   | "sales"
   | "funded"
@@ -550,6 +581,16 @@ export interface ListSwapsParams {
    * only Counterparty listings can match. Combine with the other filters freely.
    */
   collection?: string;
+  /**
+   * Narrow to one token by its canonical id — {@link SwapGroup.key} /
+   * {@link AssetFacet.key} (`counterparty:RAREPEPE`, `zeld:ZELD`,
+   * `kontor:KOR`, …).
+   *
+   * Prefer this over {@link assetName} to express "this token": an asset name
+   * does not identify one on its own (ZELD is listed both as a zeld listing and
+   * as a Counterparty asset), and KOR has no asset name at all.
+   */
+  assetKey?: string;
   funded?: boolean;
   filled?: boolean;
   delisted?: boolean;

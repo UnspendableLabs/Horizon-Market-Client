@@ -1780,3 +1780,105 @@ describe("useSwapList — grouped browse feed", () => {
     );
   });
 });
+
+describe("useSwapList — asset (token) filter", () => {
+  it("narrows the feed in place, keeping the other filters", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValue(groupsResult([group("counterparty:XCP", swap({ id: "a" }))]));
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultGroupBy: "asset", defaultListingType: "counterparty" }),
+    );
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    act(() => result.current.setAssetKey("counterparty:XCP"));
+    await waitFor(() => expect(result.current.assetKey).toBe("counterparty:XCP"));
+
+    // Picking a token shows its offers individually — a grouped grid of one
+    // token is one tile.
+    await waitFor(() => expect(result.current.grouped).toBe(false));
+    expect(listSwaps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetKey: "counterparty:XCP",
+        // The rest of the filter set survives: this narrows in place, it does
+        // not navigate to a pinned view.
+        listingType: "counterparty",
+      }),
+    );
+  });
+
+  it("restores the grouping when the token filter is cleared", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })]));
+    const listSwapGroups = vi
+      .fn()
+      .mockResolvedValue(groupsResult([group("counterparty:XCP", swap({ id: "a" }))]));
+    ctxRef.current = ctxWithGroups(listSwaps, listSwapGroups);
+
+    const { result } = renderHook(() => useSwapList({ defaultGroupBy: "asset" }));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+
+    act(() => result.current.setAssetKey("counterparty:XCP"));
+    await waitFor(() => expect(result.current.grouped).toBe(false));
+    expect(result.current.groupBy).toBe("asset");
+
+    act(() => result.current.setAssetKey(null));
+    await waitFor(() => expect(result.current.grouped).toBe(true));
+  });
+
+  it("resets to the first page when the token changes", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([swap({ id: "a" })], 500));
+    ctxRef.current = ctxWith(listSwaps);
+
+    const { result } = renderHook(() => useSwapList());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.setPage(4));
+    await waitFor(() => expect(result.current.page).toBe(4));
+
+    act(() => result.current.setAssetKey("counterparty:XCP"));
+    await waitFor(() => expect(result.current.page).toBe(0));
+  });
+
+  it("seeds from defaultAssetKey, and sends it to the facets request too", async () => {
+    const listSwaps = vi.fn().mockResolvedValue(listResult([]));
+    const getSwapFacets = vi.fn().mockResolvedValue({
+      type: { counterparty: 4, ordinal: 0, zeld: 0, kontor: 0 },
+      price: [],
+      collection: [],
+      asset: [
+        {
+          key: "zeld:ZELD",
+          assetName: "ZELD",
+          listingType: "zeld" as const,
+          count: 12,
+        },
+      ],
+    });
+    ctxRef.current = makeCtx({
+      client: { listSwaps, getSwapFacets } as unknown as Client,
+    });
+
+    const { result } = renderHook(() =>
+      useSwapList({ defaultAssetKey: "zeld:ZELD", includeFacets: true }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.assetKey).toBe("zeld:ZELD");
+    // The other dimensions have to be counted for the selected token, or the
+    // sidebar would contradict the grid beside it.
+    await waitFor(() =>
+      expect(getSwapFacets).toHaveBeenCalledWith(
+        expect.objectContaining({ assetKey: "zeld:ZELD" }),
+      ),
+    );
+    // The asset dimension comes back for the sidebar to render.
+    await waitFor(() =>
+      expect(result.current.facets?.asset).toEqual([
+        { key: "zeld:ZELD", assetName: "ZELD", listingType: "zeld", count: 12 },
+      ]),
+    );
+  });
+});
