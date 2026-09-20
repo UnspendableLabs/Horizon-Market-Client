@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-20
+
+**One tile per token.** A feed that lists every open offer, newest first, is
+mostly whichever fungible assets carry the most listings — on Horizon that is
+XCP and ZELD, hundreds of offers each — and the 1-of-1s worth scrolling past
+never surface. `listSwapGroups()` returns the same marketplace aggregated by
+token: one row per token, whatever it is backed by, carrying its open-offer
+count, its floor prices and the cheapest listing itself, so a grouped grid
+renders and a buy opens on a single request. It is opt-in and the flat feed is
+untouched. The rest of the release is the native example clearing the last of
+its store-submission blockers.
+
 ### Added
 
 - **Grouped buy feed: one tile per token, not per listing.** New
@@ -444,7 +456,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.11...v0.3.0
 [0.2.11]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.10...v0.2.11
