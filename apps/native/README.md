@@ -97,6 +97,13 @@ Configuration lives in `eas.json`:
   `eas.json`. The client id is registered **twice**, once per environment: the
   mainnet project on `production`, the devnet one on `preview` (`eas env:list
   production`).
+- Everything else a cloud build needs must be in `eas.json` — `.env` is gitignored,
+  so EAS never uploads it and a local value that only lives there is simply blank
+  in the build. That is why `EXPO_PUBLIC_KONTOR_NFT_CONTRACT` and its `_SIGNET`
+  twin (`nft@0.0`) are set on **both** profiles: the runtime Settings switch lets
+  either build reach signet, where that address drives the owned-NFT lookup (the
+  mainnet key stays inert until Kontor mainnet lands). Blank API URLs are fine —
+  they fall back to the defaults in `lib/networks.ts`.
 
 Two build-specific details also matter:
 
