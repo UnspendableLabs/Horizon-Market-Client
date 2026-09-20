@@ -723,6 +723,7 @@ the very guard that exists to stop a doomed compose.
 All REST helpers accept an optional second argument `{ signal?: AbortSignal }` for request cancellation.
 
 - `listSwaps(params?, options?)` — filter by `listingType`, `collection`, price range (`priceMin` / `priceMax`, sats), and more
+- `listSwapGroups(params?, options?)` — the same feed aggregated by **token**: one `SwapGroup` per token with its open-offer count, floor prices and the cheapest listing (`swap`). Same filters and sort as `listSwaps` minus `pendingAddress`; `orderBy` and pagination apply to groups, not listings
 - `getSwapFacets(params?, options?)` — reactive facet counts (type / price bucket / collection) for a filter set
 - `getSwap(id, options?)`
 - `getLockedAssetUtxoIds(params?, options?)`
