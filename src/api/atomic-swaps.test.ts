@@ -733,3 +733,60 @@ describe("listSwapGroups", () => {
     expect(url).not.toContain("pending_address");
   });
 });
+
+describe("getSwapFacets — asset dimension", () => {
+  it("maps the asset rows and sends asset_key", async () => {
+    const fetchFn = makeFetch(200, {
+      data: {
+        type: { counterparty: 9, ordinal: 0, zeld: 1, kontor: 0 },
+        price: [],
+        collection: [],
+        asset: [
+          {
+            key: "counterparty:XCP",
+            asset_name: "XCP",
+            listing_type: "counterparty",
+            count: 412,
+          },
+          { key: "kontor:KOR", asset_name: null, listing_type: "kontor", count: 7 },
+        ],
+      },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+
+    const facets = await getSwapFacets(http, { assetKey: "counterparty:XCP" });
+
+    expect(facets.asset).toEqual([
+      {
+        key: "counterparty:XCP",
+        assetName: "XCP",
+        listingType: "counterparty",
+        count: 412,
+      },
+      { key: "kontor:KOR", assetName: null, listingType: "kontor", count: 7 },
+    ]);
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toContain("asset_key=counterparty%3AXCP");
+  });
+
+  it("reads as an empty dimension against a server that predates it", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, {
+        data: {
+          type: { counterparty: 1, ordinal: 0, zeld: 0, kontor: 0 },
+          price: [],
+          collection: [],
+        },
+      }),
+    });
+
+    const facets = await getSwapFacets(http, {});
+
+    // Empty rather than undefined, so a renderer maps over it without a guard.
+    expect(facets.asset).toEqual([]);
+  });
+});

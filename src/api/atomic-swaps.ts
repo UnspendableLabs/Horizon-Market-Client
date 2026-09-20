@@ -20,6 +20,7 @@ import type {
   ListSwapGroupsResult,
   PriceBucketFacet,
   CollectionFacet,
+  AssetFacet,
 } from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
 
@@ -126,10 +127,19 @@ interface WireCollectionFacet {
   count: number;
 }
 
+interface WireAssetFacet {
+  key: string;
+  asset_name: string | null;
+  listing_type: ListingType;
+  count: number;
+}
+
 interface WireSwapFacets {
   type: Record<ListingType, number>;
   price: WirePriceBucketFacet[];
   collection: WireCollectionFacet[];
+  /** Absent on a deployment that predates the asset dimension. */
+  asset?: WireAssetFacet[];
 }
 
 interface WireAssetNameSearchResult {
@@ -252,6 +262,15 @@ function mapCollectionFacet(wire: WireCollectionFacet): CollectionFacet {
   return { slug: wire.slug, name: wire.name, count: wire.count };
 }
 
+function mapAssetFacet(wire: WireAssetFacet): AssetFacet {
+  return {
+    key: wire.key,
+    assetName: wire.asset_name,
+    listingType: wire.listing_type,
+    count: wire.count,
+  };
+}
+
 function mapSwapGroup(wire: WireSwapGroup): SwapGroup {
   return {
     key: wire.group_key,
@@ -288,6 +307,7 @@ function appendSwapFilterParams(
   if (params.priceMax !== undefined)
     qs.set("price_max", params.priceMax.toString());
   if (params.collection !== undefined) qs.set("collection", params.collection);
+  if (params.assetKey !== undefined) qs.set("asset_key", params.assetKey);
   if (params.funded !== undefined)
     qs.set("funded", params.funded ? "true" : "false");
   if (params.filled !== undefined)
@@ -431,6 +451,9 @@ export async function getSwapFacets(
     type: wire.type,
     price: wire.price.map(mapPriceBucketFacet),
     collection: wire.collection.map(mapCollectionFacet),
+    // Empty rather than undefined on a deployment that predates the dimension,
+    // so a renderer can map over it without a guard.
+    asset: (wire.asset ?? []).map(mapAssetFacet),
   };
 }
 

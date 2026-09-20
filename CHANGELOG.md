@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Filter the feed to one token, in place.** `useSwapList` gains a settable
+  `assetKey` (`defaultAssetKey` / `assetKey` / `setAssetKey`) and
+  `getSwapFacets` a matching `asset` dimension — the tokens with **more than
+  one** open offer, most offers first, each carrying the canonical `key` to
+  filter by.
+
+  This is what a grouped tile's "N offers" should do. Until now the only way to
+  narrow to a token was the fixed `assetName` option, which has no setter, so a
+  client had to navigate to a pinned view — landing the buyer on a page with no
+  sidebar, no sort and no way back except the browser's. `setAssetKey` narrows
+  the feed like any other filter: the sort, the price range and the facet
+  counts all survive it.
+
+  A canonical key rather than an asset name because a name does not identify a
+  token: ZELD is listed both as a `zeld` listing and as an ordinary Counterparty
+  asset, and KOR has no asset name at all. It is the same string `SwapGroup.key`
+  already returns, so a tile and a sidebar row provably select the same
+  listings.
+
+  Selecting a token suspends grouping for as long as it is set — a grouped grid
+  of one token is one tile, and asking for a token's offers is asking to see
+  them individually — and clearing it restores whatever `groupBy` was.
+  `SwapFacets.asset` reads as `[]` against a server that predates the dimension.
+
+
 ## [0.4.0] - 2026-09-20
 
 **One tile per token.** A feed that lists every open offer, newest first, is

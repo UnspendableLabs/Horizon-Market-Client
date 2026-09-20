@@ -167,6 +167,7 @@ export type {
   SwapFacetsParams,
   PriceBucketFacet,
   CollectionFacet,
+  AssetFacet,
   LockedAssetUtxoIds,
   Network,
   OnChainPayment,
