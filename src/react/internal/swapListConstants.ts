@@ -9,6 +9,16 @@ export type SwapListOrderBy = "created_at" | "price" | "price_per_unit";
 /** Server sort direction for `listSwaps` (`order`). */
 export type SwapListOrder = "asc" | "desc";
 
+/**
+ * How the browse feed is aggregated. `"asset"` collapses every open offer on
+ * one token into a single row (see `listSwapGroups`); the absence of a value
+ * means the flat, one-row-per-listing feed.
+ *
+ * A union of one for now — it is the axis, not the only conceivable value, and
+ * naming it keeps `groupBy: true`-style booleans out of the public API.
+ */
+export type SwapGroupBy = "asset";
+
 /** UI-facing sort presets, each mapping to an `orderBy`/`order` pair (see {@link SORT_MAP}). */
 export type SortOption =
   | "latest"

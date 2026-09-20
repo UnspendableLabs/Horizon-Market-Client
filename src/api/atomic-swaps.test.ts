@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { HttpClient, HorizonMarketApiError } from "./http.js";
 import {
   listSwaps,
+  listSwapGroups,
   getSwapFacets,
   getSwap,
   createSwap,
@@ -630,5 +631,102 @@ describe("getPendingPurchaseTxIds", () => {
     });
     const result = await getPendingPurchaseTxIds(http, "swap_abc", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
     expect(result).toEqual(txIds);
+  });
+});
+
+describe("listSwapGroups", () => {
+  const WIRE_GROUP = {
+    group_key: "counterparty:RAREPEPE",
+    listing_type: "counterparty",
+    offer_count: 412,
+    floor_price_sats: 250000,
+    floor_price_per_unit_sats: 2500,
+    floor_price_per_kor_sats: null,
+    last_listed_at: "2026-09-19T10:00:00.000Z",
+    first_listed_at: "2026-04-02T10:00:00.000Z",
+    swap: WIRE_SWAP,
+  };
+
+  it("maps a wire group, including its representative listing", async () => {
+    const http = new HttpClient({
+      baseUrl: "https://example.com",
+      fetch: makeFetch(200, {
+        data: {
+          count: 57,
+          groups: [WIRE_GROUP],
+          pagination: { total: 57, offset: 0, limit: 24 },
+        },
+      }),
+    });
+
+    const result = await listSwapGroups(http, {});
+
+    expect(result.count).toBe(57);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]).toEqual({
+      key: "counterparty:RAREPEPE",
+      listingType: "counterparty",
+      offerCount: 412,
+      floorPrice: 250000,
+      floorPricePerUnit: 2500,
+      floorPricePerKor: null,
+      lastListedAt: "2026-09-19T10:00:00.000Z",
+      firstListedAt: "2026-04-02T10:00:00.000Z",
+      swap: DOMAIN_SWAP,
+    });
+    expect(result.pagination).toEqual({ total: 57, offset: 0, limit: 24 });
+  });
+
+  it("sends the same filter, sort and pagination params as listSwaps", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, groups: [], pagination: { total: 0, offset: 0, limit: 24 } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+
+    await listSwapGroups(http, {
+      listingType: "ordinal",
+      priceMin: 1000,
+      collection: "rare-pepes",
+      funded: true,
+      filled: false,
+      excludePending: true,
+      orderBy: "price_per_unit",
+      order: "asc",
+      offset: 24,
+      limit: 24,
+    });
+
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toContain("/api/atomic-swaps/groups?");
+    expect(url).toContain("listing_type=ordinal");
+    expect(url).toContain("price_min=1000");
+    expect(url).toContain("collection=rare-pepes");
+    expect(url).toContain("funded=true");
+    expect(url).toContain("filled=false");
+    expect(url).toContain("exclude_pending=true");
+    expect(url).toContain("order_by=price_per_unit");
+    expect(url).toContain("order=asc");
+    expect(url).toContain("offset=24");
+    expect(url).toContain("limit=24");
+  });
+
+  it("never sends pending_address, which the endpoint rejects", async () => {
+    const fetchFn = makeFetch(200, {
+      data: { count: 0, groups: [], pagination: { total: 0, offset: 0, limit: null } },
+    });
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch: fetchFn });
+
+    await listSwapGroups(http, {
+      assetName: "RAREPEPE",
+    } as Parameters<typeof listSwapGroups>[1]);
+
+    const [url] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).not.toContain("pending_address");
   });
 });

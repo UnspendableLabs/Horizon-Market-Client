@@ -5,6 +5,7 @@ import type {
   KontorAssetKind,
   SwapFacets,
   SwapFacetsParams,
+  SwapGroup,
 } from "../../types/index.js";
 import {
   DEFAULT_LIMIT,
@@ -16,6 +17,7 @@ import {
 } from "../internal/swapListConstants.js";
 import type {
   SortOption,
+  SwapGroupBy,
   SwapListingType,
 } from "../internal/swapListConstants.js";
 import {
@@ -37,6 +39,7 @@ export {
 } from "../internal/swapListConstants.js";
 export type {
   SortOption,
+  SwapGroupBy,
   SwapListOrder,
   SwapListOrderBy,
   SwapListingType,
@@ -120,6 +123,18 @@ export interface UseSwapListOptions {
   /** Initial collection-slug filter. Null (default) = all collections. */
   defaultCollection?: string | null;
   /**
+   * Start the browse feed aggregated by token ({@link SwapGroupBy}) instead of
+   * listing every offer separately. Null (the default) keeps the flat feed, so
+   * a client that does not opt in behaves exactly as before.
+   *
+   * Grouping applies to **browsing only**: "My swaps" and "Sold" fall back to
+   * the flat feed for as long as either is on, and {@link
+   * UseSwapListResult.grouped} says which shape the current result is in. A
+   * wallet's own listing is an order, not a token, and a completed sale is an
+   * event — neither answers "what is this token going for".
+   */
+  defaultGroupBy?: SwapGroupBy | null;
+  /**
    * Also fetch reactive facet counts (type / price bucket / collection) for the
    * current filter set via the client's `getSwapFacets`, and expose them as
    * {@link UseSwapListResult.facets} / {@link UseSwapListResult.facetsLoading} —
@@ -189,6 +204,26 @@ export interface UseSwapListResult {
    * {@link UseSwapListResult.facets} (apply a bucket's `minSats`/`maxSats`).
    */
   setPriceRange: (min: number | null, max: number | null) => void;
+  /**
+   * The current feed's groups, newest-listed token first — one per token,
+   * each carrying its offer count, floor prices and cheapest listing.
+   *
+   * Null whenever {@link grouped} is false (grouping off, or overridden by
+   * "My swaps"/"Sold"), and null before the first grouped load. {@link swaps}
+   * is populated in both shapes — in grouped mode it holds the groups'
+   * representative listings, in the same order — so buy/delist, `removeSwap`
+   * and `isItemMySwap` work identically either way.
+   */
+  groups: SwapGroup[] | null;
+  /** Whether the current result is grouped. See {@link UseSwapListOptions.defaultGroupBy}. */
+  grouped: boolean;
+  /**
+   * The requested grouping, independent of whether it currently applies —
+   * a renderer's toggle binds to this, so flipping to "My swaps" and back
+   * restores the grouped grid rather than silently resetting the control.
+   */
+  groupBy: SwapGroupBy | null;
+  setGroupBy: (g: SwapGroupBy | null) => void;
   /** Active collection-slug filter, or null for all collections. */
   collection: string | null;
   /** Set the collection-slug filter (null clears it) and reset to the first page. */
@@ -267,6 +302,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     defaultPriceMin = null,
     defaultPriceMax = null,
     defaultCollection = null,
+    defaultGroupBy = null,
     limit = DEFAULT_LIMIT,
     includePendingOrders = false,
     includeFacets = false,
@@ -297,10 +333,14 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const [collection, setCollectionState] = useState<string | null>(
     defaultCollection,
   );
+  const [groupBy, setGroupByState] = useState<SwapGroupBy | null>(
+    defaultGroupBy,
+  );
   const [page, setPageState] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [swaps, setSwaps] = useState<AtomicSwap[]>([]);
+  const [groups, setGroups] = useState<SwapGroup[] | null>(null);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -349,6 +389,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
   const kontorUnavailable =
     listingType === "kontor" && kontorNetwork !== "signet";
 
+  // Whether the *current* fetch is grouped, as opposed to what the caller asked
+  // for. "My swaps" and "Sold" answer questions about orders and events rather
+  // than about tokens, and both have fetch paths (multi-address merge, seller
+  // scoping) that no per-token aggregate replaces — so either one suspends
+  // grouping while it is on, without disturbing `groupBy` itself.
+  const isGrouped = groupBy !== null && !showMySwaps && !showSold;
+
   const setListingType = useCallback(
     (t: SwapListingType | null) => {
       if (listingTypePinned) return;
@@ -388,6 +435,13 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
 
   const setCollection = useCallback((slug: string | null) => {
     setCollectionState(slug);
+    setPageState(0);
+  }, []);
+
+  const setGroupBy = useCallback((g: SwapGroupBy | null) => {
+    setGroupByState(g);
+    // Page 1: the two shapes paginate over different things (tokens vs
+    // listings), so keeping the offset would land on an unrelated page.
     setPageState(0);
   }, []);
 
@@ -449,6 +503,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
       setIsLoading(false);
       setError(null);
       setSwaps([]);
+      setGroups(null);
       setTotal(0);
       setLastFetchedAt(Date.now());
       return;
@@ -512,9 +567,31 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
             (s) => !s.pending && !s.anomalous && !dismissed.has(s.id),
           );
       setSwaps(filtered);
+      setGroups(null);
       setTotal(count - (items.length - filtered.length));
       // Stamp freshness on SUCCESS only (not in finish()/finally), so a failed
       // fetch doesn't show "Updated just now" next to stale data + an error banner.
+      setLastFetchedAt(Date.now());
+    };
+
+    const applyGroupedResult = (items: SwapGroup[], count: number) => {
+      if (seq !== fetchSeqRef.current) return;
+      const dismissed = dismissedIdsRef.current;
+      // A group is judged by its representative — the listing the tile quotes
+      // and the one a click buys. Dropping the whole tile when that listing is
+      // unbuyable is the same call the flat feed makes, and for the same
+      // reason: the alternative is quoting a price nobody can take. A token
+      // with other offers comes back on the next fetch, re-floored.
+      const filtered = items.filter(
+        (g) =>
+          !g.swap.pending && !g.swap.anomalous && !dismissed.has(g.swap.id),
+      );
+      setGroups(filtered);
+      // `swaps` stays populated with the representatives, in group order, so
+      // everything built on it — buy/delist, removeSwap, isItemMySwap — works
+      // without knowing which shape the feed is in.
+      setSwaps(filtered.map((g) => g.swap));
+      setTotal(count - (items.length - filtered.length));
       setLastFetchedAt(Date.now());
     };
 
@@ -526,6 +603,21 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     const finish = () => {
       if (seq === fetchSeqRef.current) setIsLoading(false);
     };
+
+    // Grouping is a browse-only shape: "My swaps" and "Sold" are lists of
+    // orders and of events, not of tokens, and both have their own fetch paths
+    // below (multi-address merge, seller scoping) that a per-token aggregate
+    // has no answer for. `grouped` below reports which shape won.
+    if (isGrouped) {
+      client
+        .listSwapGroups({ ...baseParams, offset: page * limit, limit })
+        .then((result) => {
+          applyGroupedResult(result.groups, result.pagination.total);
+        })
+        .catch(applyError)
+        .finally(finish);
+      return;
+    }
 
     if (sellerAddresses.length > 1) {
       void Promise.all(
@@ -583,6 +675,7 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     priceMin,
     priceMax,
     collection,
+    isGrouped,
     addresses,
     page,
     limit,
@@ -835,6 +928,12 @@ export function useSwapList(options: UseSwapListOptions = {}): UseSwapListResult
     priceMin,
     priceMax,
     setPriceRange,
+    // Null unless the current result actually is grouped, so a renderer cannot
+    // read stale groups while the feed has fallen back to a flat list.
+    groups: isGrouped ? groups : null,
+    grouped: isGrouped,
+    groupBy,
+    setGroupBy,
     collection,
     setCollection,
     facets,

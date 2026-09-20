@@ -2,6 +2,7 @@ import * as btc from "bitcoinjs-lib";
 import { HttpClient } from "./api/http.js";
 import {
   listSwaps as apiListSwaps,
+  listSwapGroups as apiListSwapGroups,
   getSwapFacets as apiGetSwapFacets,
   getSwap as apiGetSwap,
   getLockedAssetUtxoIds as apiGetLockedAssetUtxoIds,
@@ -178,6 +179,8 @@ import type {
   FeeQuoteZeldTransferPrep,
   ListSwapsParams,
   ListSwapsResult,
+  ListSwapGroupsParams,
+  ListSwapGroupsResult,
   SwapFacets,
   SwapFacetsParams,
   LockedAssetUtxoIds,
@@ -1199,6 +1202,22 @@ export class HorizonMarketClient {
     options?: RequestOptions,
   ): Promise<ListSwapsResult> {
     return apiListSwaps(this.http, params ?? {}, options);
+  }
+
+  /**
+   * The same feed as {@link listSwaps}, aggregated so one **token** is one row
+   * however many open offers back it — for a browsing grid, where a flat feed
+   * is dominated by whichever fungible assets carry the most listings and
+   * 1-of-1s never surface.
+   *
+   * Each group carries its offer count, its floor prices and the cheapest
+   * listing itself, so a tile renders (and a buy opens) without a second call.
+   */
+  listSwapGroups(
+    params?: ListSwapGroupsParams,
+    options?: RequestOptions,
+  ): Promise<ListSwapGroupsResult> {
+    return apiListSwapGroups(this.http, params ?? {}, options);
   }
 
   /**

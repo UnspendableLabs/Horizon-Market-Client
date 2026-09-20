@@ -165,6 +165,72 @@ export interface ListSwapsResult {
 }
 
 /**
+ * Every open offer on one token, collapsed into a single row — what
+ * `listSwapGroups` returns and what a grouped buy grid renders as one tile.
+ *
+ * A flat listing feed is dominated by whichever fungible assets carry the most
+ * offers; grouping gives each token one tile whether it has one open offer or
+ * four hundred, so 1-of-1s surface alongside them.
+ */
+export interface SwapGroup {
+  /**
+   * Canonical token id — `counterparty:<asset>`, `ordinals:<inscriptionId>`,
+   * `zeld:ZELD`, `kontor:KOR`, or `kontor-nft:<id>`. Stable across pages, so it
+   * doubles as a React key and a client cache key, and it is the same spelling
+   * the tokens API uses for `canonicalId`.
+   */
+  key: string;
+  listingType: ListingType;
+  /** How many open offers this token has under the current filters. */
+  offerCount: number;
+  /**
+   * Cheapest **total** price in sats, or null when no offer could be priced.
+   *
+   * Need not be {@link swap}'s price: on a fungible token the representative is
+   * the cheapest *per unit*, and a smaller lot can be cheaper in total while
+   * costing more per unit. Quote the figure whose unit you print.
+   */
+  floorPrice: number | null;
+  /**
+   * Cheapest sats **per whole unit**, or null for a token whose divisibility
+   * could not be resolved — those offers still count, they just cannot be
+   * quoted per unit.
+   */
+  floorPricePerUnit: number | null;
+  /** Cheapest sats per KOR, for Kontor token offers. Null otherwise. */
+  floorPricePerKor: number | null;
+  /** ISO timestamp of the newest offer in the group. */
+  lastListedAt: string;
+  /** ISO timestamp of the oldest offer in the group. */
+  firstListedAt: string;
+  /**
+   * The floor listing — render the tile from it, and buy from it directly.
+   * Cheapest per unit where a per-unit price exists, otherwise cheapest in
+   * total.
+   */
+  swap: AtomicSwap;
+}
+
+/**
+ * Params for `listSwapGroups` — the same filters, sort and pagination as
+ * `listSwaps`, minus `pendingAddress` (a decoration on the listing feed, with
+ * no meaning over aggregates; the endpoint rejects it).
+ *
+ * `orderBy` applies to the **group**: `created_at`/`updated_at` rank a token by
+ * its newest offer when `order` is `"desc"` and by its oldest when `"asc"`;
+ * `price` and `price_per_unit` rank it by its floor. `offset` and `limit` count
+ * tokens, not listings.
+ */
+export type ListSwapGroupsParams = Omit<ListSwapsParams, "pendingAddress">;
+
+export interface ListSwapGroupsResult {
+  /** Total matching **tokens**, not listings. */
+  count: number;
+  groups: SwapGroup[];
+  pagination: Pagination;
+}
+
+/**
  * A single price bucket in {@link SwapFacets.price}. The USD presets are resolved
  * to sat-bounds server-side (against the live BTC/USD rate); apply `minSats` /
  * `maxSats` directly as `priceMin` / `priceMax` so the filter matches the count.
