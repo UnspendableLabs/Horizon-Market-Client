@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-20
+
+**A token is a filter, not a destination.** 0.4.0 gave the buy feed one tile
+per token, and a tile that says "412 offers" has to be able to show them — but
+the only way to narrow the feed to a token was a fixed option with no setter,
+so the jump had to be a navigation, landing the buyer on a pinned page with no
+sidebar, no sort and no way back but the browser's. `setAssetKey` makes the
+token an ordinary filter dimension instead: it narrows in place, keeps the sort
+and the price range, and a matching `asset` facet puts the same jump in the
+sidebar. Grouping steps aside while a token is selected and returns when it is
+cleared.
+
 ### Added
 
 - **Filter the feed to one token, in place.** `useSwapList` gains a settable
@@ -32,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of one token is one tile, and asking for a token's offers is asking to see
   them individually — and clearing it restores whatever `groupBy` was.
   `SwapFacets.asset` reads as `[]` against a server that predates the dimension.
-
 
 ## [0.4.0] - 2026-09-20
 
@@ -483,7 +494,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.2.11...v0.3.0
