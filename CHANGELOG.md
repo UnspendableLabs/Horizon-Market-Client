@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-22
+
+**Two workarounds, deleted upstream.** 0.5.0 shipped the native example with a
+config plugin that recompiled `@kontor/sdk-native`'s JNI adapter for 16 KB
+memory pages, and a launch wrapper that refused to start the app on a 16 KB
+device precisely because the stock package could not run there. rc.7 moved the
+flag into the package's own Gradle build, so both files are deleted and
+`npm run android` is `expo run:android` again. The SDK itself is untouched:
+this release is the example app and the dependency under it.
+
 ### Changed
 
 - **Native example: `@kontor/sdk-native` 0.3.0-rc.7, and the 16 KB page-size
@@ -514,7 +524,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.0...v0.3.1
