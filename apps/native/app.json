@@ -69,7 +69,6 @@
       ],
       "./plugins/withAndroidSecurity.js",
       "./plugins/withGradleMemory.js",
-      "./plugins/withKontorPageSize.js",
       "expo-font",
       "expo-status-bar",
       "expo-web-browser",
