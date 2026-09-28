@@ -131,3 +131,86 @@ describe("finalizePsbtHex", () => {
     expect(txHex.startsWith("70736274ff")).toBe(false);
   });
 });
+
+// ─── Tapscript (script-path) inputs — a Counterparty reveal ──────────────────
+
+import { ECPair } from "./ecc.js";
+import { signPsbtHexWithKeys } from "./psbt-signer.js";
+import { buildRevealPsbt, verifyReveal } from "./reveal.js";
+import { buildRevealPair, REVEAL_FIXTURE } from "../test-utils.js";
+
+describe("signPsbtHex on a tapLeafScript input", () => {
+  const network = btc.networks.bitcoin;
+  const material = {
+    envelopeScript: REVEAL_FIXTURE.envelopeScript,
+    controlBlock: REVEAL_FIXTURE.controlBlock,
+    pubkey: REVEAL_FIXTURE.xOnlyPubkey,
+    lockScript: REVEAL_FIXTURE.lockScript,
+    inputValue: REVEAL_FIXTURE.inputValue,
+  };
+  const revealPsbtHex = buildRevealPsbt(
+    verifyReveal(REVEAL_FIXTURE.revealTxHex, material, {
+      commitTxHex: REVEAL_FIXTURE.commitTxHex,
+    }),
+    network,
+  ).toHex();
+
+  it("produces a script-path signature with the untweaked key, and no key-path one", () => {
+    const signed = btc.Psbt.fromHex(
+      signPsbtHex(revealPsbtHex, [0], TEST_PRIVATE_KEY_HEX, network),
+      { network },
+    );
+    const input = signed.data.inputs[0];
+    expect(input.tapKeySig).toBeUndefined();
+    expect(input.tapScriptSig).toHaveLength(1);
+    expect(Buffer.from(input.tapScriptSig![0].pubkey).toString("hex")).toBe(
+      REVEAL_FIXTURE.xOnlyPubkey,
+    );
+    expect(input.tapScriptSig![0].signature).toHaveLength(64);
+    // …and it finalizes to <sig> <envelope> <control block>.
+    const { txHex } = finalizePsbtHex(signed.toHex(), network);
+    expect(btc.Transaction.fromHex(txHex).ins[0].witness).toHaveLength(3);
+  });
+
+  it("picks whichever of an HD wallet's keys closes the leaf", () => {
+    const segwitKey = TEST_PRIVATE_KEY_HEX;
+    const taprootKey = "2".repeat(64);
+    const taprootXOnly = Buffer.from(
+      ECPair.fromPrivateKey(Buffer.from(taprootKey, "hex")).publicKey.subarray(1, 33),
+    ).toString("hex");
+    const pair = buildRevealPair(taprootXOnly);
+    const psbtHex = buildRevealPsbt(
+      verifyReveal(pair.revealTxHex, pair.material, { commitTxHex: pair.commitTxHex }),
+      network,
+    ).toHex();
+
+    const signed = btc.Psbt.fromHex(
+      signPsbtHexWithKeys(
+        psbtHex,
+        [0],
+        { ecdsaKeyHex: segwitKey, taprootKeyHex: taprootKey },
+        network,
+      ),
+      { network },
+    );
+    expect(Buffer.from(signed.data.inputs[0].tapScriptSig![0].pubkey).toString("hex")).toBe(
+      taprootXOnly,
+    );
+  });
+
+  it("refuses to sign a leaf closed by a key it does not hold", () => {
+    expect(() => signPsbtHex(revealPsbtHex, [0], "3".repeat(64), network)).toThrow(
+      /key this signer does not hold/,
+    );
+  });
+
+  it("refuses a sighash type the Counterparty parser rejects", () => {
+    const psbt = btc.Psbt.fromHex(revealPsbtHex, { network });
+    psbt.updateInput(0, {
+      sighashType: btc.Transaction.SIGHASH_SINGLE | btc.Transaction.SIGHASH_ANYONECANPAY,
+    });
+    expect(() => signPsbtHex(psbt.toHex(), [0], TEST_PRIVATE_KEY_HEX, network)).toThrow(
+      /Sighash type is not allowed/,
+    );
+  });
+});

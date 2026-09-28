@@ -75,6 +75,28 @@ const ALLOWED_SIGHASH_TYPES = [
 ];
 
 /**
+ * A Counterparty reveal must be signed `SIGHASH_DEFAULT` or `SIGHASH_ALL`: the
+ * node's parser rejects `ANYONECANPAY` / `NONE` / `SINGLE` on the reveal input.
+ */
+const TAPSCRIPT_SIGHASH_TYPES = [
+  btc.Transaction.SIGHASH_DEFAULT,
+  btc.Transaction.SIGHASH_ALL,
+];
+
+/** Whether a tapscript leaf pushes `pubkey` (compressed or x-only) as a whole. */
+function scriptCarriesKey(script: Uint8Array, pubkey: Uint8Array): boolean {
+  const xOnly = pubkey.length === 33 ? pubkey.subarray(1, 33) : pubkey;
+  const chunks = btc.script.decompile(script);
+  if (!chunks) return false;
+  return chunks.some(
+    (chunk) =>
+      typeof chunk !== "number" &&
+      chunk.length === 32 &&
+      Buffer.from(chunk).equals(Buffer.from(xOnly)),
+  );
+}
+
+/**
  * Sign a PSBT hex string at the given input indices, choosing a key per input by
  * script type: Taproot inputs are signed with `taprootKeyHex` (key-path tweaked),
  * everything else with `ecdsaKeyHex`. For the single-key wallet model pass the
@@ -87,6 +109,10 @@ const ALLOWED_SIGHASH_TYPES = [
  *   through its Taproot signer (so the raw ECDSA key is rejected) but key-spend hashing
  *   requires `tapInternalKey` to be present, so we backfill it from the taproot key's
  *   own x-only pubkey.
+ * - An input carrying a `tapLeafScript` (a Counterparty taproot reveal, see
+ *   `crypto/reveal.ts`) is signed script-path with whichever key closes the leaf
+ *   — untweaked, or the taproot key's BIP86 output key for the composer's P2TR
+ *   fallback — and only `SIGHASH_DEFAULT` / `SIGHASH_ALL`.
  * - Only signs the specified input indices; never modifies order or other inputs.
  * - Returns the signed PSBT as hex (NOT finalized — do not call finalizeAllInputs here).
  */
@@ -112,6 +138,34 @@ export function signPsbtHexWithKeys(
 
     for (const inputIndex of inputIndices) {
       const input = psbt.data.inputs[inputIndex];
+
+      // Script-path spend (a Counterparty taproot reveal): the leaf is closed by
+      // `<x-only key> OP_CHECKSIG`, and that key is one of ours *untweaked* — the
+      // BIP341 tweak applies to the output key, not to a key inside a leaf. The
+      // composer's fallback for a P2TR source closes the leaf with the address's
+      // output key instead, which is the key-path tweaked signer's key.
+      if (input.tapLeafScript && input.tapLeafScript.length > 0) {
+        const candidates = sameKey
+          ? [ecdsaKeyPair, createTaprootSigner(taprootKeyPair, ecc)]
+          : [
+              ecdsaKeyPair,
+              taprootKeyPair,
+              createTaprootSigner(taprootKeyPair, ecc),
+            ];
+        const leafSigner = candidates.find((candidate) =>
+          input.tapLeafScript!.some((leaf) =>
+            scriptCarriesKey(leaf.script, candidate.publicKey),
+          ),
+        );
+        if (!leafSigner) {
+          throw new Error(
+            `Input ${inputIndex} spends a tapscript leaf closed by a key this signer does not hold`,
+          );
+        }
+        psbt.signInput(inputIndex, leafSigner, TAPSCRIPT_SIGHASH_TYPES);
+        continue;
+      }
+
       const isTaproot =
         !!input.tapInternalKey || isP2trScript(input.witnessUtxo?.script);
 
@@ -157,20 +211,6 @@ export function signPsbtHex(
   );
 }
 
-/**
- * Finalize all inputs and extract the raw transaction.
- * Use ONLY for prep PSBTs (attach commit / zeld transfer) that must be broadcast
- * as raw tx hex. Do NOT call this on swap or fee PSBTs.
- */
-export function finalizePsbtHex(
-  psbtHex: string,
-  network: btc.Network,
-): { txHex: string; txId: string } {
-  const psbt = btc.Psbt.fromHex(psbtHex, { network });
-  psbt.finalizeAllInputs();
-  const tx = psbt.extractTransaction();
-  return {
-    txHex: tx.toHex(),
-    txId: tx.getId(),
-  };
-}
+// Lives in its own ecc-free module so a reveal signer can finalize without
+// pulling the ECPair self-test in; re-exported here for existing importers.
+export { finalizePsbtHex } from "./psbt-finalize.js";
