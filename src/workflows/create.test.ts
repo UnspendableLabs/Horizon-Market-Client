@@ -507,6 +507,55 @@ describe("createToken with a taproot envelope", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  // Both signatures — commit and reveal — are collected before the server is
+  // asked to broadcast anything, so there is no state in which the commit is
+  // out and the reveal still unsigned. What a failed submit leaves behind for
+  // replay is the body that was already signed, reveal included.
+  it("keeps the wallet-signed reveal in the replay body when the submit fails", async () => {
+    const fetchFn = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_ENVELOPE_QUOTE } },
+      { status: 502, body: { error: "Bitcoin node unreachable." } },
+      { status: 201, body: { data: WIRE_RESULT } },
+    );
+    const local = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    const signer: Signer = {
+      getAddresses: () => local.getAddresses(),
+      signPsbtHex: vi.fn((psbtHex: string, indices: number[]) =>
+        local.signPsbtHex(psbtHex, indices),
+      ),
+      signMessage: () => "sig",
+    };
+    const client = http(fetchFn);
+
+    const failure = await createToken(
+      { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
+      client,
+      signer,
+    ).catch((reason: unknown) => reason);
+
+    expect(failure).toBeInstanceOf(CreationNotBroadcastError);
+    const retry = creationRetry(failure)!;
+    expect(retry.possiblyBroadcast).toBe(true);
+    // The persisted body carries the reveal the wallet signed, never the
+    // server's unsigned one.
+    const reveal = btc.Transaction.fromHex(retry.submit.revealTxHex!);
+    expect(reveal.getId()).toBe(REVEAL_FIXTURE.revealTxid);
+    expect(reveal.ins[0].witness).toHaveLength(3);
+    expect(retry.submit.revealTxHex).not.toBe(REVEAL_FIXTURE.revealTxHex);
+    expect(signer.signPsbtHex).toHaveBeenCalledTimes(2);
+
+    // Replaying re-POSTs that exact body: nothing is signed again.
+    const { submitCreation } = await import("../api/creations.js");
+    await submitCreation(client, retry.submit);
+    expect(signer.signPsbtHex).toHaveBeenCalledTimes(2);
+    expect(bodyOf(fetchFn, 2)).toEqual({
+      type: "counterparty",
+      psbt: retry.submit.psbt,
+      identifier: "MYASSET",
+      reveal_tx_hex: retry.submit.revealTxHex,
+    });
+  });
+
   it("does not require the guard for ordinals", async () => {
     // An ordinal commit has no inline data either, and its reveal is signed
     // server-side by design: the Counterparty rule must not fire on it.
