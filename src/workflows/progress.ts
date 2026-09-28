@@ -43,6 +43,11 @@ const STEP_MESSAGES: AllStepMessages = {
       complete: "Prep transaction finalized",
       error: "Prep transaction finalization failed",
     },
+    signRevealTx: {
+      start: "Signing reveal transaction…",
+      complete: "Reveal transaction signed",
+      error: "Reveal transaction signing failed",
+    },
     signSwapPsbt: {
       start: "Signing swap PSBT…",
       complete: "Swap PSBT signed",
@@ -155,6 +160,12 @@ const STEP_MESSAGES: AllStepMessages = {
       start: "Signing transaction…",
       complete: "Transaction signed",
       error: "Transaction signing failed",
+    },
+    // Only when the issuance travels in a taproot envelope (long description).
+    signRevealTx: {
+      start: "Signing reveal transaction…",
+      complete: "Reveal transaction signed",
+      error: "Reveal transaction signing failed",
     },
     submitCreation: {
       start: "Broadcasting…",

@@ -27,9 +27,15 @@ vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
 const QUOTE: CreationQuote = {
   type: "counterparty",
   identifier: "MYASSET",
-  psbtBase64: "cHNidP8BAA==",
+  // `buildIssuancePsbtHex()` from test-utils, inlined: an OP_RETURN issuance,
+  // which is what tells the quote guard there is no reveal to expect. (Not
+  // imported: test-utils pulls the ecc self-test in, which the jsdom realm
+  // fails — see crypto/psbt-finalize.ts.)
+  psbtBase64:
+    "cHNidP8BAIUCAAAAAaqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AgAAAAAAAAAAKmooQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQriCAQAAAAAAFgAUqrVh5aEju/5MxkV0k35kzEcFvjQAAAAAAAEBH6CGAQAAAAAAFgAUqrVh5aEju/5MxkV0k35kzEcFvjQAAAA=",
   inputsToSign: [0],
   revealTxHex: null,
+  revealSigning: null,
   estimatedFeeSats: 1240,
   totalCostSats: 1240,
 };
@@ -598,6 +604,9 @@ describe("useCreateToken", () => {
       thumbnail: "ipfs://bafythumb",
       attributes: { rarity: "rare" },
       address: FUNDING_ADDRESS,
+      // The wallet's compressed key: it closes the taproot envelope when the
+      // issuance needs one, so the wallet can sign the reveal.
+      publicKey: "02aa",
       options: {
         quantity: "1000",
         divisible: false,

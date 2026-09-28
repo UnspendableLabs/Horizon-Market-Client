@@ -15,6 +15,15 @@ import {
 import { assertCreationQuoteParams } from "../creation-params.js";
 import { isTaprootAddress } from "../sell-params.js";
 import type { Signer } from "../crypto/signer.js";
+import {
+  carriesInlineCounterpartyData,
+  PresignedRevealError,
+  signerKeys,
+  signReveal,
+  unsignedTxHexFromPsbt,
+  verifyReveal,
+} from "../crypto/reveal.js";
+import * as btc from "bitcoinjs-lib";
 import type { WorkflowOptions } from "../types/index.js";
 import { psbtBase64ToHex } from "../utils.js";
 import { WorkflowProgressReporter } from "./progress.js";
@@ -140,9 +149,15 @@ export function creationRetry(error: unknown): CreationRetry | null {
  * 1. Resolve the funding / receiving addresses from the signer and validate.
  * 2. Request a creation quote (skipped when `params.quote` is supplied).
  * 3. Sign the quote's PSBT, unchanged apart from its witnesses.
- * 4. Submit it, together with the pre-signed reveal when the quote carried one.
+ * 4. Counterparty issuance in a taproot envelope: sign the reveal too
+ *    (`signRevealTx`) — the network attributes it to the funding address only
+ *    when that address signed it (Counterparty Core ≥ 11.5.0).
+ * 5. Submit it, together with the reveal: the one just signed, or for ordinals
+ *    the pre-signed one the quote carried.
  *
- * @throws {CreationNotBroadcastError} when step 4 fails — recover with
+ * @throws {PresignedRevealError} when a Counterparty quote carries a reveal
+ * pre-signed by an out-of-date server, before anything is signed.
+ * @throws {CreationNotBroadcastError} when the submit fails — recover with
  * {@link creationRetry}, never by calling this again.
  */
 export async function createToken(
@@ -164,13 +179,28 @@ export async function createToken(
       requestCreationQuote(http, quoteParams),
     ));
 
+  const commitPsbtHex = psbtBase64ToHex(quote.psbtBase64);
+  // Refuse, before any signature, a quote whose reveal we cannot sign or whose
+  // commit has no reveal at all: either would pay the fees and lose the message.
+  assertCreationQuoteSignable(quote, commitPsbtHex);
+  const signsReveal = quote.type === "counterparty" && !!quote.revealSigning;
+  if (signsReveal) {
+    progress.setTotalSteps((params.quote ? 3 : 4) + 1);
+    // Check the reveal against the commit and this wallet's keys *before* the
+    // commit is signed: an envelope closed by a key we do not hold, or a commit
+    // that does not pay the envelope, must not cost the user a wallet prompt.
+    // `signReveal` runs the same checks again on the way to the signature.
+    verifyReveal(quote.revealTxHex!, quote.revealSigning!, {
+      commitTxHex: unsignedTxHexFromPsbt(commitPsbtHex),
+      expectedKeys: signerKeys(signer),
+    });
+  }
+
   // `runAsync`: the signer may prompt an external wallet asynchronously. The
   // quote's PSBT is base64 — the only one in this SDK — and every signer here
   // works in hex.
   const signedPsbtHex = await progress.runAsync("signCreationPsbt", () =>
-    Promise.resolve(
-      signer.signPsbtHex(psbtBase64ToHex(quote.psbtBase64), quote.inputsToSign),
-    ),
+    Promise.resolve(signer.signPsbtHex(commitPsbtHex, quote.inputsToSign)),
   );
 
   // Submit the signed PSBT rather than an extracted transaction: `psbt-signer`
@@ -182,7 +212,27 @@ export async function createToken(
     psbt: signedPsbtHex,
     identifier: quote.identifier,
   };
-  if (quote.revealTxHex !== null) submit.revealTxHex = quote.revealTxHex;
+  if (signsReveal) {
+    // The reveal binds to the commit's txid, which the signatures cannot move,
+    // so it is verified against the *unsigned* commit the quote returned — the
+    // same transaction the server will broadcast once it finalizes the PSBT.
+    // The PSBT network only governs address encoding; there is none here.
+    const signed = await progress.runAsync("signRevealTx", () =>
+      signReveal({
+        revealTxHex: quote.revealTxHex!,
+        material: quote.revealSigning!,
+        commitTxHex: unsignedTxHexFromPsbt(commitPsbtHex),
+        signer,
+        network: btc.networks.bitcoin,
+      }),
+    );
+    submit.revealTxHex = signed.revealTxHex;
+  } else if (quote.revealTxHex !== null) {
+    // Ordinals: a reveal the server signed with a key it then discarded. An
+    // inscription is not a Counterparty message, so the source rule does not
+    // apply, and it goes through verbatim.
+    submit.revealTxHex = quote.revealTxHex;
+  }
 
   let result: CreationResult;
   try {
@@ -198,6 +248,46 @@ export async function createToken(
   }
 
   return { ...result, quote };
+}
+
+/**
+ * Whether a Counterparty creation quote can be signed and broadcast safely.
+ * Runs inside {@link createToken}; a screen that quotes first should call it
+ * right after `requestCreationQuote`, so the user learns of an out-of-date
+ * server before a confirm modal, not after signing.
+ *
+ * Ordinals quotes always pass: their reveal is not a Counterparty message.
+ *
+ * @throws {PresignedRevealError} the quote carries a reveal without its signing
+ * material — pre-signed by the server, which the network has ignored since
+ * Counterparty Core v11.5.0.
+ * @throws {Error} the quote's transaction is a taproot *commit* (no inline data
+ * output) but no reveal came with it — the server dropped the reveal a
+ * v11.5.0+ node returned unsigned. Broadcasting the commit alone would strand
+ * its output; or the quote carries signing material but no reveal.
+ */
+export function assertCreationQuoteSignable(
+  quote: Pick<CreationQuote, "type" | "revealTxHex" | "revealSigning">,
+  commitPsbtHex: string,
+): void {
+  if (quote.type !== "counterparty") return;
+  if (quote.revealTxHex !== null && !quote.revealSigning) {
+    throw new PresignedRevealError("The creation quote");
+  }
+  if (quote.revealSigning && quote.revealTxHex === null) {
+    throw new Error(
+      "The creation quote carries reveal signing material but no reveal transaction.",
+    );
+  }
+  if (quote.revealTxHex === null && !carriesInlineCounterpartyData(commitPsbtHex)) {
+    throw new Error(
+      "The quoted transaction carries no Counterparty data output and no reveal " +
+        "to sign: it is a taproot commit whose reveal the server did not return " +
+        "(Counterparty Core ≥ 11.5.0 behind a Horizon Market server that does not " +
+        "forward the unsigned reveal). Broadcasting it alone would strand the " +
+        "commit output, so nothing was signed. The server must be updated.",
+    );
+  }
 }
 
 /** The subset of a signer a creation needs: its addresses and taproot key. */
@@ -234,12 +324,21 @@ export function creationQuoteParams(
     }
   }
 
-  // Only when funding from taproot, and then the x-only key: an HDSigner's
-  // segwit (BIP84) and taproot (BIP86) keys differ, and the server rejects a
-  // key that doesn't match the input rather than ignoring it.
+  // Funding from taproot: the x-only key — an HDSigner's segwit (BIP84) and
+  // taproot (BIP86) keys differ, and the server rejects a key that doesn't match
+  // the input rather than ignoring it. A Counterparty creation funded from the
+  // signer's own segwit address sends its compressed key too: when the
+  // issuance needs a taproot envelope the server closes the envelope with it
+  // (Counterparty Core `multisig_pubkey`), which is what lets this wallet sign
+  // the reveal. Ordinals never need it — their reveal is not a Counterparty
+  // message — and an address the signer does not own has no key to send.
   const publicKey =
     params.publicKey ??
-    (isTaprootAddress(address) ? addresses.xOnlyPubkey : undefined);
+    (isTaprootAddress(address)
+      ? addresses.xOnlyPubkey
+      : params.type === "counterparty" && address === addresses.p2wpkh
+        ? addresses.publicKey
+        : undefined);
 
   const base = {
     name: params.name,

@@ -5,6 +5,7 @@ import {
   readErrorMessage,
 } from "./http.js";
 import type { RequestOptions } from "../types/index.js";
+import type { RevealSigningMaterial } from "../crypto/reveal.js";
 
 /**
  * Token creation — `/api/creations/*`.
@@ -60,6 +61,13 @@ interface WireCreationQuote {
   reveal_tx_hex: string | null;
   estimated_fee_sats: number;
   total_cost_sats: number;
+  // Counterparty taproot envelope only — Counterparty Core's own result keys,
+  // passed through by the server. Present together or not at all.
+  envelope_script?: string | null;
+  reveal_control_block?: string | null;
+  reveal_pubkey?: string | null;
+  reveal_lock_scripts?: string[] | null;
+  reveal_inputs_values?: number[] | null;
 }
 
 interface WireCreationSubmitBody {
@@ -146,6 +154,12 @@ interface CreationQuoteParamsBase {
    * Hex public key (x-only or compressed) of `address`. Required whenever
    * `address` is taproot — it becomes each taproot input's `tapInternalKey`, and
    * the server rejects a key that doesn't match rather than ignoring it.
+   *
+   * For a Counterparty creation send it for a native-segwit `address` too
+   * (compressed): when the issuance needs a taproot envelope the server closes
+   * the envelope with this key (Counterparty Core `multisig_pubkey`), so the
+   * wallet can sign the reveal. Without it the node looks the key up in the
+   * address's spending history and fails for an address that never spent.
    */
   publicKey?: string;
 }
@@ -180,12 +194,29 @@ export interface CreationQuote {
   /** Every input index; pass straight to `signer.signPsbtHex`. */
   inputsToSign: number[];
   /**
-   * Ordinals: always set — a reveal pre-signed with a key the server discards.
-   * Counterparty: set only when Counterparty falls back to taproot encoding.
-   * Echo it **verbatim** on submit; a commit broadcast without its reveal
-   * strands the funds at a script nothing can unlock.
+   * Ordinals: always set — a reveal pre-signed with a key the server discards
+   * (an ordinal inscription is not a Counterparty message, so the source
+   * signature rule does not apply). Echo it **verbatim** on submit; a commit
+   * broadcast without its reveal strands the funds at a script nothing can
+   * unlock.
+   *
+   * Counterparty: set only when the issuance falls back to a taproot envelope
+   * (a description too long for `OP_RETURN`), and then **unsigned**, with
+   * {@link revealSigning} carrying what the wallet needs to sign it — since
+   * Counterparty Core v11.5.0 the node no longer signs reveals, because the
+   * network attributes a reveal to the funding address only when that address
+   * signed it. `createToken` signs it and submits the signed hex. A Counterparty
+   * reveal *without* `revealSigning` comes from an out-of-date server and would
+   * be ignored by the network: `createToken` refuses it.
    */
   revealTxHex: string | null;
+  /**
+   * Counterparty taproot envelope only: the envelope leaf, control block, the
+   * x-only key that closes the leaf (a key of `address`) and the commit output
+   * the reveal spends. `null` for ordinals and for inline-encoded issuances.
+   * See `signReveal` for how it is consumed.
+   */
+  revealSigning: RevealSigningMaterial | null;
   estimatedFeeSats: number;
   /**
    * BTC only. Ordinals includes the 546-sat postage; Counterparty does **not**
@@ -201,7 +232,11 @@ export interface SubmitCreationParams {
   txHex?: string;
   /** Signed PSBT, hex or base64 — the server finalizes and extracts it. */
   psbt?: string;
-  /** Required for ordinals: the quote's `revealTxHex`, unchanged. */
+  /**
+   * Ordinals: the quote's `revealTxHex`, unchanged. Counterparty taproot
+   * envelope: the reveal **signed by the wallet** (`signReveal`). The server
+   * broadcasts the commit, then this.
+   */
   revealTxHex?: string;
   /** Echoed back on the result for Counterparty; ignored for ordinals. */
   identifier?: string;
@@ -297,6 +332,52 @@ function marshalOptions(
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
+/**
+ * Counterparty Core's reveal result keys → {@link RevealSigningMaterial}, or
+ * `null` when none is present. A partial set is a malformed quote, not a
+ * variant: signing with a guessed field would produce a reveal the network
+ * ignores, so it is refused here rather than deep inside the signer.
+ */
+export function mapRevealSigning(wire: {
+  envelope_script?: string | null;
+  reveal_control_block?: string | null;
+  reveal_pubkey?: string | null;
+  reveal_lock_scripts?: string[] | null;
+  reveal_inputs_values?: number[] | null;
+}): RevealSigningMaterial | null {
+  const fields = [
+    wire.envelope_script,
+    wire.reveal_control_block,
+    wire.reveal_pubkey,
+    wire.reveal_lock_scripts?.[0],
+    wire.reveal_inputs_values?.[0],
+  ];
+  const present = fields.filter((f) => f !== undefined && f !== null);
+  if (present.length === 0) return null;
+  if (
+    present.length !== fields.length ||
+    typeof wire.envelope_script !== "string" ||
+    typeof wire.reveal_control_block !== "string" ||
+    typeof wire.reveal_pubkey !== "string" ||
+    typeof wire.reveal_lock_scripts?.[0] !== "string" ||
+    typeof wire.reveal_inputs_values?.[0] !== "number"
+  ) {
+    throw new HorizonMarketApiError(
+      502,
+      "The quote carries an incomplete reveal signing material (envelope_script, " +
+        "reveal_control_block, reveal_pubkey, reveal_lock_scripts, " +
+        "reveal_inputs_values must come together).",
+    );
+  }
+  return {
+    envelopeScript: wire.envelope_script,
+    controlBlock: wire.reveal_control_block,
+    pubkey: wire.reveal_pubkey,
+    lockScript: wire.reveal_lock_scripts[0],
+    inputValue: wire.reveal_inputs_values[0],
+  };
+}
+
 function mapCreationQuote(wire: WireCreationQuote): CreationQuote {
   return {
     type: wire.type,
@@ -304,6 +385,7 @@ function mapCreationQuote(wire: WireCreationQuote): CreationQuote {
     psbtBase64: wire.psbt,
     inputsToSign: wire.inputs_to_sign,
     revealTxHex: wire.reveal_tx_hex,
+    revealSigning: mapRevealSigning(wire),
     estimatedFeeSats: wire.estimated_fee_sats,
     totalCostSats: wire.total_cost_sats,
   };

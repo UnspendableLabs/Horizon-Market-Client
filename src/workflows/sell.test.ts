@@ -4,6 +4,8 @@ import { HttpClient, HorizonMarketApiError } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import { signPsbtHex } from "../crypto/psbt-signer.js";
 import { openSellOrder } from "./sell.js";
+import { LocalSigner } from "../crypto/signer.js";
+import { PresignedRevealError } from "../crypto/reveal.js";
 import type { WorkflowProgressEvent } from "../types/progress.js";
 import {
   TEST_PRIVATE_KEY_HEX,
@@ -11,6 +13,9 @@ import {
   makeAsyncSigner,
   makeSequentialFetch,
   makeSigner,
+  REVEAL_FIXTURE,
+  REVEAL_FIXTURE_WIRE,
+  revealFixtureCommitPsbtHex,
 } from "../test-utils.js";
 
 const WIRE_SELL_QUOTE = {
@@ -848,8 +853,72 @@ describe("openSellOrder", () => {
     expect(body.zeld_payment).toBeUndefined();
   });
 
-  it("passes reveal_tx_hex unchanged from quote when attach+reveal", async () => {
+  it("signs the attach reveal and submits it when the attach rides a taproot envelope", async () => {
     const quoteWithReveal = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: revealFixtureCommitPsbtHex(),
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      ...REVEAL_FIXTURE_WIRE,
+      asset_utxo_id: `${REVEAL_FIXTURE.revealTxid}:0`,
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: quoteWithReveal } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const events: WorkflowProgressEvent[] = [];
+
+    // Real PSBTs (commit, reveal) are signed with the fixture key; the swap and
+    // fee placeholders are not parseable and get the mock treatment.
+    const local = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    const hybridSigner: Signer = {
+      getAddresses: () => local.getAddresses(),
+      signPsbtHex: (hex, indices) =>
+        /^[0-9a-f]+$/.test(hex) ? local.signPsbtHex(hex, indices) : `${hex}_signed`,
+      signMessage: () => "base64sig",
+    };
+
+    const result = await openSellOrder(
+      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+      http,
+      hybridSigner,
+      "mainnet",
+      btc.networks.bitcoin,
+      { onProgress: (e) => events.push(e) },
+    );
+
+    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const body = JSON.parse(createInit.body as string);
+    const commit = btc.Transaction.fromHex(body.funding_tx_hex);
+    expect(commit.getId()).toBe(REVEAL_FIXTURE.commitTxid);
+    const reveal = btc.Transaction.fromHex(body.reveal_tx_hex);
+    expect(reveal.getId()).toBe(REVEAL_FIXTURE.revealTxid);
+    expect(reveal.ins[0].witness).toHaveLength(3);
+    // The listing's asset UTXO is reveal:0, as the quote said.
+    expect(result.transactions).toEqual([
+      { txid: REVEAL_FIXTURE.revealTxid, kind: "asset" },
+    ]);
+
+    const startSteps = events.filter((e) => e.phase === "start").map((e) => e.step);
+    expect(startSteps).toEqual([
+      "validateParams",
+      "requestSellQuote",
+      "signPrepPsbt",
+      "finalizePrepPsbt",
+      "signRevealTx",
+      "signSwapPsbt",
+      "signFeePsbt",
+      "createSwap",
+    ]);
+    expect(events.at(-1)?.totalSteps).toBe(8);
+  });
+
+  it("refuses a reveal pre-signed by an out-of-date server, before any signature", async () => {
+    const legacyQuote = {
       ...WIRE_SELL_QUOTE,
       prep_psbt: FIXTURE_PSBT_HEX,
       prep_inputs_to_sign: [0],
@@ -858,34 +927,23 @@ describe("openSellOrder", () => {
       asset_utxo_id: "revealthash:0",
     };
     const fetch = makeSequentialFetch(
-      { status: 200, body: { data: quoteWithReveal } },
+      { status: 200, body: { data: legacyQuote } },
       { status: 201, body: { data: WIRE_SWAP } },
     );
     const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    const signer = makeSigner();
 
-    const hybridSigner: Signer = {
-      getAddresses: () => ({ p2wpkh: "bc1qseller", publicKey: "02aabb" }),
-      signPsbtHex: (hex, indices) =>
-        hex === FIXTURE_PSBT_HEX
-          ? signPsbtHex(hex, indices, TEST_PRIVATE_KEY_HEX, btc.networks.bitcoin)
-          : `${hex}_signed`,
-      signMessage: () => "base64sig",
-    };
-
-    await openSellOrder(
-      { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
-      http,
-      hybridSigner,
-      "mainnet",
-      btc.networks.bitcoin,
-    );
-
-    const [, createInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[1] as [
-      string,
-      RequestInit,
-    ];
-    const body = JSON.parse(createInit.body as string);
-    expect(body.reveal_tx_hex).toBe("0200000001reveal...");
+    await expect(
+      openSellOrder(
+        { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toBeInstanceOf(PresignedRevealError);
+    expect(signer.signPsbtHex).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("emits progress events for standard sell (5 steps)", async () => {
@@ -935,7 +993,6 @@ describe("openSellOrder", () => {
       prep_psbt: FIXTURE_PSBT_HEX,
       prep_inputs_to_sign: [0],
       prep_kind: "attach",
-      reveal_tx_hex: "0200000001reveal...",
     };
     const fetch = makeSequentialFetch(
       { status: 200, body: { data: quoteWithPrep } },

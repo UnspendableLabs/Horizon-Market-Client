@@ -1,10 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import * as btc from "bitcoinjs-lib";
-import { signAndFinalizeSellPrep } from "./sell-prep.js";
+import { signAndFinalizeSellPrep, signSellPrepReveal } from "./sell-prep.js";
+import { LocalSigner } from "../crypto/signer.js";
+import { PresignedRevealError } from "../crypto/reveal.js";
 import { signPsbtHex } from "../crypto/psbt-signer.js";
 import type { Signer } from "../crypto/signer.js";
 import type { SellQuote } from "../types/index.js";
-import { FIXTURE_PSBT_HEX, TEST_PRIVATE_KEY_HEX } from "../test-utils.js";
+import {
+  FIXTURE_PSBT_HEX,
+  REVEAL_FIXTURE,
+  revealFixtureCommitPsbtHex,
+  TEST_PRIVATE_KEY_HEX,
+} from "../test-utils.js";
 
 const BASE_QUOTE: SellQuote = {
   swapPsbt: "70736274ff_swap",
@@ -65,7 +72,6 @@ describe("signAndFinalizeSellPrep", () => {
         prepPsbt: FIXTURE_PSBT_HEX,
         prepInputsToSign: [0],
         prepKind: "attach",
-        revealTxHex: "02000000reveal",
       },
       signer,
       btc.networks.bitcoin,
@@ -73,7 +79,7 @@ describe("signAndFinalizeSellPrep", () => {
 
     expect(result?.fundingTxHex).toMatch(/^[0-9a-f]+$/);
     expect(result?.fundingTxHex?.startsWith("70736274ff")).toBe(false);
-    expect(result?.revealTxHex).toBe("02000000reveal");
+    expect(result?.revealTxHex).toBeUndefined();
     expect(result?.zeldPayment).toBeUndefined();
   });
 
@@ -125,7 +131,6 @@ describe("signAndFinalizeSellPrep", () => {
         prepPsbt: FIXTURE_PSBT_HEX,
         prepInputsToSign: [0],
         prepKind: "attach",
-        revealTxHex: "02000000reveal",
       },
       signer,
       btc.networks.bitcoin,
@@ -151,5 +156,70 @@ describe("signAndFinalizeSellPrep", () => {
         btc.networks.bitcoin,
       ),
     ).rejects.toThrow('Unexpected prep_kind "null"');
+  });
+});
+
+// ─── Attach in a taproot envelope ────────────────────────────────────────────
+
+describe("signAndFinalizeSellPrep with a taproot envelope", () => {
+  const material = {
+    envelopeScript: REVEAL_FIXTURE.envelopeScript,
+    controlBlock: REVEAL_FIXTURE.controlBlock,
+    pubkey: REVEAL_FIXTURE.xOnlyPubkey,
+    lockScript: REVEAL_FIXTURE.lockScript,
+    inputValue: REVEAL_FIXTURE.inputValue,
+  };
+  const envelopeQuote: SellQuote = {
+    ...BASE_QUOTE,
+    prepPsbt: revealFixtureCommitPsbtHex(),
+    prepInputsToSign: [0],
+    prepKind: "attach",
+    revealTxHex: REVEAL_FIXTURE.revealTxHex,
+    revealSigning: material,
+    assetUtxoId: `${REVEAL_FIXTURE.revealTxid}:0`,
+  };
+
+  it("signs the commit, then the reveal against it", async () => {
+    const signer = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    const result = await signAndFinalizeSellPrep(
+      envelopeQuote,
+      signer,
+      btc.networks.bitcoin,
+    );
+
+    const commit = btc.Transaction.fromHex(result!.fundingTxHex!);
+    expect(commit.getId()).toBe(REVEAL_FIXTURE.commitTxid);
+    const reveal = btc.Transaction.fromHex(result!.revealTxHex!);
+    expect(reveal.getId()).toBe(REVEAL_FIXTURE.revealTxid);
+    expect(reveal.ins[0].witness).toHaveLength(3);
+    expect(Buffer.from(reveal.ins[0].witness[1]).toString("hex")).toBe(
+      REVEAL_FIXTURE.envelopeScript,
+    );
+  });
+
+  it("refuses a pre-signed reveal without asking for any signature", async () => {
+    const signer = hybridSigner();
+    await expect(
+      signAndFinalizeSellPrep(
+        { ...envelopeQuote, revealSigning: undefined, revealTxHex: "02000000reveal" },
+        signer,
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toBeInstanceOf(PresignedRevealError);
+    expect(signer.signPsbtHex).not.toHaveBeenCalled();
+  });
+
+  it("refuses signing material without a reveal, and a quote with nothing to sign", async () => {
+    const signer = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    await expect(
+      signAndFinalizeSellPrep(
+        { ...envelopeQuote, revealTxHex: undefined },
+        signer,
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toThrow(/signing material but no reveal/);
+    await expect(
+      signSellPrepReveal(BASE_QUOTE, "00", signer, btc.networks.bitcoin),
+    ).rejects.toThrow(/no reveal to sign/);
   });
 });

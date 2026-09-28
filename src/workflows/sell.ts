@@ -2,7 +2,12 @@ import type { HttpClient } from "../api/http.js";
 import { requestSellQuote } from "../api/sell-quotes.js";
 import { createSwap } from "../api/atomic-swaps.js";
 import type { Signer } from "../crypto/signer.js";
-import { buildSellPrepResult, type SignedSellPrepResult } from "./sell-prep.js";
+import {
+  assertSellQuoteRevealSignable,
+  buildSellPrepResult,
+  signSellPrepReveal,
+  type SignedSellPrepResult,
+} from "./sell-prep.js";
 import { WorkflowProgressReporter } from "./progress.js";
 import type {
   AtomicSwap,
@@ -79,6 +84,7 @@ export interface SellBroadcastTx {
  * Workflow:
  * 1. Request sell quote (server composes all PSBTs).
  * 2. If prep_psbt is present: sign + finalize → attach commit tx hex (counterparty) or zeld_payment / funding_tx_hex (zeld transfer).
+ *    An attach in a taproot envelope then has its reveal signed by the seller (`signRevealTx`).
  * 3. Sign swap_psbt (PSBT hex, do NOT finalize).
  * 4. If fee_psbt is present: sign (PSBT hex, do NOT finalize).
  * 5. Create the swap listing.
@@ -151,9 +157,18 @@ export async function openSellOrder(
     }),
   );
 
+  // A reveal this wallet cannot sign (pre-signed by an out-of-date server) is
+  // refused before anything is signed: the network ignores such a reveal, so
+  // the listing would never fund. Checked here rather than at finalize time so
+  // the seller is not asked for a commit signature that goes nowhere.
+  assertSellQuoteRevealSignable(quote);
+
   // Base: validateParams + requestSellQuote + signSwapPsbt + createSwap
   progress.setTotalSteps(
-    4 + (quote.prepPsbt ? 2 : 0) + (quote.feePsbt ? 1 : 0),
+    4 +
+      (quote.prepPsbt ? 2 : 0) +
+      (quote.prepPsbt && quote.revealSigning ? 1 : 0) +
+      (quote.feePsbt ? 1 : 0),
   );
 
   let prep: SignedSellPrepResult | undefined;
@@ -168,6 +183,14 @@ export async function openSellOrder(
     prep = progress.runSync("finalizePrepPsbt", () =>
       buildSellPrepResult(quote, signedPrepHex, btcNetwork),
     );
+    // Attach in a taproot envelope: the seller signs the reveal against the
+    // commit just finalized. The asset UTXO the swap spends is `reveal:0`.
+    if (prep.fundingTxHex && quote.revealSigning) {
+      const fundingTxHex = prep.fundingTxHex;
+      prep.revealTxHex = await progress.runAsync("signRevealTx", () =>
+        signSellPrepReveal(quote, fundingTxHex, signer, btcNetwork),
+      );
+    }
   }
 
   const signedSwapPsbt = await progress.runAsync("signSwapPsbt", () =>

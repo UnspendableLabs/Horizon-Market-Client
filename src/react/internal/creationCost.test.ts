@@ -8,6 +8,7 @@ const COUNTERPARTY: CreationQuote = {
   psbtBase64: "cHNidP8BAA==",
   inputsToSign: [0],
   revealTxHex: null,
+  revealSigning: null,
   estimatedFeeSats: 1240,
   totalCostSats: 1240,
 };
