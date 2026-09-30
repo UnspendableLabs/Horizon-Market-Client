@@ -5,7 +5,7 @@ import type { Signer } from "../crypto/signer.js";
 import { signPsbtHex } from "../crypto/psbt-signer.js";
 import { openSellOrder } from "./sell.js";
 import { LocalSigner } from "../crypto/signer.js";
-import { PresignedRevealError } from "../crypto/reveal.js";
+import { PresignedRevealError, RevealVerificationError } from "../crypto/reveal.js";
 import type { WorkflowProgressEvent } from "../types/progress.js";
 import {
   TEST_PRIVATE_KEY_HEX,
@@ -942,6 +942,42 @@ describe("openSellOrder", () => {
         btc.networks.bitcoin,
       ),
     ).rejects.toBeInstanceOf(PresignedRevealError);
+    expect(signer.signPsbtHex).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the attach reveal against the wallet's keys before the prep prompt", async () => {
+    const envelopeQuote = {
+      ...WIRE_SELL_QUOTE,
+      prep_psbt: revealFixtureCommitPsbtHex(),
+      prep_inputs_to_sign: [0],
+      prep_kind: "attach",
+      ...REVEAL_FIXTURE_WIRE,
+      asset_utxo_id: `${REVEAL_FIXTURE.revealTxid}:0`,
+    };
+    const fetch = makeSequentialFetch(
+      { status: 200, body: { data: envelopeQuote } },
+      { status: 201, body: { data: WIRE_SWAP } },
+    );
+    const http = new HttpClient({ baseUrl: "https://example.com", fetch });
+    // A wallet whose keys do not close the envelope: signing the attach commit
+    // would pay for a listing whose reveal it can never sign.
+    const stranger = new LocalSigner("7".repeat(64));
+    const signer: Signer = {
+      getAddresses: () => stranger.getAddresses(),
+      signPsbtHex: vi.fn((hex: string, indices: number[]) => stranger.signPsbtHex(hex, indices)),
+      signMessage: () => "base64sig",
+    };
+
+    await expect(
+      openSellOrder(
+        { assetName: "RAREPEPE", assetQuantity: 1n, priceSats: 250000, listingType: "counterparty" },
+        http,
+        signer,
+        "mainnet",
+        btc.networks.bitcoin,
+      ),
+    ).rejects.toBeInstanceOf(RevealVerificationError);
     expect(signer.signPsbtHex).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
   });

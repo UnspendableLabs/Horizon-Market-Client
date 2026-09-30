@@ -370,9 +370,13 @@ export {
 // the compose API directly.
 export {
   signReveal,
+  signVerifiedReveal,
   verifyReveal,
+  readRevealCommit,
+  signerKeys,
   buildRevealPsbt,
   assertSignedReveal,
+  assertCommitUnchanged,
   carriesInlineCounterpartyData,
   unsignedTxHexFromPsbt,
   envelopeSigningKey,
@@ -381,6 +385,7 @@ export {
   TAPSCRIPT_LEAF_VERSION,
 } from "./crypto/reveal.js";
 export type {
+  RevealCommit,
   RevealSigningMaterial,
   SignedReveal,
   SignRevealParams,

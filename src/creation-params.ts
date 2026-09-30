@@ -158,20 +158,21 @@ const PUBKEY_PATTERN = /^(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{66})$/;
 /**
  * A taproot funding address needs its public key: it becomes each taproot
  * input's `tapInternalKey`, and the server checks it against the input's script
- * rather than ignoring a wrong one.
+ * rather than ignoring a wrong one. Whatever the address, a key that is sent
+ * must be one the server accepts (x-only or compressed hex) — it would answer
+ * a 400 only after the quote has pinned its descriptor.
  */
 export function assertCreationPubkey(
   address: string,
   publicKey: string | undefined,
 ): void {
-  if (!isTaprootAddress(address)) return;
-  if (!publicKey) {
+  if (isTaprootAddress(address) && !publicKey) {
     throw new Error(
       "A P2TR funding address requires its public key (x-only or compressed hex). " +
         "Pass publicKey explicitly or fund from the signer's native segwit address.",
     );
   }
-  if (!PUBKEY_PATTERN.test(publicKey)) {
+  if (publicKey !== undefined && !PUBKEY_PATTERN.test(publicKey)) {
     throw new Error(
       "publicKey must be 64 (x-only) or 66 (compressed) hex characters.",
     );

@@ -3,9 +3,9 @@ import { requestSellQuote } from "../api/sell-quotes.js";
 import { createSwap } from "../api/atomic-swaps.js";
 import type { Signer } from "../crypto/signer.js";
 import {
-  assertSellQuoteRevealSignable,
-  buildSellPrepResult,
-  signSellPrepReveal,
+  finalizeSellPrep,
+  signSellReveal,
+  verifySellQuoteReveal,
   type SignedSellPrepResult,
 } from "./sell-prep.js";
 import { WorkflowProgressReporter } from "./progress.js";
@@ -24,7 +24,7 @@ import {
   assertZeldMainnet,
   resolveSellerPubkey,
 } from "../sell-params.js";
-import * as btc from "bitcoinjs-lib";
+import type * as btc from "bitcoinjs-lib";
 
 /** Sell params for the PSBT asset types (counterparty / ordinal / zeld). */
 export interface PsbtSellOrderParams {
@@ -109,7 +109,7 @@ export async function openSellOrder(
     options?.onProgress,
   );
 
-  const { sellerAddress, sellerPubkey, expiresAt } = progress.runSync(
+  const { addresses, sellerAddress, sellerPubkey, expiresAt } = progress.runSync(
     "validateParams",
     () => {
       assertZeldMainnet(params.listingType, network);
@@ -135,6 +135,7 @@ export async function openSellOrder(
       }
 
       return {
+        addresses,
         sellerAddress: resolvedSellerAddress,
         sellerPubkey: resolvedSellerPubkey,
         expiresAt: resolvedExpiresAt,
@@ -157,38 +158,38 @@ export async function openSellOrder(
     }),
   );
 
-  // A reveal this wallet cannot sign (pre-signed by an out-of-date server) is
-  // refused before anything is signed: the network ignores such a reveal, so
-  // the listing would never fund. Checked here rather than at finalize time so
-  // the seller is not asked for a commit signature that goes nowhere.
-  assertSellQuoteRevealSignable(quote);
+  // A reveal this wallet cannot sign — pre-signed by an out-of-date server,
+  // closed by a key that is not the funder's or ours, or inconsistent with its
+  // commit — is refused before anything is signed: the network would ignore
+  // it, so the listing would never fund. Checked here rather than at finalize
+  // time so the seller is not asked for a commit signature that goes nowhere.
+  const reveal = verifySellQuoteReveal(quote, addresses);
 
   // Base: validateParams + requestSellQuote + signSwapPsbt + createSwap
   progress.setTotalSteps(
     4 +
       (quote.prepPsbt ? 2 : 0) +
-      (quote.prepPsbt && quote.revealSigning ? 1 : 0) +
+      (reveal ? 1 : 0) +
       (quote.feePsbt ? 1 : 0),
   );
 
   let prep: SignedSellPrepResult | undefined;
   if (quote.prepPsbt) {
+    const prepPsbt = quote.prepPsbt;
     // `runAsync` (not `runSync`): the signer may sign asynchronously — an
     // external wallet prompts through a popup — so its result is awaited.
     const signedPrepHex = await progress.runAsync("signPrepPsbt", () =>
-      Promise.resolve(
-        signer.signPsbtHex(quote.prepPsbt!, quote.prepInputsToSign),
-      ),
+      Promise.resolve(signer.signPsbtHex(prepPsbt, quote.prepInputsToSign)),
     );
     prep = progress.runSync("finalizePrepPsbt", () =>
-      buildSellPrepResult(quote, signedPrepHex, btcNetwork),
+      finalizeSellPrep(quote, signedPrepHex, btcNetwork),
     );
-    // Attach in a taproot envelope: the seller signs the reveal against the
-    // commit just finalized. The asset UTXO the swap spends is `reveal:0`.
-    if (prep.fundingTxHex && quote.revealSigning) {
-      const fundingTxHex = prep.fundingTxHex;
+    // Attach in a taproot envelope: the seller signs the reveal verified above,
+    // once the commit it spends is signed. The asset UTXO the swap spends is
+    // `reveal:0`.
+    if (reveal) {
       prep.revealTxHex = await progress.runAsync("signRevealTx", () =>
-        signSellPrepReveal(quote, fundingTxHex, signer, btcNetwork),
+        signSellReveal(reveal, prepPsbt, signedPrepHex, signer, btcNetwork),
       );
     }
   }

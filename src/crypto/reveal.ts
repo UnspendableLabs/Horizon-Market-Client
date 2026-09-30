@@ -91,8 +91,9 @@ export class PresignedRevealError extends Error {
 
 /**
  * Thrown when the reveal, its signing material and the commit disagree: the
- * envelope is not canonical, is closed by a key that is not ours, does not
- * hash to the commit output, or the reveal does not spend `commit:0`. Signing
+ * envelope is not canonical, is closed by a key that is not the commit funder's
+ * or not ours, does not hash to the commit output, the reveal does not spend
+ * `commit:0`, or the commit's txid can move before it is broadcast. Signing
  * would either produce a reveal the network ignores or authorize spending
  * something we did not compose — so nothing is signed.
  */
@@ -114,22 +115,51 @@ export interface VerifiedReveal {
   inputValue: bigint;
   /** x-only key closing the envelope. */
   pubkey: Buffer;
-  /** BIP341 tapleaf hash of the envelope under leaf version `0xc0`. */
+  /**
+   * BIP341 tapleaf hash of the envelope under leaf version `0xc0` — also the
+   * merkle root of its single-leaf tree.
+   */
   leafHash: Buffer;
 }
 
-export interface VerifyRevealOptions {
+/**
+ * The commit a reveal binds to, as {@link readRevealCommit} reads it off the
+ * commit PSBT. Spread it into {@link VerifyRevealOptions} or
+ * {@link SignRevealParams}.
+ */
+export interface RevealCommit {
   /**
-   * The commit transaction (unsigned or signed — the reveal binds to its txid,
-   * which segwit signing cannot move). Its output 0 must be the envelope output
-   * the material describes.
+   * The commit transaction. Unsigned or signed alike: the reveal binds to its
+   * txid, which witness-only signing cannot move. Its output 0 must be the
+   * envelope output the material describes.
    */
   commitTxHex: string;
   /**
-   * Keys the wallet can sign for, as hex: compressed (66 chars) or x-only
-   * (64 chars). The envelope must be closed by one of them, or by the BIP86
-   * output key of one of them (the composer's fallback for a P2TR source whose
-   * key it could not find). When omitted the key check is skipped.
+   * Hex scriptPubKey of the output the commit's input 0 spends: the address the
+   * node attributes the reveal to.
+   */
+  sourceScriptPubkey: string;
+}
+
+export interface VerifyRevealOptions {
+  /** See {@link RevealCommit.commitTxHex}. */
+  commitTxHex: string;
+  /**
+   * See {@link RevealCommit.sourceScriptPubkey}. The envelope must be closed by
+   * a key of that address, under the node's own rule: the output key, or the
+   * internal key it is the BIP86 tweak of, for P2TR; the compressed key behind
+   * the hash for P2WPKH, nested P2WPKH and P2PKH (uncompressed too for P2PKH).
+   * Any other key and the network ignores the reveal. When omitted the check is
+   * skipped.
+   */
+  sourceScriptPubkey?: string;
+  /**
+   * Keys the wallet can close a leaf with, as hex: x-only (64 chars) or
+   * compressed (66 chars, the parity byte is dropped). {@link signerKeys} lists
+   * a signer's. The envelope must be closed by one of them — otherwise no key
+   * here can produce the signature, and the wallet prompt would be wasted.
+   * Taken as given: a key's BIP86 tweak counts only when it is listed too. When
+   * omitted the check is skipped.
    */
   expectedKeys?: string[];
 }
@@ -145,55 +175,84 @@ function txidOf(hash: Uint8Array): string {
   return Buffer.from(hash).reverse().toString("hex");
 }
 
-/** BIP341 `TapLeaf` tagged hash: `leaf_version || compact_size(script) || script`. */
-export function tapleafHash(script: Uint8Array): Buffer {
-  const len = script.length;
-  let size: Buffer;
-  if (len < 0xfd) size = Buffer.from([len]);
-  else if (len <= 0xffff) {
-    size = Buffer.alloc(3);
-    size[0] = 0xfd;
-    size.writeUInt16LE(len, 1);
-  } else {
-    size = Buffer.alloc(5);
-    size[0] = 0xfe;
-    size.writeUInt32LE(len, 1);
-  }
-  return Buffer.from(
-    btc.crypto.taggedHash(
-      "TapLeaf",
-      Buffer.concat([Buffer.from([TAPSCRIPT_LEAF_VERSION]), size, script]),
-    ),
-  );
-}
-
 /** x-only form of a hex key: compressed keys lose their parity byte. */
 export function toXOnlyHex(keyHex: string): string {
   const key = keyHex.toLowerCase();
   return key.length === 66 ? key.slice(2) : key;
 }
 
+const PUBKEY_HEX = /^(?:0[23])?[0-9a-fA-F]{64}$/;
+
 /**
- * BIP86 output key of an x-only internal key (tweak with an empty merkle root)
- * — the key a P2TR address's scriptPubKey carries. `null` off the curve.
+ * BIP86 output key of an x-only internal key (tweaked with no script tree) —
+ * the key a P2TR address's scriptPubKey carries. `null` off the curve.
  */
-export function taprootOutputKeyHex(xOnlyHex: string): string | null {
+function bip86OutputKey(internalKey: Uint8Array): Buffer | null {
+  if (!ecc.isXOnlyPoint(internalKey)) return null;
   ensureEccLib();
-  const xOnly = Buffer.from(xOnlyHex, "hex");
-  if (xOnly.length !== 32) return null;
-  let tweaked: { xOnlyPubkey: Uint8Array } | null;
-  try {
-    tweaked = ecc.xOnlyPointAddTweak(
-      xOnly,
-      btc.crypto.taggedHash("TapTweak", xOnly),
-    );
-  } catch {
-    return null;
-  }
-  return tweaked ? Buffer.from(tweaked.xOnlyPubkey).toString("hex") : null;
+  return Buffer.from(btc.payments.p2tr({ internalPubkey: internalKey }).pubkey!);
 }
 
 const { OPS } = btc.script;
+
+/**
+ * Whether the x-only `key` is a key of the address whose scriptPubKey is
+ * `source` — the node's `source_controls_key` (`counterparty-rs/src/reveal.rs`),
+ * branch for branch. The key is x-only, so both parities of the compressed key
+ * are tried. Any other kind of source (bare multisig, P2WSH, …) has no single
+ * key that could have consented and never authorizes a reveal.
+ */
+function isKeyOfSource(key: Buffer, source: Buffer): boolean {
+  if (!ecc.isXOnlyPoint(key)) return false;
+  const compressed = [0x02, 0x03].map((parity) =>
+    Buffer.concat([Buffer.from([parity]), key]),
+  );
+  const hash160 = (data: Uint8Array) => Buffer.from(btc.crypto.hash160(data));
+
+  // P2TR `OP_1 <32-byte output key>`: the output key itself, or the internal
+  // key it is the BIP86 tweak of — a wallet may sign the leaf with either.
+  if (source.length === 34 && source[0] === OPS.OP_1 && source[1] === 0x20) {
+    const outputKey = source.subarray(2);
+    return key.equals(outputKey) || !!bip86OutputKey(key)?.equals(outputKey);
+  }
+  // P2WPKH `OP_0 <20-byte hash>`.
+  if (source.length === 22 && source[0] === OPS.OP_0 && source[1] === 0x14) {
+    const program = source.subarray(2);
+    return compressed.some((pubkey) => hash160(pubkey).equals(program));
+  }
+  // P2PKH `OP_DUP OP_HASH160 <20-byte hash> OP_EQUALVERIFY OP_CHECKSIG`.
+  if (
+    source.length === 25 &&
+    source[0] === OPS.OP_DUP &&
+    source[1] === OPS.OP_HASH160 &&
+    source[2] === 0x14 &&
+    source[23] === OPS.OP_EQUALVERIFY &&
+    source[24] === OPS.OP_CHECKSIG
+  ) {
+    const pubkeyHash = source.subarray(3, 23);
+    const uncompressed = compressed.map((pubkey) =>
+      Buffer.from(ecc.pointCompress(pubkey, false)),
+    );
+    return [...compressed, ...uncompressed].some((pubkey) =>
+      hash160(pubkey).equals(pubkeyHash),
+    );
+  }
+  // P2SH `OP_HASH160 <20-byte hash> OP_EQUAL`: a nested P2WPKH only.
+  if (
+    source.length === 23 &&
+    source[0] === OPS.OP_HASH160 &&
+    source[1] === 0x14 &&
+    source[22] === OPS.OP_EQUAL
+  ) {
+    const scriptHash = source.subarray(2, 22);
+    return compressed.some((pubkey) =>
+      hash160(Buffer.concat([Buffer.from([0x00, 0x14]), hash160(pubkey)])).equals(
+        scriptHash,
+      ),
+    );
+  }
+  return false;
+}
 
 /**
  * The x-only key closing a canonical Counterparty envelope, or `null` when the
@@ -243,8 +302,10 @@ function isCounterpartyOpReturn(script: Uint8Array): boolean {
 /**
  * Cross-check the unsigned reveal, its signing material and the commit before
  * signing anything. Every check mirrors one the node makes when it attributes
- * the reveal, plus the two that protect the wallet itself: the envelope is
- * closed by *our* key, and the commit output really is the envelope output.
+ * the reveal — the envelope key belonging to the commit's funder included, given
+ * `sourceScriptPubkey` — plus the two that protect the wallet itself: the
+ * envelope is closed by a key *we* hold, and the commit output really is the
+ * envelope output.
  *
  * @throws {RevealVerificationError} on the first inconsistency.
  */
@@ -285,15 +346,22 @@ export function verifyReveal(
     );
   }
 
-  // 2. …and that key is one of ours.
-  if (options.expectedKeys) {
-    const ours = new Set<string>();
-    for (const key of options.expectedKeys) {
-      const xOnly = toXOnlyHex(key);
-      ours.add(xOnly);
-      const outputKey = taprootOutputKeyHex(xOnly);
-      if (outputKey) ours.add(outputKey);
+  // 2. That key is one of the commit funder's — the only one the node accepts —
+  //    and one this wallet can sign with.
+  if (options.sourceScriptPubkey !== undefined) {
+    const source = hexToBuffer(
+      options.sourceScriptPubkey,
+      "the commit's source scriptPubKey",
+    );
+    if (!isKeyOfSource(pubkey, source)) {
+      throw new RevealVerificationError(
+        "the envelope is closed by a key that is not one of the address funding " +
+          "the commit (its input 0), so the network would ignore the reveal",
+      );
     }
+  }
+  if (options.expectedKeys) {
+    const ours = new Set(options.expectedKeys.map(toXOnlyHex));
     if (!ours.has(pubkey.toString("hex"))) {
       throw new RevealVerificationError(
         "the envelope is closed by a key this wallet does not hold",
@@ -329,6 +397,9 @@ export function verifyReveal(
       "reveal_control_block does not match the single-leaf tree of the envelope",
     );
   }
+  // A single-leaf tree's merkle root is its leaf hash — the one a script-path
+  // signature commits to. Always set: the tree was built from a script.
+  const leafHash = Buffer.from(tree.hash!);
 
   // 4. The commit really pays that output at index 0, for the announced value.
   let commit: btc.Transaction;
@@ -394,7 +465,84 @@ export function verifyReveal(
     lockScript,
     inputValue,
     pubkey,
-    leafHash: tapleafHash(envelope),
+    leafHash,
+  };
+}
+
+/** A native witness program: `OP_0`…`OP_16`, then one 2-to-40-byte push (BIP141). */
+function isWitnessProgram(script: Uint8Array): boolean {
+  const version = script[0];
+  return (
+    script.length >= 4 &&
+    script.length <= 42 &&
+    (version === OPS.OP_0 || (version >= OPS.OP_1 && version <= OPS.OP_16)) &&
+    script[1] === script.length - 2
+  );
+}
+
+/** The scriptPubKey a PSBT input spends, from its witnessUtxo or nonWitnessUtxo. */
+function prevoutScript(
+  input: btc.Psbt["data"]["inputs"][number],
+  txInput: btc.PsbtTxInput,
+): Uint8Array | null {
+  if (input.witnessUtxo) return input.witnessUtxo.script;
+  if (!input.nonWitnessUtxo) return null;
+  let previous: btc.Transaction;
+  try {
+    previous = btc.Transaction.fromBuffer(input.nonWitnessUtxo);
+  } catch {
+    return null;
+  }
+  // A nonWitnessUtxo that is not the spent transaction says nothing about it.
+  if (!Buffer.from(previous.getHash()).equals(Buffer.from(txInput.hash))) {
+    return null;
+  }
+  return previous.outs[txInput.index]?.script ?? null;
+}
+
+/**
+ * The commit a reveal binds to, read off the commit PSBT the wallet signs: the
+ * unsigned transaction, and the reveal's source — the output its input 0 spends.
+ *
+ * The composer builds the reveal against the *unsigned* commit's txid, which is
+ * the txid broadcast only when signing adds nothing but witnesses. An input
+ * spending a legacy or P2SH-wrapped output signs into its scriptSig, which the
+ * txid covers, and the reveal would then spend a transaction that never
+ * exists. So every input must carry its prevout and spend a native witness
+ * program.
+ *
+ * @throws {RevealVerificationError}
+ */
+export function readRevealCommit(commitPsbtHex: string): RevealCommit {
+  let psbt: btc.Psbt;
+  try {
+    psbt = psbtFromHex(commitPsbtHex);
+  } catch {
+    throw new RevealVerificationError("the commit is not a valid PSBT");
+  }
+  const scripts = psbt.txInputs.map((txInput, index) => {
+    const script = prevoutScript(psbt.data.inputs[index], txInput);
+    if (!script) {
+      throw new RevealVerificationError(
+        `input ${index} of the commit carries no prevout (witnessUtxo or ` +
+          "nonWitnessUtxo), so what it spends cannot be checked",
+      );
+    }
+    if (!isWitnessProgram(script)) {
+      throw new RevealVerificationError(
+        `input ${index} of the commit does not spend a native segwit output: ` +
+          "signing it would change the commit's txid, and the reveal spends " +
+          "the unsigned one",
+      );
+    }
+    return script;
+  });
+  if (scripts.length === 0) {
+    throw new RevealVerificationError("the commit has no inputs");
+  }
+  return {
+    commitTxHex: unsignedTxHexOf(psbt),
+    sourceScriptPubkey: Buffer.from(scripts[0]).toString("hex"),
   };
 }
 
@@ -512,30 +660,106 @@ export function assertSignedReveal(
   return { revealTxHex: signed.toHex(), revealTxid: verified.revealTxid };
 }
 
-/** The keys a signer can sign for, for {@link VerifyRevealOptions.expectedKeys}. */
-export function signerKeys(signer: Pick<Signer, "getAddresses">): string[] {
-  const { publicKey, xOnlyPubkey } = signer.getAddresses();
-  const keys = [publicKey];
-  if (xOnlyPubkey) keys.push(xOnlyPubkey);
-  return keys;
+/**
+ * The x-only keys a signer can close a leaf with, for
+ * {@link VerifyRevealOptions.expectedKeys}: its segwit key, its taproot internal
+ * key, and that key's BIP86 output key (the composer's fallback for a P2TR
+ * source). Exactly the keys `signPsbtHexWithKeys` signs a `tapLeafScript` with,
+ * so a reveal that passes the check is one the SDK signers can sign. Anything
+ * that is not a public key (a wallet that shared none) is left out.
+ */
+export function signerKeys(
+  addresses: Pick<ReturnType<Signer["getAddresses"]>, "publicKey" | "xOnlyPubkey">,
+): string[] {
+  const keys = new Set<string>();
+  const xOnlyOf = (keyHex: string | undefined): Buffer | null => {
+    if (!keyHex || !PUBKEY_HEX.test(keyHex)) return null;
+    const xOnly = Buffer.from(toXOnlyHex(keyHex), "hex");
+    return ecc.isXOnlyPoint(xOnly) ? xOnly : null;
+  };
+  const segwit = xOnlyOf(addresses.publicKey);
+  if (segwit) keys.add(segwit.toString("hex"));
+  const taproot = xOnlyOf(addresses.xOnlyPubkey);
+  if (taproot) {
+    keys.add(taproot.toString("hex"));
+    const outputKey = bip86OutputKey(taproot);
+    if (outputKey) keys.add(outputKey.toString("hex"));
+  }
+  return [...keys];
 }
 
-export interface SignRevealParams {
+/**
+ * Check the wallet signed the commit it was shown and nothing else. A reveal
+ * spends the quoted commit's txid, which only the transaction a PSBT wraps —
+ * inputs, outputs, version, locktime — determines: a wallet that changed any of
+ * it would have the commit broadcast under a txid the reveal does not spend,
+ * stranding the commit output.
+ *
+ * @throws {RevealVerificationError}
+ */
+export function assertCommitUnchanged(
+  quotedPsbtHex: string,
+  signedPsbtHex: string,
+): void {
+  let signed: string;
+  try {
+    signed = unsignedTxHexFromPsbt(signedPsbtHex);
+  } catch {
+    throw new RevealVerificationError(
+      "the wallet returned something other than a PSBT for the commit",
+    );
+  }
+  if (signed !== unsignedTxHexFromPsbt(quotedPsbtHex)) {
+    throw new RevealVerificationError(
+      "the wallet changed the commit while signing it, so its txid is no " +
+        "longer the one the reveal spends",
+    );
+  }
+}
+
+/**
+ * Sign and finalize a reveal {@link verifyReveal} already checked: build the
+ * script-path PSBT, hand it to `signer.signPsbtHex`, finalize, and check the
+ * resulting witness before returning it. The signer never sees a raw hash: an
+ * in-process key signs the leaf directly, an external wallet is shown a
+ * one-input PSBT it can inspect — and may hand back finalized.
+ *
+ * Broadcast the returned hex **after** the commit.
+ *
+ * @throws {RevealVerificationError} when the signer produced something other
+ * than a valid envelope signature.
+ */
+export async function signVerifiedReveal(
+  verified: VerifiedReveal,
+  signer: Pick<Signer, "signPsbtHex">,
+  network: btc.Network,
+): Promise<SignedReveal> {
+  const psbt = buildRevealPsbt(verified, network);
+  const signedPsbtHex = await signer.signPsbtHex(psbt.toHex(), [0]);
+  let txHex: string;
+  try {
+    ({ txHex } = finalizePsbtHex(signedPsbtHex, network));
+  } catch (cause) {
+    throw new RevealVerificationError(
+      `the wallet did not return a signed reveal (${String(cause)})`,
+    );
+  }
+  return assertSignedReveal(txHex, verified);
+}
+
+export interface SignRevealParams extends RevealCommit {
   /** The unsigned reveal (`reveal_rawtransaction`). */
   revealTxHex: string;
   material: RevealSigningMaterial;
-  /** The commit the reveal spends — see {@link VerifyRevealOptions.commitTxHex}. */
-  commitTxHex: string;
   signer: Signer;
   network: btc.Network;
 }
 
 /**
- * Verify, sign and finalize a reveal with any {@link Signer}: build the
- * script-path PSBT, hand it to `signer.signPsbtHex`, finalize, and check the
- * resulting witness before returning it. The signer never sees a raw hash:
- * an in-process key signs the leaf directly, an external wallet is shown a
- * one-input PSBT it can inspect.
+ * Verify, sign and finalize a reveal with any {@link Signer}:
+ * {@link verifyReveal} against the commit, its source and the signer's keys,
+ * then {@link signVerifiedReveal}. Take the commit and its source from the
+ * commit PSBT with {@link readRevealCommit}.
  *
  * Broadcast the returned hex **after** the commit.
  *
@@ -545,12 +769,62 @@ export interface SignRevealParams {
 export async function signReveal(params: SignRevealParams): Promise<SignedReveal> {
   const verified = verifyReveal(params.revealTxHex, params.material, {
     commitTxHex: params.commitTxHex,
-    expectedKeys: signerKeys(params.signer),
+    sourceScriptPubkey: params.sourceScriptPubkey,
+    expectedKeys: signerKeys(params.signer.getAddresses()),
   });
-  const psbt = buildRevealPsbt(verified, params.network);
-  const signedPsbtHex = await params.signer.signPsbtHex(psbt.toHex(), [0]);
-  const { txHex } = finalizePsbtHex(signedPsbtHex, params.network);
-  return assertSignedReveal(txHex, verified);
+  return signVerifiedReveal(verified, params.signer, params.network);
+}
+
+/**
+ * The reveal a quote asks the wallet to sign, or `null` when it asks for none:
+ * the rule every quote that can carry one shares. A reveal without its signing
+ * material was pre-signed server-side with a throwaway key, which the network
+ * has ignored since Counterparty Core v11.5.0; material without a reveal
+ * leaves nothing to sign it on.
+ *
+ * @param context names the quote in the error, e.g. `"The sell quote"`.
+ * @throws {PresignedRevealError} for a reveal without its material.
+ */
+export function revealToSign(
+  context: string,
+  revealTxHex: string | null | undefined,
+  material: RevealSigningMaterial | null | undefined,
+): { revealTxHex: string; material: RevealSigningMaterial } | null {
+  if (revealTxHex && !material) throw new PresignedRevealError(context);
+  if (material && !revealTxHex) {
+    throw new Error(
+      `${context} carries reveal signing material but no reveal transaction.`,
+    );
+  }
+  return revealTxHex && material ? { revealTxHex, material } : null;
+}
+
+/**
+ * Bare multisig, `OP_m <keys> OP_n OP_CHECKMULTISIG` with `1 ≤ m ≤ n ≤ 16`
+ * and 33- or 65-byte keys — the shape Counterparty's multisig encoding gives
+ * its data outputs. The whole script is matched, not its last byte: a hash or
+ * key ending in `0xae` must not pass for one.
+ */
+function isBareMultisig(script: Uint8Array): boolean {
+  let chunks: Array<number | Uint8Array> | null;
+  try {
+    chunks = btc.script.decompile(script);
+  } catch {
+    return false;
+  }
+  if (!chunks || chunks.length < 4) return false;
+  const m = chunks[0];
+  const n = chunks[chunks.length - 2];
+  if (chunks[chunks.length - 1] !== OPS.OP_CHECKMULTISIG) return false;
+  if (typeof m !== "number" || typeof n !== "number") return false;
+  if (m < OPS.OP_1 || m > OPS.OP_16 || n < m || n > OPS.OP_16) return false;
+  const keys = chunks.slice(1, -2);
+  return (
+    keys.length === n - OPS.OP_1 + 1 &&
+    keys.every(
+      (key) => typeof key !== "number" && (key.length === 33 || key.length === 65),
+    )
+  );
 }
 
 /**
@@ -562,20 +836,31 @@ export async function signReveal(params: SignRevealParams): Promise<SignedReveal
 export function carriesInlineCounterpartyData(txOrPsbtHex: string): boolean {
   let outs: Array<{ script: Uint8Array }>;
   if (txOrPsbtHex.startsWith("70736274ff")) {
-    outs = btc.Psbt.fromHex(txOrPsbtHex).txOutputs;
+    outs = psbtFromHex(txOrPsbtHex).txOutputs;
   } else {
     outs = btc.Transaction.fromHex(txOrPsbtHex).outs;
   }
-  return outs.some((out) => {
-    const script = out.script;
-    if (script.length === 0) return false;
-    if (script[0] === OPS.OP_RETURN) return true;
-    return script[script.length - 1] === OPS.OP_CHECKMULTISIG;
-  });
+  return outs.some(
+    (out) => out.script[0] === OPS.OP_RETURN || isBareMultisig(out.script),
+  );
+}
+
+/**
+ * `Psbt.fromHex`, minus its leniency: `Buffer.from(hex, "hex")` stops at the
+ * first non-hex character, so `"<psbt>garbage"` would parse as the PSBT.
+ */
+function psbtFromHex(psbtHex: string): btc.Psbt {
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(psbtHex)) {
+    throw new Error("Not a hex-encoded PSBT");
+  }
+  return btc.Psbt.fromHex(psbtHex);
+}
+
+function unsignedTxHexOf(psbt: btc.Psbt): string {
+  return Buffer.from(psbt.data.globalMap.unsignedTx.toBuffer()).toString("hex");
 }
 
 /** The unsigned transaction a PSBT wraps, as hex — what a reveal binds to. */
 export function unsignedTxHexFromPsbt(psbtHex: string): string {
-  const psbt = btc.Psbt.fromHex(psbtHex);
-  return Buffer.from(psbt.data.globalMap.unsignedTx.toBuffer()).toString("hex");
+  return unsignedTxHexOf(psbtFromHex(psbtHex));
 }

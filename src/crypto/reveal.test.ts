@@ -3,15 +3,18 @@ import * as btc from "bitcoinjs-lib";
 import { ecc, ECPair } from "./ecc.js";
 import { LocalSigner, HDSigner, type Signer } from "./signer.js";
 import {
+  assertCommitUnchanged,
   assertSignedReveal,
   buildRevealPsbt,
   carriesInlineCounterpartyData,
   envelopeSigningKey,
   PresignedRevealError,
+  readRevealCommit,
+  revealToSign,
   RevealVerificationError,
+  signerKeys,
   signReveal,
-  tapleafHash,
-  taprootOutputKeyHex,
+  signVerifiedReveal,
   toXOnlyHex,
   unsignedTxHexFromPsbt,
   verifyReveal,
@@ -33,12 +36,36 @@ const MATERIAL = {
   lockScript: F.lockScript,
   inputValue: F.inputValue,
 };
-const OPTIONS = { commitTxHex: F.commitTxHex, expectedKeys: [F.xOnlyPubkey] };
+/** scriptPubKey of an address, hex. */
+function scriptOf(address: string): string {
+  return Buffer.from(btc.address.toOutputScript(address, network)).toString("hex");
+}
+/** The fixture's source: the P2WPKH of `TEST_PRIVATE_KEY_HEX`. */
+const SOURCE = scriptOf(F.sourceAddress);
+const OPTIONS = {
+  commitTxHex: F.commitTxHex,
+  sourceScriptPubkey: SOURCE,
+  expectedKeys: [F.xOnlyPubkey],
+};
+
+/** A key pair from a private key given as a repeated hex digit. */
+function keyOf(digit: string, compressed = true) {
+  return ECPair.fromPrivateKey(Buffer.from(digit.repeat(64), "hex"), { compressed });
+}
 
 /** x-only key of a private key given as a repeated hex digit. */
 function xOnlyOf(digit: string): string {
-  const pair = ECPair.fromPrivateKey(Buffer.from(digit.repeat(64), "hex"));
-  return Buffer.from(pair.publicKey.subarray(1, 33)).toString("hex");
+  return Buffer.from(keyOf(digit).publicKey.subarray(1, 33)).toString("hex");
+}
+
+/** BIP86 output key of an x-only internal key. */
+function outputKeyOf(xOnlyHex: string): string {
+  const { pubkey } = btc.payments.p2tr({ internalPubkey: Buffer.from(xOnlyHex, "hex") });
+  return Buffer.from(pubkey!).toString("hex");
+}
+
+function hexOf(script: Uint8Array | undefined): string {
+  return Buffer.from(script!).toString("hex");
 }
 
 function witnessOf(txHex: string): Buffer[] {
@@ -81,7 +108,7 @@ describe("cross-implementation vector (bitcoinutils / counterparty-core)", () =>
     const signed = await signReveal({
       revealTxHex: F.revealTxHex,
       material: MATERIAL,
-      commitTxHex: F.commitTxHex,
+      ...readRevealCommit(revealFixtureCommitPsbtHex()),
       signer,
       network,
     });
@@ -125,23 +152,40 @@ describe("signReveal with an HDSigner", () => {
     "1111111111111111111111111111111111111111111111111111111111111111";
   const signer = new HDSigner({ segwitKeyHex: segwitKey, taprootKeyHex: taprootKey });
   const addresses = signer.getAddresses();
+  const segwitSource = scriptOf(addresses.p2wpkh);
+  const taprootSource = scriptOf(addresses.p2tr!);
 
   it("signs a leaf closed by the BIP84 (segwit) key — a P2WPKH source", async () => {
     const pair = buildRevealPair(toXOnlyHex(addresses.publicKey));
-    const signed = await signReveal({ ...pair, signer, network });
+    const signed = await signReveal({
+      ...pair,
+      sourceScriptPubkey: segwitSource,
+      signer,
+      network,
+    });
     expect(witnessOf(signed.revealTxHex)).toHaveLength(3);
   });
 
   it("signs a leaf closed by the BIP86 internal key — a P2TR source with its key known", async () => {
     const pair = buildRevealPair(addresses.xOnlyPubkey!);
-    const signed = await signReveal({ ...pair, signer, network });
+    const signed = await signReveal({
+      ...pair,
+      sourceScriptPubkey: taprootSource,
+      signer,
+      network,
+    });
     expect(witnessOf(signed.revealTxHex)).toHaveLength(3);
   });
 
   it("signs a leaf closed by the P2TR output key — the composer's fallback", async () => {
-    const outputKey = taprootOutputKeyHex(addresses.xOnlyPubkey!)!;
+    const outputKey = outputKeyOf(addresses.xOnlyPubkey!);
     const pair = buildRevealPair(outputKey);
-    const signed = await signReveal({ ...pair, signer, network });
+    const signed = await signReveal({
+      ...pair,
+      sourceScriptPubkey: taprootSource,
+      signer,
+      network,
+    });
     const [sig] = witnessOf(signed.revealTxHex);
     const verified = verifyReveal(pair.revealTxHex, pair.material, {
       commitTxHex: pair.commitTxHex,
@@ -157,11 +201,142 @@ describe("signReveal with an HDSigner", () => {
   });
 
   it("refuses a leaf closed by a key the wallet does not hold", async () => {
-    const stranger = ECPair.makeRandom().publicKey.subarray(1, 33);
-    const pair = buildRevealPair(Buffer.from(stranger).toString("hex"));
-    await expect(signReveal({ ...pair, signer, network })).rejects.toThrow(
-      /key this wallet does not hold/,
-    );
+    // A stranger's envelope over the stranger's own address: the node would
+    // take it, but this wallet cannot sign it.
+    const stranger = ECPair.makeRandom();
+    const pair = buildRevealPair(Buffer.from(stranger.publicKey.subarray(1, 33)).toString("hex"));
+    const strangerSource = hexOf(btc.payments.p2wpkh({ pubkey: stranger.publicKey }).output);
+    await expect(
+      signReveal({ ...pair, sourceScriptPubkey: strangerSource, signer, network }),
+    ).rejects.toThrow(/key this wallet does not hold/);
+  });
+
+  it("refuses a leaf closed by its own BIP86 key when the BIP84 address funds the commit", async () => {
+    // Both keys are the wallet's, but the node attributes the reveal to the
+    // funding address only: signing would lose the message.
+    const pair = buildRevealPair(addresses.xOnlyPubkey!);
+    const signPsbtHex = vi.spyOn(signer, "signPsbtHex");
+    await expect(
+      signReveal({ ...pair, sourceScriptPubkey: segwitSource, signer, network }),
+    ).rejects.toThrow(/not one of the address funding the commit/);
+    expect(signPsbtHex).not.toHaveBeenCalled();
+    signPsbtHex.mockRestore();
+  });
+});
+
+// `source_controls_key` in counterparty-rs/src/reveal.rs, case for case.
+describe("verifyReveal — the envelope key belongs to the commit's source", () => {
+  // Private keys whose compressed public key has each parity.
+  const even = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].find(
+    (d) => keyOf(d).publicKey[0] === 0x02,
+  )!;
+  const odd = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].find(
+    (d) => keyOf(d).publicKey[0] === 0x03,
+  )!;
+
+  function accepts(digitOrKey: string, source: Uint8Array | string): boolean {
+    const xOnly = digitOrKey.length === 1 ? xOnlyOf(digitOrKey) : digitOrKey;
+    const pair = buildRevealPair(xOnly);
+    try {
+      verifyReveal(pair.revealTxHex, pair.material, {
+        commitTxHex: pair.commitTxHex,
+        sourceScriptPubkey: typeof source === "string" ? source : hexOf(source),
+      });
+      return true;
+    } catch (error) {
+      expect(error).toBeInstanceOf(RevealVerificationError);
+      expect((error as Error).message).toMatch(/not one of the address funding the commit/);
+      return false;
+    }
+  }
+
+  it("P2WPKH: the compressed key behind the hash, whatever its parity", () => {
+    for (const digit of [even, odd]) {
+      const source = btc.payments.p2wpkh({ pubkey: keyOf(digit).publicKey }).output!;
+      expect(accepts(digit, source)).toBe(true);
+    }
+    const other = btc.payments.p2wpkh({ pubkey: keyOf("a").publicKey }).output!;
+    expect(accepts(even, other)).toBe(false);
+  });
+
+  it("P2SH: a nested P2WPKH of the key, and nothing else", () => {
+    for (const digit of [even, odd]) {
+      const nested = btc.payments.p2sh({
+        redeem: btc.payments.p2wpkh({ pubkey: keyOf(digit).publicKey }),
+      }).output!;
+      expect(accepts(digit, nested)).toBe(true);
+    }
+    const multisigP2sh = btc.payments.p2sh({
+      redeem: btc.payments.p2ms({ m: 1, pubkeys: [keyOf(even).publicKey] }),
+    }).output!;
+    expect(accepts(even, multisigP2sh)).toBe(false);
+  });
+
+  it("P2PKH: the compressed or the uncompressed key", () => {
+    for (const digit of [even, odd]) {
+      for (const compressed of [true, false]) {
+        const source = btc.payments.p2pkh({
+          pubkey: keyOf(digit, compressed).publicKey,
+        }).output!;
+        expect(accepts(digit, source)).toBe(true);
+      }
+    }
+  });
+
+  it("P2TR: the output key itself, or the internal key it is the BIP86 tweak of", () => {
+    const internal = xOnlyOf(even);
+    const bip86 = btc.payments.p2tr({ internalPubkey: Buffer.from(internal, "hex") }).output!;
+    expect(accepts(internal, bip86)).toBe(true);
+    expect(accepts(outputKeyOf(internal), bip86)).toBe(true);
+    // A tree with scripts is not a BIP86 tweak: only the output key itself.
+    const leaf = btc.script.compile([Buffer.from(internal, "hex"), btc.opcodes.OP_CHECKSIG]);
+    const scripted = btc.payments.p2tr({
+      internalPubkey: Buffer.from(internal, "hex"),
+      scriptTree: { output: leaf },
+    });
+    expect(accepts(internal, scripted.output!)).toBe(false);
+    expect(accepts(hexOf(scripted.pubkey), scripted.output!)).toBe(true);
+  });
+
+  it("no single key controls any other source", () => {
+    const key = keyOf(even).publicKey;
+    const sources = [
+      btc.payments.p2wsh({ redeem: btc.payments.p2ms({ m: 1, pubkeys: [key] }) }).output!,
+      btc.payments.p2ms({ m: 1, pubkeys: [key] }).output!,
+      btc.payments.p2pk({ pubkey: key }).output!,
+      btc.script.compile([btc.opcodes.OP_RETURN, Buffer.alloc(20)]),
+    ];
+    for (const source of sources) expect(accepts(even, source)).toBe(false);
+  });
+
+  it("a key off the curve is no one's key", () => {
+    // x = 0 is not on secp256k1: the node refuses it as InvalidLeafKey.
+    const offCurve = Buffer.alloc(32);
+    const envelope = btc.script.compile([
+      btc.opcodes.OP_0,
+      btc.opcodes.OP_IF,
+      Buffer.alloc(8, 1),
+      btc.opcodes.OP_ENDIF,
+      offCurve,
+      btc.opcodes.OP_CHECKSIG,
+    ]);
+    const material = {
+      ...MATERIAL,
+      envelopeScript: hexOf(envelope),
+      pubkey: offCurve.toString("hex"),
+    };
+    expect(() =>
+      verifyReveal(F.revealTxHex, material, {
+        commitTxHex: F.commitTxHex,
+        sourceScriptPubkey: hexOf(btc.payments.p2tr({ pubkey: Buffer.from(F.xOnlyPubkey, "hex") }).output),
+      }),
+    ).toThrow(/not one of the address funding the commit/);
+  });
+
+  it("rejects a source that is not hex", () => {
+    expect(() =>
+      verifyReveal(F.revealTxHex, MATERIAL, { ...OPTIONS, sourceScriptPubkey: "zz" }),
+    ).toThrow(/source scriptPubKey is not valid hex/);
   });
 });
 
@@ -171,7 +346,24 @@ describe("verifyReveal", () => {
     expect(verified.commitTxid).toBe(F.commitTxid);
     expect(verified.revealTxid).toBe(F.revealTxid);
     expect(verified.inputValue).toBe(5000n);
-    expect(verified.leafHash.equals(tapleafHash(verified.envelope))).toBe(true);
+  });
+
+  it("hashes the leaf as BIP341 does, compact size included", () => {
+    // Past 252 bytes the script length takes a 0xfd-prefixed compact size.
+    const pair = buildRevealPair(F.xOnlyPubkey, { data: Buffer.alloc(400, 7) });
+    const envelope = Buffer.from(pair.material.envelopeScript, "hex");
+    expect(envelope.length).toBeGreaterThan(0xfc);
+    const size = Buffer.alloc(3);
+    size[0] = 0xfd;
+    size.writeUInt16LE(envelope.length, 1);
+    const expected = btc.crypto.taggedHash(
+      "TapLeaf",
+      Buffer.concat([Buffer.from([0xc0]), size, envelope]),
+    );
+    const verified = verifyReveal(pair.revealTxHex, pair.material, {
+      commitTxHex: pair.commitTxHex,
+    });
+    expect(verified.leafHash.equals(Buffer.from(expected))).toBe(true);
   });
 
   it("accepts a compressed key in expectedKeys", () => {
@@ -180,8 +372,23 @@ describe("verifyReveal", () => {
     ).publicKey;
     expect(() =>
       verifyReveal(F.revealTxHex, MATERIAL, {
-        commitTxHex: F.commitTxHex,
+        ...OPTIONS,
         expectedKeys: [Buffer.from(compressed).toString("hex")],
+      }),
+    ).not.toThrow();
+  });
+
+  it("takes expectedKeys literally: a key's BIP86 tweak must be listed too", () => {
+    const internal = xOnlyOf("e");
+    const pair = buildRevealPair(outputKeyOf(internal));
+    const options = { commitTxHex: pair.commitTxHex };
+    expect(() =>
+      verifyReveal(pair.revealTxHex, pair.material, { ...options, expectedKeys: [internal] }),
+    ).toThrow(/key this wallet does not hold/);
+    expect(() =>
+      verifyReveal(pair.revealTxHex, pair.material, {
+        ...options,
+        expectedKeys: [internal, outputKeyOf(internal)],
       }),
     ).not.toThrow();
   });
@@ -290,6 +497,188 @@ describe("verifyReveal", () => {
   });
 });
 
+describe("signerKeys", () => {
+  it("lists a single-key wallet's key and its BIP86 output key", () => {
+    const addresses = new LocalSigner(TEST_PRIVATE_KEY_HEX).getAddresses();
+    expect(signerKeys(addresses).sort()).toEqual(
+      [F.xOnlyPubkey, outputKeyOf(F.xOnlyPubkey)].sort(),
+    );
+  });
+
+  it("lists an HD wallet's segwit key, taproot key and taproot output key — not the segwit tweak", () => {
+    const addresses = new HDSigner({
+      segwitKeyHex: TEST_PRIVATE_KEY_HEX,
+      taprootKeyHex: "2".repeat(64),
+    }).getAddresses();
+    const keys = signerKeys(addresses);
+    expect(keys.sort()).toEqual(
+      [
+        toXOnlyHex(addresses.publicKey),
+        addresses.xOnlyPubkey!,
+        outputKeyOf(addresses.xOnlyPubkey!),
+      ].sort(),
+    );
+    expect(keys).not.toContain(outputKeyOf(toXOnlyHex(addresses.publicKey)));
+  });
+
+  it("leaves out anything that is not a public key", () => {
+    expect(signerKeys({ publicKey: "" })).toEqual([]);
+    expect(signerKeys({ publicKey: "02aabbcc" })).toEqual([]);
+    expect(signerKeys({ publicKey: `02${"00".repeat(32)}`, xOnlyPubkey: "00".repeat(32) })).toEqual([]);
+    expect(signerKeys({ publicKey: "", xOnlyPubkey: F.xOnlyPubkey.toUpperCase() })).toEqual([
+      F.xOnlyPubkey,
+      outputKeyOf(F.xOnlyPubkey),
+    ]);
+  });
+
+  // `signerKeys` is what a reveal is checked against before the wallet is
+  // prompted, and `signPsbtHexWithKeys` what signs it: they must agree, or a
+  // quote passes the check and then fails after the commit prompt.
+  it("agrees with what the HD signer can actually sign", async () => {
+    const signer = new HDSigner({
+      segwitKeyHex: TEST_PRIVATE_KEY_HEX,
+      taprootKeyHex: "3".repeat(64),
+    });
+    const addresses = signer.getAddresses();
+    for (const key of signerKeys(addresses)) {
+      const pair = buildRevealPair(key);
+      const verified = verifyReveal(pair.revealTxHex, pair.material, {
+        commitTxHex: pair.commitTxHex,
+        expectedKeys: signerKeys(addresses),
+      });
+      const signed = await signVerifiedReveal(verified, signer, network);
+      expect(witnessOf(signed.revealTxHex)).toHaveLength(3);
+    }
+    // The one tweak it cannot sign with is refused by the check itself.
+    const segwitTweak = buildRevealPair(outputKeyOf(toXOnlyHex(addresses.publicKey)));
+    expect(() =>
+      verifyReveal(segwitTweak.revealTxHex, segwitTweak.material, {
+        commitTxHex: segwitTweak.commitTxHex,
+        expectedKeys: signerKeys(addresses),
+      }),
+    ).toThrow(/key this wallet does not hold/);
+  });
+});
+
+describe("readRevealCommit", () => {
+  const p2wpkh = btc.address.toOutputScript(F.sourceAddress, network);
+
+  /** A one-output transaction paying `script` at index 1 — a prevout. */
+  function previousPaying(script: Uint8Array): btc.Transaction {
+    const tx = new btc.Transaction();
+    tx.addInput(Buffer.alloc(32, 0x11), 0);
+    tx.addOutput(Buffer.from([btc.opcodes.OP_RETURN]), 0n);
+    tx.addOutput(Buffer.from(script), 100_000n);
+    return tx;
+  }
+
+  /** The fixture commit, its inputs spending `previous:1` with `utxo` data. */
+  function commitSpending(
+    previous: btc.Transaction,
+    utxo: { witness?: boolean; nonWitness?: Uint8Array },
+  ): string {
+    const commit = btc.Transaction.fromHex(F.commitTxHex);
+    const psbt = new btc.Psbt({ network });
+    psbt.addInput({
+      hash: Buffer.from(previous.getHash()),
+      index: 1,
+      ...(utxo.witness ? { witnessUtxo: { script: previous.outs[1].script, value: 100_000n } } : {}),
+      ...(utxo.nonWitness ? { nonWitnessUtxo: utxo.nonWitness } : {}),
+    });
+    for (const out of commit.outs) psbt.addOutput({ script: out.script, value: out.value });
+    return psbt.toHex();
+  }
+
+  it("reads the unsigned commit and the output its input 0 spends", () => {
+    expect(readRevealCommit(revealFixtureCommitPsbtHex())).toEqual({
+      commitTxHex: F.commitTxHex,
+      sourceScriptPubkey: SOURCE,
+    });
+  });
+
+  it("takes the source from input 0 only", () => {
+    const commit = btc.Psbt.fromHex(revealFixtureCommitPsbtHex());
+    const taproot = btc.payments.p2tr({ internalPubkey: Buffer.from(xOnlyOf("5"), "hex") }).output!;
+    commit.addInput({ hash: "b".repeat(64), index: 0, witnessUtxo: { script: taproot, value: 1000n } });
+    expect(readRevealCommit(commit.toHex()).sourceScriptPubkey).toBe(SOURCE);
+  });
+
+  it("reads a segwit prevout from nonWitnessUtxo, when it is the spent transaction", () => {
+    const previous = previousPaying(p2wpkh);
+    expect(
+      readRevealCommit(commitSpending(previous, { nonWitness: previous.toBuffer() }))
+        .sourceScriptPubkey,
+    ).toBe(SOURCE);
+    // A nonWitnessUtxo that is some other transaction proves nothing.
+    const decoy = previousPaying(p2wpkh);
+    decoy.locktime = 1;
+    const psbt = btc.Psbt.fromHex(commitSpending(previous, {}));
+    psbt.data.inputs[0].nonWitnessUtxo = decoy.toBuffer();
+    expect(() => readRevealCommit(psbt.toHex())).toThrow(/carries no prevout/);
+  });
+
+  it("refuses an input without its prevout", () => {
+    const previous = previousPaying(p2wpkh);
+    expect(() => readRevealCommit(commitSpending(previous, {}))).toThrow(
+      /input 0 of the commit carries no prevout/,
+    );
+  });
+
+  it("refuses an input whose signature would move the commit's txid", () => {
+    const pubkey = keyOf("6").publicKey;
+    const legacy = [
+      btc.payments.p2pkh({ pubkey }).output!,
+      btc.payments.p2sh({ redeem: btc.payments.p2wpkh({ pubkey }) }).output!,
+    ];
+    for (const script of legacy) {
+      const previous = previousPaying(script);
+      expect(() =>
+        readRevealCommit(commitSpending(previous, { nonWitness: previous.toBuffer() })),
+      ).toThrow(/input 0 of the commit does not spend a native segwit output/);
+    }
+    // Any input, not only the source.
+    const commit = btc.Psbt.fromHex(revealFixtureCommitPsbtHex());
+    commit.addInput({
+      hash: "c".repeat(64),
+      index: 0,
+      witnessUtxo: { script: legacy[1], value: 1000n },
+    });
+    expect(() => readRevealCommit(commit.toHex())).toThrow(/input 1 of the commit/);
+  });
+
+  it("refuses what is not a PSBT, trailing garbage included", () => {
+    expect(() => readRevealCommit(F.commitTxHex)).toThrow(/not a valid PSBT/);
+    // `Buffer.from(hex)` would stop at the garbage and parse the PSBT before it.
+    expect(() => readRevealCommit(`${revealFixtureCommitPsbtHex()}zz`)).toThrow(
+      /not a valid PSBT/,
+    );
+  });
+});
+
+describe("assertCommitUnchanged", () => {
+  const quoted = revealFixtureCommitPsbtHex();
+
+  it("passes the quoted commit, signed or not", () => {
+    const signed = new LocalSigner(TEST_PRIVATE_KEY_HEX).signPsbtHex(quoted, [0]);
+    expect(() => assertCommitUnchanged(quoted, quoted)).not.toThrow();
+    expect(() => assertCommitUnchanged(quoted, signed)).not.toThrow();
+  });
+
+  it("refuses a commit whose transaction changed, and what is not a PSBT", () => {
+    const moved = btc.Psbt.fromHex(quoted);
+    moved.setLocktime(1);
+    expect(() => assertCommitUnchanged(quoted, moved.toHex())).toThrow(
+      RevealVerificationError,
+    );
+    expect(() => assertCommitUnchanged(quoted, moved.toHex())).toThrow(
+      /changed the commit while signing it/,
+    );
+    expect(() => assertCommitUnchanged(quoted, `${quoted}_signed`)).toThrow(
+      /something other than a PSBT/,
+    );
+  });
+});
+
 describe("assertSignedReveal", () => {
   const verified = verifyReveal(F.revealTxHex, MATERIAL, OPTIONS);
 
@@ -351,31 +740,35 @@ describe("assertSignedReveal", () => {
 });
 
 describe("signReveal with an external signer", () => {
-  it("hands the signer a one-input script-path PSBT and refuses garbage back", async () => {
-    const seen: string[] = [];
-    const signer: Signer = {
-      getAddresses: () => ({
-        p2wpkh: F.sourceAddress,
-        publicKey: Buffer.from(
-          ECPair.fromPrivateKey(Buffer.from(TEST_PRIVATE_KEY_HEX, "hex")).publicKey,
-        ).toString("hex"),
-      }),
-      signPsbtHex: vi.fn(async (hex: string) => {
-        seen.push(hex);
-        // A wallet that signs nothing: finalizing fails.
-        return hex;
-      }),
+  const compressedKey = Buffer.from(
+    ECPair.fromPrivateKey(Buffer.from(TEST_PRIVATE_KEY_HEX, "hex")).publicKey,
+  ).toString("hex");
+
+  function wallet(sign: (psbtHex: string) => string): Signer {
+    return {
+      getAddresses: () => ({ p2wpkh: F.sourceAddress, publicKey: compressedKey }),
+      signPsbtHex: vi.fn(async (hex: string) => sign(hex)),
       signMessage: async () => "sig",
     };
-    await expect(
-      signReveal({
-        revealTxHex: F.revealTxHex,
-        material: MATERIAL,
-        commitTxHex: F.commitTxHex,
-        signer,
-        network,
-      }),
-    ).rejects.toThrow();
+  }
+  const params = {
+    revealTxHex: F.revealTxHex,
+    material: MATERIAL,
+    commitTxHex: F.commitTxHex,
+    sourceScriptPubkey: SOURCE,
+    network,
+  };
+
+  it("hands the signer a one-input script-path PSBT and refuses garbage back", async () => {
+    const seen: string[] = [];
+    // A wallet that signs nothing: there is no reveal to finalize.
+    const signer = wallet((hex) => {
+      seen.push(hex);
+      return hex;
+    });
+    await expect(signReveal({ ...params, signer })).rejects.toThrow(
+      /did not return a signed reveal/,
+    );
 
     const psbt = btc.Psbt.fromHex(seen[0], { network });
     expect(psbt.data.inputs).toHaveLength(1);
@@ -393,6 +786,40 @@ describe("signReveal with an external signer", () => {
     expect(input.witnessUtxo!.value).toBe(5000n);
     expect(psbt.txOutputs).toHaveLength(1);
     expect(signer.signPsbtHex).toHaveBeenCalledWith(seen[0], [0]);
+  });
+
+  it("accepts a reveal the wallet finalized itself", async () => {
+    const local = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    const signer = wallet((hex) => {
+      const signed = btc.Psbt.fromHex(local.signPsbtHex(hex, [0]));
+      signed.finalizeAllInputs();
+      return signed.toHex();
+    });
+    const signed = await signReveal({ ...params, signer });
+    expect(signed.revealTxid).toBe(F.revealTxid);
+    expect(witnessOf(signed.revealTxHex)).toHaveLength(3);
+  });
+
+  it("still checks a witness the wallet finalized", async () => {
+    // Finalized with a signature that is not the envelope key's: caught, not
+    // broadcast — skipping the finalizer must not skip the check.
+    const serialize = (items: Buffer[]): Buffer => {
+      const size = (n: number) =>
+        n < 0xfd ? Buffer.from([n]) : Buffer.from([0xfd, n & 0xff, n >> 8]);
+      return Buffer.concat([
+        size(items.length),
+        ...items.flatMap((item) => [size(item.length), item]),
+      ]);
+    };
+    const [, envelope, controlBlock] = witnessOf(F.signedRevealTxHex);
+    const signer = wallet((hex) => {
+      const psbt = btc.Psbt.fromHex(hex);
+      psbt.updateInput(0, {
+        finalScriptWitness: serialize([Buffer.alloc(64, 1), envelope, controlBlock]),
+      });
+      return psbt.toHex();
+    });
+    await expect(signReveal({ ...params, signer })).rejects.toThrow(/does not verify/);
   });
 });
 
@@ -441,6 +868,15 @@ describe("envelopeSigningKey", () => {
 });
 
 describe("carriesInlineCounterpartyData", () => {
+  /** A transaction with one output per script. */
+  function paying(...scripts: Uint8Array[]): string {
+    const tx = new btc.Transaction();
+    tx.addInput(Buffer.alloc(32, 1), 0);
+    for (const script of scripts) tx.addOutput(Buffer.from(script), 1000n);
+    return tx.toHex();
+  }
+  const pk = (length = 33) => Buffer.concat([Buffer.from([0x02]), Buffer.alloc(length - 1, 9)]);
+
   it("is false for a commit and for a plain payment", () => {
     expect(carriesInlineCounterpartyData(F.commitTxHex)).toBe(false);
     expect(carriesInlineCounterpartyData(revealFixtureCommitPsbtHex())).toBe(false);
@@ -456,14 +892,64 @@ describe("carriesInlineCounterpartyData", () => {
     });
     expect(carriesInlineCounterpartyData(psbt.toHex())).toBe(true);
 
-    const pk = () => Buffer.from(ECPair.makeRandom().publicKey);
-    const multisig = new btc.Transaction();
-    multisig.addInput(Buffer.alloc(32, 1), 0);
-    multisig.addOutput(
-      btc.script.compile([btc.opcodes.OP_1, pk(), pk(), pk(), btc.opcodes.OP_3, btc.opcodes.OP_CHECKMULTISIG]),
-      7800n,
+    const { OP_1, OP_2, OP_3, OP_CHECKMULTISIG } = btc.opcodes;
+    for (const multisig of [
+      [OP_1, pk(), pk(), pk(), OP_3, OP_CHECKMULTISIG],
+      [OP_1, pk(), pk(), OP_2, OP_CHECKMULTISIG],
+      [OP_1, pk(65), pk(33), OP_2, OP_CHECKMULTISIG],
+    ]) {
+      expect(carriesInlineCounterpartyData(paying(btc.script.compile(multisig)))).toBe(true);
+    }
+  });
+
+  it("is not fooled by a hash or key that happens to end in 0xae (OP_CHECKMULTISIG)", () => {
+    const tail = (prefix: number[], length: number) =>
+      Buffer.concat([Buffer.from(prefix), Buffer.alloc(length - 1, 0x42), Buffer.from([0xae])]);
+    expect(
+      carriesInlineCounterpartyData(
+        paying(
+          tail([0x00, 0x14], 20), // P2WPKH
+          tail([0x00, 0x20], 32), // P2WSH
+          tail([0x51, 0x20], 32), // P2TR — a commit's envelope output, say
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("wants the whole multisig shape", () => {
+    const { OP_1, OP_2, OP_3, OP_CHECKMULTISIG } = btc.opcodes;
+    for (const almost of [
+      [OP_1, pk(), OP_3, OP_CHECKMULTISIG], // n says 3, one key
+      [OP_3, pk(), pk(), OP_2, OP_CHECKMULTISIG], // m > n
+      [OP_1, pk(20), pk(), OP_2, OP_CHECKMULTISIG], // not a key
+      [OP_1, pk(), pk(), OP_2, OP_CHECKMULTISIG, OP_1], // trailing opcode
+      [pk(), pk(), OP_2, OP_CHECKMULTISIG], // no m
+    ]) {
+      expect(carriesInlineCounterpartyData(paying(btc.script.compile(almost)))).toBe(false);
+    }
+  });
+});
+
+describe("revealToSign", () => {
+  it("pairs a reveal with its material, and answers null when there is neither", () => {
+    expect(revealToSign("The quote", null, null)).toBeNull();
+    expect(revealToSign("The quote", undefined, undefined)).toBeNull();
+    expect(revealToSign("The quote", F.revealTxHex, MATERIAL)).toEqual({
+      revealTxHex: F.revealTxHex,
+      material: MATERIAL,
+    });
+  });
+
+  it("refuses one without the other", () => {
+    expect(() => revealToSign("The sell quote", F.revealTxHex, null)).toThrow(
+      PresignedRevealError,
     );
-    expect(carriesInlineCounterpartyData(multisig.toHex())).toBe(true);
+    expect(() => revealToSign("The sell quote", F.revealTxHex, null)).toThrow(
+      /^The sell quote carries a reveal/,
+    );
+    expect(() => revealToSign("The quote", null, MATERIAL)).toThrow(
+      /The quote carries reveal signing material but no reveal transaction/,
+    );
   });
 });
 
@@ -471,21 +957,6 @@ describe("helpers", () => {
   it("toXOnlyHex strips the parity byte of a compressed key", () => {
     expect(toXOnlyHex(`02${"a".repeat(64)}`)).toBe("a".repeat(64));
     expect(toXOnlyHex("A".repeat(64))).toBe("a".repeat(64));
-  });
-
-  it("taprootOutputKeyHex tweaks a valid key and returns null otherwise", () => {
-    expect(taprootOutputKeyHex(F.xOnlyPubkey)).toMatch(/^[0-9a-f]{64}$/);
-    expect(taprootOutputKeyHex("00".repeat(32))).toBeNull();
-    expect(taprootOutputKeyHex("abcd")).toBeNull();
-  });
-
-  it("tapleafHash encodes the script length as a compact size", () => {
-    const big = Buffer.alloc(300, 0x51);
-    const expected = btc.crypto.taggedHash(
-      "TapLeaf",
-      Buffer.concat([Buffer.from([0xc0, 0xfd, 0x2c, 0x01]), big]),
-    );
-    expect(tapleafHash(big).equals(Buffer.from(expected))).toBe(true);
   });
 
   it("PresignedRevealError names the context and the fix", () => {

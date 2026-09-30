@@ -1,6 +1,15 @@
-import * as btc from "bitcoinjs-lib";
+import type * as btc from "bitcoinjs-lib";
 import { finalizePsbtHex } from "../crypto/psbt-signer.js";
-import { PresignedRevealError, signReveal } from "../crypto/reveal.js";
+import {
+  assertCommitUnchanged,
+  readRevealCommit,
+  revealToSign,
+  signerKeys,
+  signVerifiedReveal,
+  verifyReveal,
+  type RevealSigningMaterial,
+  type VerifiedReveal,
+} from "../crypto/reveal.js";
 import type { Signer } from "../crypto/signer.js";
 import type { SellQuote, ZeldPayment } from "../types/index.js";
 
@@ -19,6 +28,9 @@ export interface SignedSellPrepResult {
   zeldPayment?: ZeldPayment;
 }
 
+/** The keys of a signer's addresses a reveal is checked against. */
+type RevealKeys = Pick<ReturnType<Signer["getAddresses"]>, "publicKey" | "xOnlyPubkey">;
+
 /**
  * Sign and finalize a sell quote's prep PSBT when present.
  *
@@ -32,6 +44,9 @@ export interface SignedSellPrepResult {
  *
  * @throws {PresignedRevealError} when the quote carries a reveal the server
  * pre-signed (no `revealSigning`): the network ignores it, so nothing is signed.
+ * @throws {RevealVerificationError} when the reveal does not check out against
+ * the commit, its funding address or this wallet's keys — before anything is
+ * signed — or when the wallet changed the commit while signing it.
  */
 export async function signAndFinalizeSellPrep(
   quote: SellQuote,
@@ -41,17 +56,18 @@ export async function signAndFinalizeSellPrep(
   if (!quote.prepPsbt) return undefined;
   // Before any prompt: a reveal this wallet cannot sign makes the whole prep
   // pointless, so the seller is not asked for a commit signature first.
-  assertSellQuoteRevealSignable(quote);
+  const reveal = verifySellQuoteReveal(quote, signer.getAddresses());
   // `await`: external-wallet signers resolve asynchronously (popup prompt).
   const signedPrepHex = await signer.signPsbtHex(
     quote.prepPsbt,
     quote.prepInputsToSign,
   );
-  const prep = buildSellPrepResult(quote, signedPrepHex, btcNetwork);
-  if (prep.fundingTxHex && quote.revealSigning) {
-    prep.revealTxHex = await signSellPrepReveal(
-      quote,
-      prep.fundingTxHex,
+  const prep = finalizeSellPrep(quote, signedPrepHex, btcNetwork);
+  if (reveal) {
+    prep.revealTxHex = await signSellReveal(
+      reveal,
+      quote.prepPsbt,
+      signedPrepHex,
       signer,
       btcNetwork,
     );
@@ -60,26 +76,62 @@ export async function signAndFinalizeSellPrep(
 }
 
 /**
- * Refuse a quote whose reveal this wallet cannot sign: a reveal without its
- * signing material was pre-signed server-side with a throwaway key, which the
- * network has ignored since Counterparty Core v11.5.0.
+ * Whether a sell quote's reveal, if any, can be signed and broadcast safely:
+ * not pre-signed, riding an attach commit, and consistent with that commit and
+ * its funding address (see `verifyReveal`). Pass the wallet's `addresses` to
+ * also check the envelope is closed by a key this wallet can sign with.
+ *
+ * @throws {PresignedRevealError} a reveal without its signing material —
+ * pre-signed server-side with a throwaway key, which the network has ignored
+ * since Counterparty Core v11.5.0.
+ * @throws {RevealVerificationError} the reveal does not check out.
  */
-export function assertSellQuoteRevealSignable(quote: SellQuote): void {
-  if (quote.revealTxHex && !quote.revealSigning) {
-    throw new PresignedRevealError("The sell quote");
-  }
-  if (quote.revealSigning && !quote.revealTxHex) {
+export function assertSellQuoteRevealSignable(
+  quote: SellQuote,
+  addresses?: RevealKeys,
+): void {
+  verifySellQuoteReveal(quote, addresses);
+}
+
+/**
+ * {@link assertSellQuoteRevealSignable}, returning the verified reveal to sign
+ * — `null` when the quote carries none. Internal: the sell workflow checks the
+ * quote with it once, before any prompt, and signs what it returns.
+ */
+export function verifySellQuoteReveal(
+  quote: SellQuote,
+  addresses?: RevealKeys,
+): VerifiedReveal | null {
+  const pair = sellQuoteReveal(quote);
+  if (!pair) return null;
+  return verifyReveal(pair.revealTxHex, pair.material, {
+    ...readRevealCommit(pair.prepPsbt),
+    expectedKeys: addresses ? signerKeys(addresses) : undefined,
+  });
+}
+
+/**
+ * The reveal a sell quote asks the seller to sign, with the attach commit it
+ * spends — or `null` when there is none. Structural only: nothing is parsed.
+ */
+function sellQuoteReveal(
+  quote: SellQuote,
+): { revealTxHex: string; material: RevealSigningMaterial; prepPsbt: string } | null {
+  const pair = revealToSign("The sell quote", quote.revealTxHex, quote.revealSigning);
+  if (!pair) return null;
+  if (quote.prepKind !== "attach" || !quote.prepPsbt) {
     throw new Error(
-      "The sell quote carries reveal signing material but no reveal transaction.",
+      "The sell quote carries a reveal but no attach commit for it to spend.",
     );
   }
+  return { ...pair, prepPsbt: quote.prepPsbt };
 }
 
 /**
  * Sign the attach reveal of a taproot-envelope sell quote against the signed
- * commit (`fundingTxHex`). The reveal binds to the commit's txid, which segwit
- * signing cannot move — `signReveal` checks that, and that the envelope is
- * closed by one of the signer's keys, before asking for a signature.
+ * commit (`fundingTxHex`, as {@link buildSellPrepResult} finalized it). The
+ * reveal is verified against that commit, its funding address and the signer's
+ * keys before the signer is asked for anything.
  */
 export async function signSellPrepReveal(
   quote: SellQuote,
@@ -87,17 +139,34 @@ export async function signSellPrepReveal(
   signer: Signer,
   btcNetwork: btc.Network,
 ): Promise<string> {
-  assertSellQuoteRevealSignable(quote);
-  if (!quote.revealSigning || !quote.revealTxHex) {
-    throw new Error("The sell quote has no reveal to sign.");
-  }
-  const signed = await signReveal({
-    revealTxHex: quote.revealTxHex,
-    material: quote.revealSigning,
+  const pair = sellQuoteReveal(quote);
+  if (!pair) throw new Error("The sell quote has no reveal to sign.");
+  const verified = verifyReveal(pair.revealTxHex, pair.material, {
     commitTxHex: fundingTxHex,
-    signer,
-    network: btcNetwork,
+    sourceScriptPubkey: readRevealCommit(pair.prepPsbt).sourceScriptPubkey,
+    expectedKeys: signerKeys(signer.getAddresses()),
   });
+  const signed = await signVerifiedReveal(verified, signer, btcNetwork);
+  return signed.revealTxHex;
+}
+
+/**
+ * Sign a reveal {@link verifySellQuoteReveal} checked against the quoted
+ * commit, once the wallet has signed that commit. Internal: the sell workflow's
+ * second half.
+ *
+ * @throws {RevealVerificationError} when the wallet changed the commit while
+ * signing it — the reveal would spend a txid that is never broadcast.
+ */
+export async function signSellReveal(
+  reveal: VerifiedReveal,
+  quotedPrepPsbt: string,
+  signedPrepHex: string,
+  signer: Signer,
+  btcNetwork: btc.Network,
+): Promise<string> {
+  assertCommitUnchanged(quotedPrepPsbt, signedPrepHex);
+  const signed = await signVerifiedReveal(reveal, signer, btcNetwork);
   return signed.revealTxHex;
 }
 
@@ -109,14 +178,29 @@ export async function signSellPrepReveal(
  * in `sell.ts` which signs and finalizes as two separate progress steps. The
  * attach reveal, when there is one, is signed afterwards by
  * {@link signSellPrepReveal} — never passed through from the quote.
+ *
+ * @throws {PresignedRevealError} when the quote carries a reveal the server
+ * pre-signed: there would be no reveal this wallet can sign to list with.
  */
 export function buildSellPrepResult(
   quote: SellQuote,
   signedPrepHex: string,
   btcNetwork: btc.Network,
 ): SignedSellPrepResult {
+  sellQuoteReveal(quote);
+  return finalizeSellPrep(quote, signedPrepHex, btcNetwork);
+}
+
+/**
+ * {@link buildSellPrepResult} without its reveal check, for a workflow that
+ * already verified the quote before asking for the prep signature.
+ */
+export function finalizeSellPrep(
+  quote: SellQuote,
+  signedPrepHex: string,
+  btcNetwork: btc.Network,
+): SignedSellPrepResult {
   if (quote.prepKind === "attach") {
-    assertSellQuoteRevealSignable(quote);
     const { txHex } = finalizePsbtHex(signedPrepHex, btcNetwork);
     return { fundingTxHex: txHex };
   }

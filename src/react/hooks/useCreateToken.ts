@@ -811,9 +811,14 @@ export function useCreateToken(
         creationQuoteParams(buildParams(formValues.image), addresses),
       );
       // A reveal this wallet cannot sign (an out-of-date server pre-signed it,
-      // or dropped it) is refused here, where the message lands next to the
-      // form, rather than after the user has approved fees on a confirm screen.
-      assertCreationQuoteSignable(composed, psbtBase64ToHex(composed.psbtBase64));
+      // dropped it, or closed it with a key that is not this wallet's) is
+      // refused here, where the message lands next to the form, rather than
+      // after the user has approved fees on a confirm screen.
+      assertCreationQuoteSignable(
+        composed,
+        psbtBase64ToHex(composed.psbtBase64),
+        addresses,
+      );
       setQuote(composed);
       setStep("confirm");
     } catch (err) {

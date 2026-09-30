@@ -130,6 +130,20 @@ describe("finalizePsbtHex", () => {
     // Must be a valid raw tx (not a PSBT — does not start with magic bytes 70736274ff)
     expect(txHex.startsWith("70736274ff")).toBe(false);
   });
+
+  it("keeps an input the wallet already finalized, and finalizes the rest", () => {
+    // External wallets may finalize what they sign; finalizing clears the
+    // fields a second pass needs, so bitcoinjs would throw on it.
+    const network = btc.networks.bitcoin;
+    const signed = btc.Psbt.fromHex(
+      signPsbtHex(FIXTURE_PSBT_HEX, [0], TEST_PRIVATE_KEY_HEX, network),
+      { network },
+    );
+    const expected = finalizePsbtHex(signed.toHex(), network);
+
+    signed.finalizeAllInputs();
+    expect(finalizePsbtHex(signed.toHex(), network)).toEqual(expected);
+  });
 });
 
 // ─── Tapscript (script-path) inputs — a Counterparty reveal ──────────────────

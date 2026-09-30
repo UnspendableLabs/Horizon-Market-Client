@@ -111,8 +111,9 @@ function scriptCarriesKey(script: Uint8Array, pubkey: Uint8Array): boolean {
  *   own x-only pubkey.
  * - An input carrying a `tapLeafScript` (a Counterparty taproot reveal, see
  *   `crypto/reveal.ts`) is signed script-path with whichever key closes the leaf
- *   — untweaked, or the taproot key's BIP86 output key for the composer's P2TR
- *   fallback — and only `SIGHASH_DEFAULT` / `SIGHASH_ALL`.
+ *   — the ECDSA or taproot key untweaked, or the taproot key's BIP86 output key
+ *   for the composer's P2TR fallback — and only `SIGHASH_DEFAULT` /
+ *   `SIGHASH_ALL`.
  * - Only signs the specified input indices; never modifies order or other inputs.
  * - Returns the signed PSBT as hex (NOT finalized — do not call finalizeAllInputs here).
  */
@@ -143,7 +144,10 @@ export function signPsbtHexWithKeys(
       // `<x-only key> OP_CHECKSIG`, and that key is one of ours *untweaked* — the
       // BIP341 tweak applies to the output key, not to a key inside a leaf. The
       // composer's fallback for a P2TR source closes the leaf with the address's
-      // output key instead, which is the key-path tweaked signer's key.
+      // output key instead, which is the key-path tweaked signer's key. These
+      // candidates are exactly `signerKeys` (crypto/reveal.ts), the keys a
+      // reveal is checked against before the wallet is asked to sign: keep the
+      // two in step.
       if (input.tapLeafScript && input.tapLeafScript.length > 0) {
         const candidates = sameKey
           ? [ecdsaKeyPair, createTaprootSigner(taprootKeyPair, ecc)]

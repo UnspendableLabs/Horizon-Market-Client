@@ -227,29 +227,45 @@ export const REVEAL_FIXTURE_WIRE = {
 } as const;
 
 /**
- * The commit of {@link REVEAL_FIXTURE} as the PSBT a creation quote returns
- * (unsigned, one P2WPKH input hydrated with its witnessUtxo).
+ * A commit transaction as the PSBT a quote returns: unsigned, every input
+ * hydrated with a witnessUtxo paying `sourceScript` — the reveal's source.
  */
-export function revealFixtureCommitPsbtHex(
+export function commitPsbtHexOf(
+  commitTxHex: string,
+  sourceScript: Uint8Array,
   network: btc.Network = btc.networks.bitcoin,
 ): string {
-  const commit = btc.Transaction.fromHex(REVEAL_FIXTURE.commitTxHex);
+  const commit = btc.Transaction.fromHex(commitTxHex);
   const psbt = new btc.Psbt({ network });
   psbt.setVersion(commit.version);
   psbt.setLocktime(commit.locktime);
-  const source = btc.address.toOutputScript(TEST_P2WPKH_ADDRESS, network);
   for (const input of commit.ins) {
     psbt.addInput({
       hash: Buffer.from(input.hash),
       index: input.index,
       sequence: input.sequence,
-      witnessUtxo: { script: source, value: 100_000n },
+      witnessUtxo: { script: sourceScript, value: 100_000n },
     });
   }
   for (const out of commit.outs) {
     psbt.addOutput({ script: Buffer.from(out.script), value: out.value });
   }
   return psbt.toHex();
+}
+
+/**
+ * The commit of {@link REVEAL_FIXTURE} as the PSBT a creation quote returns
+ * (unsigned, one P2WPKH input of `TEST_PRIVATE_KEY_HEX` hydrated with its
+ * witnessUtxo).
+ */
+export function revealFixtureCommitPsbtHex(
+  network: btc.Network = btc.networks.bitcoin,
+): string {
+  return commitPsbtHexOf(
+    REVEAL_FIXTURE.commitTxHex,
+    btc.address.toOutputScript(TEST_P2WPKH_ADDRESS, network),
+    network,
+  );
 }
 
 /**

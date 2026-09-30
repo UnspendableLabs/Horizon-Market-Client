@@ -60,6 +60,8 @@ type CreateResult = ReturnType<typeof useCreateToken>;
 /** The addresses `makeCtx` hands the hook. The first one funds every creation. */
 const FUNDING_ADDRESS = "bc1qwallet";
 const TAPROOT_ADDRESS = "bc1pwallet";
+/** A well-formed compressed key — the only kind sent as `public_key`. */
+const WALLET_KEY = `02${"aa".repeat(32)}`;
 
 function xcpRow(address: string, quantity: bigint) {
   return {
@@ -570,7 +572,14 @@ describe("useCreateToken", () => {
 
   it("sends the whole filled form, and only the parts that were filled", async () => {
     const client = makeClient();
-    ctxRef.current = makeCtx({ client });
+    ctxRef.current = makeCtx({
+      client,
+      addresses: {
+        p2wpkh: FUNDING_ADDRESS,
+        p2tr: TAPROOT_ADDRESS,
+        publicKey: WALLET_KEY,
+      },
+    });
     const { result } = renderHook(() => useCreateToken());
 
     // The functional setter form, which a custom UI may prefer.
@@ -606,7 +615,7 @@ describe("useCreateToken", () => {
       address: FUNDING_ADDRESS,
       // The wallet's compressed key: it closes the taproot envelope when the
       // issuance needs one, so the wallet can sign the reveal.
-      publicKey: "02aa",
+      publicKey: WALLET_KEY,
       options: {
         quantity: "1000",
         divisible: false,

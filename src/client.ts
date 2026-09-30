@@ -1592,6 +1592,12 @@ export class HorizonMarketClient {
     params: CreateTokenParams,
     options?: WorkflowOptions,
   ): Promise<CreateTokenResult> {
-    return workflowCreateToken(params, this.http, this.assertSigner(), options);
+    return workflowCreateToken(
+      params,
+      this.http,
+      this.assertSigner(),
+      this.btcNetwork,
+      options,
+    );
   }
 }

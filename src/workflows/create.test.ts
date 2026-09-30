@@ -9,6 +9,8 @@ import {
 import type { CreationQuote } from "../api/creations.js";
 import type { WorkflowProgressEvent } from "../types/index.js";
 import {
+  buildRevealPair,
+  commitPsbtHexOf,
   FIXTURE_ISSUANCE_PSBT_HEX,
   makeAsyncSigner,
   makeSequentialFetch,
@@ -18,9 +20,41 @@ import {
   revealFixtureCommitPsbtHex,
   TEST_PRIVATE_KEY_HEX,
 } from "../test-utils.js";
-import { LocalSigner, type Signer } from "../crypto/signer.js";
-import { PresignedRevealError } from "../crypto/reveal.js";
+import { HDSigner, LocalSigner, type Signer } from "../crypto/signer.js";
+import { PresignedRevealError, RevealVerificationError } from "../crypto/reveal.js";
 import * as btc from "bitcoinjs-lib";
+
+const NET = btc.networks.bitcoin;
+
+/** A well-formed compressed key, which `public_key` is filled from. */
+const COMPRESSED_KEY = `02${"ab".repeat(32)}`;
+
+/**
+ * A wallet over the fixture key whose `signPsbtHex` really signs — what a
+ * reveal-bearing quote needs, since the commit it signs is checked — reporting
+ * `addresses` on top of the key's own. `tamper` rewrites a PSBT before it is
+ * signed, the way a misbehaving wallet would.
+ */
+function fixtureWallet(
+  addresses: Partial<ReturnType<Signer["getAddresses"]>> = {},
+  tamper: (psbtHex: string) => string = (psbtHex) => psbtHex,
+): Signer {
+  const local = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+  return {
+    getAddresses: () => ({ ...local.getAddresses(), ...addresses }),
+    signPsbtHex: vi.fn((psbtHex: string, indices: number[]) =>
+      local.signPsbtHex(tamper(psbtHex), indices),
+    ),
+    signMessage: () => "sig",
+  };
+}
+
+/** `psbtHex` with the unsigned transaction's locktime moved. */
+function withLocktime(psbtHex: string, locktime: number): string {
+  const psbt = btc.Psbt.fromHex(psbtHex);
+  psbt.setLocktime(locktime);
+  return psbt.toHex();
+}
 
 // A Counterparty quote whose message rides inline (OP_RETURN): no reveal.
 const FIXTURE_PSBT_HEX = FIXTURE_ISSUANCE_PSBT_HEX;
@@ -80,7 +114,7 @@ describe("createToken", () => {
     const signer = makeSigner();
     const events: WorkflowProgressEvent[] = [];
 
-    const result = await createToken(BASE_PARAMS, http(fetchFn), signer, {
+    const result = await createToken(BASE_PARAMS, http(fetchFn), signer, NET, {
       onProgress: (event) => events.push(event),
     });
 
@@ -114,7 +148,7 @@ describe("createToken", () => {
       { status: 201, body: { data: WIRE_RESULT } },
     );
 
-    await createToken(BASE_PARAMS, http(fetchFn), makeAsyncSigner());
+    await createToken(BASE_PARAMS, http(fetchFn), makeAsyncSigner(), NET);
 
     // A dropped `await` would serialize the pending Promise as `{}` here.
     expect(bodyOf(fetchFn, 1).psbt).toBe(`${FIXTURE_PSBT_HEX}_signed`);
@@ -126,13 +160,44 @@ describe("createToken", () => {
       { status: 201, body: { data: WIRE_RESULT } },
     );
 
-    await createToken(BASE_PARAMS, http(fetchFn), makeSigner());
+    await createToken(
+      BASE_PARAMS,
+      http(fetchFn),
+      makeSigner({ publicKey: COMPRESSED_KEY }),
+      NET,
+    );
 
     // The key closes the taproot envelope when the issuance needs one
     // (Counterparty Core `multisig_pubkey`), so the wallet can sign the reveal.
     const body = bodyOf(fetchFn, 0);
     expect(body.address).toBe("bc1qseller");
-    expect(body.public_key).toBe("02aabbcc");
+    expect(body.public_key).toBe(COMPRESSED_KEY);
+  });
+
+  it("sends no public_key when the wallet shared no usable key", async () => {
+    // An external wallet may expose no payment key, or a malformed one. The
+    // server would answer a malformed `public_key` with a 400 — which would
+    // break even an issuance whose message fits an OP_RETURN.
+    for (const publicKey of ["", "02aabbcc", `04${"ab".repeat(64)}`, "b".repeat(64)]) {
+      const fetchFn = makeSequentialFetch(
+        { status: 200, body: { data: WIRE_QUOTE } },
+        { status: 201, body: { data: WIRE_RESULT } },
+      );
+
+      await createToken(BASE_PARAMS, http(fetchFn), makeSigner({ publicKey }), NET);
+
+      expect("public_key" in bodyOf(fetchFn, 0)).toBe(false);
+      expect(bodyOf(fetchFn, 1).psbt).toBe(`${FIXTURE_PSBT_HEX}_signed`);
+    }
+  });
+
+  it("refuses a malformed explicit publicKey before quoting, whatever the address", async () => {
+    const fetchFn = makeSequentialFetch({ status: 200, body: { data: WIRE_QUOTE } });
+
+    await expect(
+      createToken({ ...BASE_PARAMS, publicKey: "02aabbcc" }, http(fetchFn), makeSigner(), NET),
+    ).rejects.toThrow(/64 \(x-only\) or 66/);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("sends no public_key for an address the signer does not own", async () => {
@@ -145,6 +210,7 @@ describe("createToken", () => {
       { ...BASE_PARAMS, address: "bc1qsomeoneelse" },
       http(fetchFn),
       makeSigner(),
+      NET,
     );
 
     // The signer's key is not this address's key; the node looks it up itself.
@@ -165,6 +231,7 @@ describe("createToken", () => {
       { ...BASE_PARAMS, address: "bc1ptaproot" },
       http(fetchFn),
       signer,
+      NET,
     );
 
     // The BIP84 `publicKey` would be rejected against a taproot input, so it
@@ -188,12 +255,13 @@ describe("createToken", () => {
         },
       },
     );
-    const signer = makeSigner({ p2tr: "bc1preceiver" });
+    const signer = fixtureWallet({ p2tr: "bc1preceiver" });
 
     const result = await createToken(
       { ...BASE_PARAMS, type: "ordinals", name: "My inscription" },
       http(fetchFn),
       signer,
+      NET,
     );
 
     expect(bodyOf(fetchFn, 0).taproot_address).toBe("bc1preceiver");
@@ -201,6 +269,29 @@ describe("createToken", () => {
     expect("public_key" in bodyOf(fetchFn, 0)).toBe(false);
     expect(bodyOf(fetchFn, 1).reveal_tx_hex).toBe("0200reveal");
     expect(result.inscriptionId).toBe("abc123i0");
+  });
+
+  it("refuses an ordinal commit the wallet changed while signing", async () => {
+    // The server signed the ordinal reveal against the quoted commit's txid: a
+    // commit broadcast under any other txid would strand its output for good.
+    const fetchFn = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_ORDINALS_QUOTE } },
+      { status: 201, body: { data: { ...WIRE_RESULT, type: "ordinals" } } },
+    );
+    const signer = fixtureWallet({ p2tr: "bc1preceiver" }, (psbtHex) =>
+      withLocktime(psbtHex, 900_000),
+    );
+
+    await expect(
+      createToken(
+        { ...BASE_PARAMS, type: "ordinals", name: "My inscription" },
+        http(fetchFn),
+        signer,
+        NET,
+      ),
+    ).rejects.toThrow(/changed the commit while signing it/);
+    // Nothing was submitted, so nothing was broadcast.
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an ordinal when the signer exposes no taproot address", async () => {
@@ -211,6 +302,7 @@ describe("createToken", () => {
         { ...BASE_PARAMS, type: "ordinals", name: "My inscription" },
         http(fetchFn),
         makeSigner(),
+        NET,
       ),
     ).rejects.toThrow(/P2TR address to receive/);
     // Nothing was quoted: the check runs before the metered request.
@@ -238,6 +330,7 @@ describe("createToken", () => {
       { ...BASE_PARAMS, quote },
       http(fetchFn),
       makeSigner(),
+      NET,
       { onProgress: (event) => events.push(event) },
     );
 
@@ -266,6 +359,7 @@ describe("createToken", () => {
       },
       http(fetchFn),
       makeSigner(),
+      NET,
     );
 
     expect(bodyOf(fetchFn, 0).options).toEqual({
@@ -291,7 +385,7 @@ describe("createToken submit failures", () => {
       `The commit was broadcast as ${txid}, but its reveal was rejected.`,
     );
 
-    const error = await createToken(BASE_PARAMS, http(fetchFn), makeSigner()).catch(
+    const error = await createToken(BASE_PARAMS, http(fetchFn), makeSigner(), NET).catch(
       (e: unknown) => e,
     );
 
@@ -316,6 +410,7 @@ describe("createToken submit failures", () => {
         BASE_PARAMS,
         http(failing(status, message)),
         makeSigner(),
+        NET,
       ).catch((e: unknown) => e);
 
       expect(creationRetry(error)?.commitTxid).toBeNull();
@@ -331,6 +426,7 @@ describe("createToken submit failures", () => {
       BASE_PARAMS,
       http(failing(400, "psbt could not be finalised.")),
       makeSigner(),
+      NET,
     ).catch((e: unknown) => e);
     expect(creationRetry(rejected)?.possiblyBroadcast).toBe(false);
 
@@ -343,6 +439,7 @@ describe("createToken submit failures", () => {
         BASE_PARAMS,
         http(failing(502, message)),
         makeSigner(),
+        NET,
       ).catch((e: unknown) => e);
       expect(creationRetry(unknown)?.possiblyBroadcast).toBe(true);
       expect((unknown as CreationNotBroadcastError).message).toMatch(
@@ -386,6 +483,7 @@ describe("createToken with a taproot envelope", () => {
       { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
       http(fetchFn),
       signer,
+      NET,
       { onProgress: (event) => events.push(event) },
     );
 
@@ -432,6 +530,7 @@ describe("createToken with a taproot envelope", () => {
       { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
       http(fetchFn),
       wallet,
+      NET,
     );
 
     // Two prompts: the commit PSBT, then a one-input reveal PSBT.
@@ -457,7 +556,7 @@ describe("createToken with a taproot envelope", () => {
     const signer = makeSigner();
 
     await expect(
-      createToken(BASE_PARAMS, http(fetchFn), signer),
+      createToken(BASE_PARAMS, http(fetchFn), signer, NET),
     ).rejects.toBeInstanceOf(PresignedRevealError);
     expect(signer.signPsbtHex).not.toHaveBeenCalled();
     expect(fetchFn).toHaveBeenCalledTimes(1);
@@ -473,7 +572,7 @@ describe("createToken with a taproot envelope", () => {
     );
     const signer = makeSigner();
 
-    await expect(createToken(BASE_PARAMS, http(fetchFn), signer)).rejects.toThrow(
+    await expect(createToken(BASE_PARAMS, http(fetchFn), signer, NET)).rejects.toThrow(
       /no Counterparty data output and no reveal/,
     );
     expect(signer.signPsbtHex).not.toHaveBeenCalled();
@@ -485,7 +584,7 @@ describe("createToken with a taproot envelope", () => {
       body: { data: { ...WIRE_ENVELOPE_QUOTE, reveal_tx_hex: null } },
     });
 
-    await expect(createToken(BASE_PARAMS, http(fetchFn), makeSigner())).rejects.toThrow(
+    await expect(createToken(BASE_PARAMS, http(fetchFn), makeSigner(), NET)).rejects.toThrow(
       /signing material but no reveal/,
     );
   });
@@ -502,6 +601,7 @@ describe("createToken with a taproot envelope", () => {
         { ...BASE_PARAMS, address: stranger.getAddresses().p2wpkh },
         http(fetchFn),
         stranger,
+        NET,
       ),
     ).rejects.toThrow(/key this wallet does not hold/);
     expect(fetchFn).toHaveBeenCalledTimes(1);
@@ -531,6 +631,7 @@ describe("createToken with a taproot envelope", () => {
       { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
       client,
       signer,
+      NET,
     ).catch((reason: unknown) => reason);
 
     expect(failure).toBeInstanceOf(CreationNotBroadcastError);
@@ -572,9 +673,148 @@ describe("createToken with a taproot envelope", () => {
     await createToken(
       { ...BASE_PARAMS, type: "ordinals", name: "My inscription" },
       http(fetchFn),
-      makeSigner({ p2tr: "bc1preceiver" }),
+      fixtureWallet({ p2tr: "bc1preceiver" }),
+      NET,
     );
 
     expect(bodyOf(fetchFn, 1).reveal_tx_hex).toBe("0200reveal");
+  });
+});
+
+describe("createToken reveal checks", () => {
+  // An HD wallet has two keys: BIP84 behind its p2wpkh, BIP86 behind its p2tr.
+  const hd = new HDSigner({
+    segwitKeyHex: TEST_PRIVATE_KEY_HEX,
+    taprootKeyHex: "1".repeat(64),
+  });
+  const hdAddresses = hd.getAddresses();
+  const hdSegwitScript = btc.address.toOutputScript(hdAddresses.p2wpkh, NET);
+
+  function hdWallet(): Signer {
+    return {
+      getAddresses: () => hd.getAddresses(),
+      signPsbtHex: vi.fn((psbtHex: string, indices: number[]) =>
+        hd.signPsbtHex(psbtHex, indices),
+      ),
+      signMessage: () => "sig",
+    };
+  }
+
+  /** A creation quote whose envelope is closed by `envelopeKey`, funded by `source`. */
+  function envelopeQuote(envelopeKey: string, source: Uint8Array) {
+    const pair = buildRevealPair(envelopeKey);
+    return {
+      ...WIRE_QUOTE,
+      psbt: base64.encode(hex.decode(commitPsbtHexOf(pair.commitTxHex, source))),
+      reveal_tx_hex: pair.revealTxHex,
+      envelope_script: pair.material.envelopeScript,
+      reveal_control_block: pair.material.controlBlock,
+      reveal_pubkey: pair.material.pubkey,
+      reveal_lock_scripts: [pair.material.lockScript],
+      reveal_inputs_values: [pair.material.inputValue],
+    };
+  }
+
+  it("signs for an HD wallet funding from its segwit address", async () => {
+    const fetchFn = makeSequentialFetch(
+      {
+        status: 200,
+        body: { data: envelopeQuote(hdAddresses.publicKey.slice(2), hdSegwitScript) },
+      },
+      { status: 201, body: { data: WIRE_RESULT } },
+    );
+
+    await createToken(BASE_PARAMS, http(fetchFn), hdWallet(), NET);
+
+    expect(witnessOf(String(bodyOf(fetchFn, 1).reveal_tx_hex))).toHaveLength(3);
+  });
+
+  it("refuses an envelope closed by a wallet key that does not fund the commit", async () => {
+    // The wallet holds the BIP86 key, but the commit is funded by its BIP84
+    // address: the node attributes the reveal to that address only, so the
+    // issuance would be lost. Refused before the first prompt.
+    const fetchFn = makeSequentialFetch({
+      status: 200,
+      body: { data: envelopeQuote(hdAddresses.xOnlyPubkey!, hdSegwitScript) },
+    });
+    const signer = hdWallet();
+
+    const error = await createToken(BASE_PARAMS, http(fetchFn), signer, NET).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(RevealVerificationError);
+    expect((error as Error).message).toMatch(/not one of the address funding the commit/);
+    expect(signer.signPsbtHex).not.toHaveBeenCalled();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a commit input whose signature would move the commit's txid", async () => {
+    // A legacy input signs into its scriptSig, which the txid covers: the
+    // reveal, built against the unsigned commit, would spend nothing.
+    const p2pkh = btc.payments.p2pkh({
+      pubkey: Buffer.from(hdAddresses.publicKey, "hex"),
+    }).output!;
+    const fetchFn = makeSequentialFetch({
+      status: 200,
+      body: { data: envelopeQuote(REVEAL_FIXTURE.xOnlyPubkey, p2pkh) },
+    });
+    const signer = fixtureWallet();
+
+    await expect(createToken(BASE_PARAMS, http(fetchFn), signer, NET)).rejects.toThrow(
+      /does not spend a native segwit output/,
+    );
+    expect(signer.signPsbtHex).not.toHaveBeenCalled();
+  });
+
+  it("refuses a commit the wallet changed while signing, before the reveal prompt", async () => {
+    const fetchFn = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_ENVELOPE_QUOTE } },
+      { status: 201, body: { data: WIRE_RESULT } },
+    );
+    const signer = fixtureWallet({}, (psbtHex) =>
+      psbtHex === COMMIT_PSBT_HEX ? withLocktime(psbtHex, 900_000) : psbtHex,
+    );
+
+    await expect(
+      createToken(
+        { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
+        http(fetchFn),
+        signer,
+        NET,
+      ),
+    ).rejects.toThrow(/changed the commit while signing it/);
+    // The reveal was never put to the wallet, and nothing was submitted.
+    expect(signer.signPsbtHex).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a reveal the wallet hands back already finalized", async () => {
+    // Some wallets finalize what they sign (Unisat does by default).
+    const fetchFn = makeSequentialFetch(
+      { status: 200, body: { data: WIRE_ENVELOPE_QUOTE } },
+      { status: 201, body: { data: WIRE_RESULT } },
+    );
+    const local = new LocalSigner(TEST_PRIVATE_KEY_HEX);
+    const signer: Signer = {
+      getAddresses: () => local.getAddresses(),
+      signPsbtHex: async (psbtHex: string, indices: number[]) => {
+        const signed = btc.Psbt.fromHex(local.signPsbtHex(psbtHex, indices));
+        if (signed.data.inputs[0].tapLeafScript) signed.finalizeAllInputs();
+        return signed.toHex();
+      },
+      signMessage: async () => "sig",
+    };
+
+    await createToken(
+      { ...BASE_PARAMS, address: REVEAL_FIXTURE.sourceAddress },
+      http(fetchFn),
+      signer,
+      NET,
+    );
+
+    const reveal = btc.Transaction.fromHex(String(bodyOf(fetchFn, 1).reveal_tx_hex));
+    expect(reveal.getId()).toBe(REVEAL_FIXTURE.revealTxid);
+    expect(reveal.ins[0].witness).toHaveLength(3);
   });
 });
