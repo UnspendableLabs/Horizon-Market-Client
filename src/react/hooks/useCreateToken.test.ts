@@ -27,9 +27,15 @@ vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
 const QUOTE: CreationQuote = {
   type: "counterparty",
   identifier: "MYASSET",
-  psbtBase64: "cHNidP8BAA==",
+  // `buildIssuancePsbtHex()` from test-utils, inlined: an OP_RETURN issuance,
+  // which is what tells the quote guard there is no reveal to expect. (Not
+  // imported: test-utils pulls the ecc self-test in, which the jsdom realm
+  // fails — see crypto/psbt-finalize.ts.)
+  psbtBase64:
+    "cHNidP8BAIUCAAAAAaqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AgAAAAAAAAAAKmooQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQriCAQAAAAAAFgAUqrVh5aEju/5MxkV0k35kzEcFvjQAAAAAAAEBH6CGAQAAAAAAFgAUqrVh5aEju/5MxkV0k35kzEcFvjQAAAA=",
   inputsToSign: [0],
   revealTxHex: null,
+  revealSigning: null,
   estimatedFeeSats: 1240,
   totalCostSats: 1240,
 };
@@ -54,6 +60,8 @@ type CreateResult = ReturnType<typeof useCreateToken>;
 /** The addresses `makeCtx` hands the hook. The first one funds every creation. */
 const FUNDING_ADDRESS = "bc1qwallet";
 const TAPROOT_ADDRESS = "bc1pwallet";
+/** A well-formed compressed key — the only kind sent as `public_key`. */
+const WALLET_KEY = `02${"aa".repeat(32)}`;
 
 function xcpRow(address: string, quantity: bigint) {
   return {
@@ -564,7 +572,14 @@ describe("useCreateToken", () => {
 
   it("sends the whole filled form, and only the parts that were filled", async () => {
     const client = makeClient();
-    ctxRef.current = makeCtx({ client });
+    ctxRef.current = makeCtx({
+      client,
+      addresses: {
+        p2wpkh: FUNDING_ADDRESS,
+        p2tr: TAPROOT_ADDRESS,
+        publicKey: WALLET_KEY,
+      },
+    });
     const { result } = renderHook(() => useCreateToken());
 
     // The functional setter form, which a custom UI may prefer.
@@ -598,6 +613,9 @@ describe("useCreateToken", () => {
       thumbnail: "ipfs://bafythumb",
       attributes: { rarity: "rare" },
       address: FUNDING_ADDRESS,
+      // The wallet's compressed key: it closes the taproot envelope when the
+      // issuance needs one, so the wallet can sign the reveal.
+      publicKey: WALLET_KEY,
       options: {
         quantity: "1000",
         divisible: false,

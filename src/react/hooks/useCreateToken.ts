@@ -12,6 +12,7 @@ import {
 } from "../internal/creationCost.js";
 import { stepMessages } from "../../workflows/progress.js";
 import {
+  assertCreationQuoteSignable,
   creationQuoteParams,
   creationRetry,
   type CreateTokenParams,
@@ -35,6 +36,7 @@ import {
   validateCreationQuantity,
 } from "../../creation-params.js";
 import type { WorkflowProgressEvent } from "../../types/index.js";
+import { psbtBase64ToHex } from "../../utils.js";
 
 export type CreateTokenStepName = "form" | "confirm" | "progress" | "result";
 export type CreateTokenStatus = "idle" | "loading" | "success" | "error";
@@ -807,6 +809,15 @@ export function useCreateToken(
       // which matters most here: this is the call that costs an IPFS pin.
       const composed = await client.requestCreationQuote(
         creationQuoteParams(buildParams(formValues.image), addresses),
+      );
+      // A reveal this wallet cannot sign (an out-of-date server pre-signed it,
+      // dropped it, or closed it with a key that is not this wallet's) is
+      // refused here, where the message lands next to the form, rather than
+      // after the user has approved fees on a confirm screen.
+      assertCreationQuoteSignable(
+        composed,
+        psbtBase64ToHex(composed.psbtBase64),
+        addresses,
       );
       setQuote(composed);
       setStep("confirm");

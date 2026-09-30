@@ -325,6 +325,9 @@ export {
   // The one resolution of "which address funds a creation", shared by the quote
   // and the transaction so the two cannot be composed from different params.
   creationQuoteParams,
+  // Refuses a quote whose reveal this wallet cannot sign (out-of-date server)
+  // — call it right after quoting so the user hears before a confirm modal.
+  assertCreationQuoteSignable,
 } from "./workflows/create.js";
 export type {
   CreateTokenParams,
@@ -355,5 +358,37 @@ export { psbtBase64ToHex } from "./utils.js";
 // Manual sell workflow helper (quote → sign → submit)
 export {
   signAndFinalizeSellPrep,
+  signSellPrepReveal,
+  assertSellQuoteRevealSignable,
   type SignedSellPrepResult,
 } from "./workflows/sell-prep.js";
+
+// Counterparty taproot reveal signing (Counterparty Core ≥ 11.5.0,
+// `require_reveal_source_signature`): the wallet, not the node, signs the reveal
+// of a taproot-encoded message. `createToken` / `openSellOrder` do this
+// themselves; the pieces are exported for wallets and staged flows that drive
+// the compose API directly.
+export {
+  signReveal,
+  signVerifiedReveal,
+  verifyReveal,
+  readRevealCommit,
+  signerKeys,
+  buildRevealPsbt,
+  assertSignedReveal,
+  assertCommitUnchanged,
+  carriesInlineCounterpartyData,
+  unsignedTxHexFromPsbt,
+  envelopeSigningKey,
+  PresignedRevealError,
+  RevealVerificationError,
+  TAPSCRIPT_LEAF_VERSION,
+} from "./crypto/reveal.js";
+export type {
+  RevealCommit,
+  RevealSigningMaterial,
+  SignedReveal,
+  SignRevealParams,
+  VerifiedReveal,
+  VerifyRevealOptions,
+} from "./crypto/reveal.js";

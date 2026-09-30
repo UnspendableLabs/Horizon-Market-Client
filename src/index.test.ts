@@ -89,4 +89,28 @@ describe("public SDK barrel (index.ts)", () => {
     expect(sdk.COUNTERPARTY_NUMERIC_MIN).toBeTypeOf("bigint");
     expect(sdk.COUNTERPARTY_NUMERIC_MAX).toBeTypeOf("bigint");
   });
+
+  it("re-exports the Counterparty reveal toolkit", () => {
+    for (const fn of [
+      sdk.signReveal,
+      sdk.signVerifiedReveal,
+      sdk.verifyReveal,
+      sdk.readRevealCommit,
+      sdk.signerKeys,
+      sdk.buildRevealPsbt,
+      sdk.assertSignedReveal,
+      sdk.assertCommitUnchanged,
+      sdk.carriesInlineCounterpartyData,
+      sdk.unsignedTxHexFromPsbt,
+      sdk.envelopeSigningKey,
+      sdk.assertCreationQuoteSignable,
+      sdk.assertSellQuoteRevealSignable,
+      sdk.signSellPrepReveal,
+    ]) {
+      expect(fn).toBeTypeOf("function");
+    }
+    expect(new sdk.RevealVerificationError("x")).toBeInstanceOf(Error);
+    expect(new sdk.PresignedRevealError("x")).toBeInstanceOf(Error);
+    expect(sdk.TAPSCRIPT_LEAF_VERSION).toBe(0xc0);
+  });
 });

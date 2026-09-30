@@ -7,6 +7,7 @@ import type {
   RequestOptions,
 } from "../types/index.js";
 import { serializeAssetQuantity } from "../utils.js";
+import { mapRevealSigning } from "./creations.js";
 
 // ─── Wire types (internal) ────────────────────────────────────────────────────
 
@@ -23,6 +24,13 @@ interface WireSellQuoteResponse {
   prep_inputs_to_sign: number[];
   prep_kind: "zeld_transfer" | "attach" | null;
   reveal_tx_hex?: string;
+  // Attach in a taproot envelope — Counterparty Core's reveal result keys,
+  // passed through by the server so the seller can sign the reveal.
+  envelope_script?: string | null;
+  reveal_control_block?: string | null;
+  reveal_pubkey?: string | null;
+  reveal_lock_scripts?: string[] | null;
+  reveal_inputs_values?: number[] | null;
   payment_address?: string;
   payment_amount?: number;
   listing_fee_sats?: number | null;
@@ -88,6 +96,7 @@ export async function requestSellQuote(
     prepInputsToSign: wire.prep_inputs_to_sign,
     prepKind: wire.prep_kind as PrepKind,
     revealTxHex: wire.reveal_tx_hex,
+    revealSigning: mapRevealSigning(wire),
     paymentAddress: wire.payment_address,
     paymentAmount: wire.payment_amount,
     listingFeeSats: wire.listing_fee_sats ?? null,

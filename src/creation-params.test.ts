@@ -214,6 +214,21 @@ describe("assertCreationQuoteParams", () => {
     ).not.toThrow();
   });
 
+  it("refuses a malformed public key whatever the address, since the server would", () => {
+    for (const publicKey of ["", "02aabbcc", "nothex"]) {
+      expect(() =>
+        assertCreationQuoteParams({ ...counterparty, address: "bc1qfunding", publicKey }),
+      ).toThrow(/64 \(x-only\) or 66/);
+    }
+    expect(() =>
+      assertCreationQuoteParams({
+        ...counterparty,
+        address: "bc1qfunding",
+        publicKey: `02${"a".repeat(64)}`,
+      }),
+    ).not.toThrow();
+  });
+
   it("requires a taproot receive address for an ordinal, and refuses legacy funding", () => {
     expect(() =>
       assertCreationQuoteParams({

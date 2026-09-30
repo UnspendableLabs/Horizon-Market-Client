@@ -14,6 +14,8 @@ export type OpenSellOrderStep =
   | "requestSellQuote"
   | "signPrepPsbt"
   | "finalizePrepPsbt"
+  // Counterparty attach in a taproot envelope: the wallet signs the reveal.
+  | "signRevealTx"
   | "signSwapPsbt"
   | "signFeePsbt"
   | "createSwap"
@@ -48,6 +50,8 @@ export type CreateTokenStep =
   // Skipped when the caller already holds a quote (the confirm-modal flow).
   | "requestCreationQuote"
   | "signCreationPsbt"
+  // Only when a Counterparty issuance travels in a taproot envelope.
+  | "signRevealTx"
   | "submitCreation";
 
 export type WorkflowStep =
