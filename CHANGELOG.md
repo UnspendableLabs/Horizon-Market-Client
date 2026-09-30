@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-30
+
 **The wallet signs the Counterparty reveal.** Counterparty Core v11.5.0
 (security release, `require_reveal_source_signature`) stops the node from
 signing the *reveal* of a taproot-encoded message: the network now attributes a
@@ -112,6 +114,12 @@ Counterparty Core's reveal fields through unchanged next to `reveal_tx_hex`;
 `POST /api/creations` and `POST /api/atomic-swaps` take the wallet-signed
 `reveal_tx_hex`. A server that still answers a Counterparty `reveal_tx_hex`
 **without** `envelope_script` is refused by the SDK (`PresignedRevealError`).
+The matching server (UnspendableLabs/Horizon-Market#1228) refuses to compose an
+envelope for a request without `public_key` — what 0.5.x sends for a
+native-segwit address — with a 400 asking for a client update, and verifies
+the signed pair before broadcasting either half; issuances whose message fits
+an `OP_RETURN` are unaffected. Upgrade to 0.6.0 to create the long-description
+ones again.
 
 ## [0.5.1] - 2026-09-22
 
@@ -630,7 +638,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.3.1...v0.4.0
