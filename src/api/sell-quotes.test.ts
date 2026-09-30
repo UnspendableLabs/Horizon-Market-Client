@@ -53,6 +53,7 @@ describe("requestSellQuote", () => {
       prepInputsToSign: [],
       prepKind: null,
       revealTxHex: undefined,
+      revealSigning: null,
       paymentAddress: undefined,
       paymentAmount: undefined,
       listingFeeSats: null,

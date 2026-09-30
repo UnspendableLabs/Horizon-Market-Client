@@ -140,8 +140,9 @@ async function sellManual() {
     assetUtxoId: "abcdef:0",
   });
 
-  // 2. Sign + finalize prep PSBT when present (attach or zeld transfer)
-  const prep = signAndFinalizeSellPrep(quote, signer, btcNetwork);
+  // 2. Sign + finalize prep PSBT when present (attach or zeld transfer) — and,
+  //    for an attach in a taproot envelope, sign its reveal
+  const prep = await signAndFinalizeSellPrep(quote, signer, btcNetwork);
 
   // 3. Sign swap PSBT (do NOT finalize)
   const signedSwapPsbt = signer.signPsbtHex(

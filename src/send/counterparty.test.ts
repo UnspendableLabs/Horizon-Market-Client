@@ -390,3 +390,25 @@ describe("sendCounterparty", () => {
     expect(btc.Transaction.fromHex(raw).getId()).toBe(txid);
   });
 });
+
+describe("prepareCounterparty taproot commit/reveal guard", () => {
+  // A send is composed with the default encoding, so a commit/reveal pair is
+  // never expected — and signing the PSBT alone would broadcast a commit whose
+  // reveal nobody signs.
+  it.each([
+    ["an unsigned reveal (Counterparty Core ≥ 11.5.0)", { reveal_rawtransaction: "0200", envelope_script: "0063" }],
+    ["a pre-signed reveal (Counterparty Core < 11.5.0)", { signed_reveal_rawtransaction: "0200" }],
+  ])("refuses %s", async (_label, extra) => {
+    const router = makeRouter({
+      compose: jsonRes(200, { result: { psbt: witnessComposePsbtB64(), ...extra } }),
+      prevOuts: {},
+    });
+
+    await expect(prepareCounterparty(OK_PARAMS, deps(router))).rejects.toThrow(
+      /taproot commit\/reveal pair/,
+    );
+    // Nothing was fetched from mempool and nothing broadcast: the refusal is
+    // decided on the compose response alone.
+    expect(router.calls.some((c) => c.method === "POST")).toBe(false);
+  });
+});

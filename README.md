@@ -633,7 +633,7 @@ const quote = await client.requestCreationQuote({ /* … */ });   // show quote.
 const created = await client.createToken({ /* same params */, quote });  // skips re-quoting
 ```
 
-- `requestCreationQuote(params, options?)` — session-gated. Answers `{ identifier, psbtBase64, inputsToSign, revealTxHex, estimatedFeeSats, totalCostSats }`
+- `requestCreationQuote(params, options?)` — session-gated. Answers `{ identifier, psbtBase64, inputsToSign, revealTxHex, revealSigning, estimatedFeeSats, totalCostSats }`
 - `submitCreation(params, options?)` — unauthenticated, idempotent; `psbt` (hex or base64) **xor** `txHex`
 - `uploadCreationMedia(file, { thumbnail? })` — session-gated multipart; a `Blob`/`File` or a React Native `{ uri, name, type }`
 - `createToken(params, options?)` — the workflow over all three
@@ -645,6 +645,29 @@ Two things a caller has to get right:
 the workflow composes a *second* transaction — and for an ordinal, the first
 commit's funds are then stranded forever, since its reveal was pre-signed with a
 key the server discarded at quote time.
+
+**The wallet signs the Counterparty reveal.** A Counterparty issuance whose
+description does not fit an `OP_RETURN` travels in a *taproot envelope*: a
+commit transaction, then a reveal that spends it. Since Counterparty Core
+v11.5.0 (`require_reveal_source_signature`) the network attributes that reveal
+to the funding address **only when that address signed it**, so the quote
+answers the reveal *unsigned* together with `revealSigning` (envelope script,
+control block, the x-only key closing the leaf, the commit output it spends),
+and `createToken` signs it — a second `signPsbtHex` prompt on a one-input
+BIP371 PSBT (`tapLeafScript`, leaf version `0xc0`), which external wallets see
+as an ordinary PSBT — and submits the signed hex. Before asking for either
+signature it checks the reveal against the commit, the address funding it (the
+envelope must be closed by a key of that address, or the network ignores the
+reveal) and the wallet's keys, and it **refuses** two quotes an out-of-date
+server can produce: a reveal with no signing material (pre-signed by the node,
+ignored by the network) → `PresignedRevealError`; and a commit with no reveal
+at all (the server dropped the unsigned one) → an error naming the cause. After
+the commit prompt it checks the wallet signed that very commit, since the
+reveal spends its txid. `assertCreationQuoteSignable(quote, commitPsbtHex,
+addresses)` runs the pre-signature checks on a quote you hold, and
+`readRevealCommit` / `verifyReveal` / `signReveal` are exported for wallets
+driving the compose API themselves. Ordinal reveals are not Counterparty
+messages: they stay pre-signed and echoed verbatim.
 
 ```ts
 try { await client.createToken(params); }

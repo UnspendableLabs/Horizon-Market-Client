@@ -6,6 +6,7 @@ import {
   requestCreationQuote,
   submitCreation,
   uploadCreationMedia,
+  mapRevealSigning,
 } from "./creations.js";
 import { makeFetch } from "../test-utils.js";
 
@@ -99,6 +100,7 @@ describe("requestCreationQuote", () => {
       psbtBase64: "cHNidP8BAA==",
       inputsToSign: [0, 1],
       revealTxHex: null,
+      revealSigning: null,
       estimatedFeeSats: 1240,
       totalCostSats: 1240,
     });
@@ -415,5 +417,51 @@ describe("uploadCreationMedia", () => {
     await expect(
       uploadCreationMedia(http(fetchFn), new Blob(["x"])),
     ).rejects.toThrow("File is larger than 10 MB.");
+  });
+});
+
+describe("mapRevealSigning", () => {
+  const full = {
+    envelope_script: "0063aa68" + "11".repeat(32) + "ac",
+    reveal_control_block: "c1" + "22".repeat(32),
+    reveal_pubkey: "11".repeat(32),
+    reveal_lock_scripts: ["5120" + "33".repeat(32)],
+    reveal_inputs_values: [5000],
+  };
+
+  it("maps Counterparty Core's reveal result keys", () => {
+    expect(mapRevealSigning(full)).toEqual({
+      envelopeScript: full.envelope_script,
+      controlBlock: full.reveal_control_block,
+      pubkey: full.reveal_pubkey,
+      lockScript: full.reveal_lock_scripts[0],
+      inputValue: 5000,
+    });
+  });
+
+  it("is null when no key is present, whether absent or null", () => {
+    expect(mapRevealSigning({})).toBeNull();
+    expect(
+      mapRevealSigning({
+        envelope_script: null,
+        reveal_control_block: null,
+        reveal_pubkey: null,
+        reveal_lock_scripts: null,
+        reveal_inputs_values: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a partial set rather than guessing", () => {
+    for (const key of Object.keys(full) as Array<keyof typeof full>) {
+      const partial = { ...full, [key]: undefined };
+      expect(() => mapRevealSigning(partial)).toThrow(HorizonMarketApiError);
+    }
+    expect(() =>
+      mapRevealSigning({ ...full, reveal_lock_scripts: [] }),
+    ).toThrow(/incomplete reveal signing material/);
+    expect(() =>
+      mapRevealSigning({ ...full, reveal_inputs_values: ["5000" as unknown as number] }),
+    ).toThrow(/incomplete/);
   });
 });

@@ -21,6 +21,8 @@
  * for that address's in-progress orders; `null` everywhere else. See those field
  * docs on {@link AtomicSwap}.
  */
+
+import type { RevealSigningMaterial } from "../crypto/reveal.js";
 export type ListingType = "counterparty" | "ordinal" | "zeld" | "kontor";
 
 /** Kind of Kontor asset escrowed in a `listingType: "kontor"` swap. */
@@ -361,8 +363,15 @@ export interface SellQuote {
   prepPsbt: string | null;
   prepInputsToSign: number[];
   prepKind: PrepKind;
-  /** Attach: pass unchanged on create. */
+  /**
+   * Attach in a taproot envelope: the **unsigned** reveal, to sign with
+   * `revealSigning` (see `signAndFinalizeSellPrep`) and pass signed on create.
+   * A reveal without `revealSigning` was pre-signed by an out-of-date server
+   * and would be ignored by the network — the workflow refuses it.
+   */
   revealTxHex?: string;
+  /** What the wallet needs to sign `revealTxHex`; absent when there is no reveal. */
+  revealSigning?: RevealSigningMaterial | null;
   /** ZELD transfer prep only (informational — fee is inside prep tx). */
   paymentAddress?: string;
   /** ZELD transfer prep only. */

@@ -20,6 +20,11 @@ export interface SendCounterpartyParams {
 interface ComposeResult {
   psbt?: unknown;
   rawtransaction?: unknown;
+  /** Present when the node encoded the message in a taproot envelope. */
+  reveal_rawtransaction?: unknown;
+  envelope_script?: unknown;
+  /** Counterparty Core < 11.5.0's pre-signed reveal. */
+  signed_reveal_rawtransaction?: unknown;
 }
 
 /** A witness program script (v0/v1): OP_0/OP_1 + a single data push. */
@@ -87,6 +92,20 @@ export async function prepareCounterparty(
   if (!psbtB64) {
     throw new Error(
       "Counterparty compose did not return a PSBT (needs a counterparty-core that supports verbose PSBT compose)",
+    );
+  }
+  // A send is composed with the default encoding, which never produces a
+  // taproot envelope — its `psbt` is the whole message. Should the node ever
+  // answer with a commit/reveal pair, signing the PSBT alone would broadcast a
+  // commit whose reveal nobody signs: refuse rather than strand it.
+  if (
+    result?.reveal_rawtransaction !== undefined ||
+    result?.envelope_script !== undefined ||
+    result?.signed_reveal_rawtransaction !== undefined
+  ) {
+    throw new Error(
+      "Counterparty composed the send as a taproot commit/reveal pair, which " +
+        "this send path does not sign. Refusing to broadcast the commit alone.",
     );
   }
 
