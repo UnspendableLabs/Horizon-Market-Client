@@ -24,36 +24,50 @@ description does not fit an `OP_RETURN` is exactly such a message, so
   `reveal_inputs_values[0]` — Counterparty Core's own result keys, camel-cased as
   `RevealSigningMaterial`) and the commit before anything is signed: canonical
   envelope (`OP_FALSE OP_IF <pushes> OP_ENDIF <key> OP_CHECKSIG`), closed by a
-  key this wallet holds, control block that commits the leaf to the commit's
-  output 0, a reveal that spends exactly `commit:0` and carries an
-  `OP_RETURN CNTRPRTY` output. `buildRevealPsbt` then wraps the reveal as a
-  one-input BIP371 PSBT (`witnessUtxo` + `tapLeafScript`, leaf version `0xc0`)
-  so **any `Signer` — in-process key or external wallet — signs it through
-  `signPsbtHex`**, and `assertSignedReveal` checks the finalized witness is
+  key **of the address funding the commit** — the node's own
+  `source_controls_key` rule, P2TR / P2WPKH / nested P2WPKH / P2PKH, so a wallet
+  key that funds nothing is refused — and by a key this wallet can sign with
+  (`signerKeys`, exactly the keys the SDK signers close a leaf with), control
+  block that commits the leaf to the commit's output 0, a reveal that spends
+  exactly `commit:0` and carries an `OP_RETURN CNTRPRTY` output.
+  `readRevealCommit` reads the commit and that funding address off the commit
+  PSBT, and refuses a commit with an input that is not native segwit: its
+  signature would move the txid the reveal spends. `buildRevealPsbt` then wraps
+  the reveal as a one-input BIP371 PSBT (`witnessUtxo` + `tapLeafScript`, leaf
+  version `0xc0`) so **any `Signer` — in-process key or external wallet — signs
+  it through `signPsbtHex`** (`signVerifiedReveal` signs one already verified),
+  and `assertSignedReveal` checks the finalized witness is
   `<64/65-byte Schnorr sig> <envelope> <control block>` and that the signature
-  verifies over the BIP342 script-path sighash. The cross-implementation test
-  vector was produced by the node's own construction (bitcoinutils, as
-  `composer.py`) and its reference wallet routine: the TypeScript sighash matches
-  it byte for byte.
+  verifies over the BIP342 script-path sighash — also when the wallet hands the
+  reveal back finalized. `assertCommitUnchanged` checks the wallet signed the
+  commit it was shown. The cross-implementation test vector was produced by the
+  node's own construction (bitcoinutils, as `composer.py`) and its reference
+  wallet routine: the TypeScript sighash matches it byte for byte.
 - **Tapscript inputs in `signPsbtHex` / `HDSigner`.** An input carrying a
   `tapLeafScript` is signed script-path with whichever key closes the leaf —
   untweaked (the BIP84 key for a P2WPKH source, the BIP86 internal key for a
   P2TR one), or the BIP86 *output* key for the composer's fallback when it was
   given no source key — and only `SIGHASH_DEFAULT` / `SIGHASH_ALL`, which is all
   the Counterparty parser accepts.
-- **`assertCreationQuoteSignable()`** — the guard `createToken` runs before it
-  asks for a signature, exported so a screen that quotes first fails at quote
-  time rather than after a confirm modal (`useCreateToken` does). It throws
+- **`assertCreationQuoteSignable(quote, commitPsbtHex, addresses?)`** — the
+  guard `createToken` runs before its first wallet prompt, exported so a screen
+  that quotes first fails at quote time rather than after a confirm modal
+  (`useCreateToken` does, with the wallet's addresses). It throws
   `PresignedRevealError` for a reveal without signing material (an out-of-date
-  server pre-signed it), and refuses a Counterparty commit that came back with
-  **no** reveal at all (a ≥ 11.5.0 node behind a server that only forwarded the
-  old `signed_reveal_rawtransaction`): broadcasting that commit alone would
-  strand its output.
+  server pre-signed it), `RevealVerificationError` for a reveal that does not
+  check out, and refuses a Counterparty commit that came back with **no** reveal
+  at all (a ≥ 11.5.0 node behind a server that only forwarded the old
+  `signed_reveal_rawtransaction`): broadcasting that commit alone would strand
+  its output. A commit "has no reveal" when it carries neither an `OP_RETURN`
+  nor a whole bare-multisig data output — the multisig shape is matched, not a
+  trailing `OP_CHECKMULTISIG` byte a hash or key can end in.
 - Sell listings: `SellQuote.revealSigning`, `signSellPrepReveal()` and
-  `assertSellQuoteRevealSignable()`. Should an attach ever come back as a
-  commit/reveal pair, `openSellOrder` / `signAndFinalizeSellPrep` sign the reveal
-  after the commit (`signRevealTx` step) and refuse a pre-signed one. In
-  practice the server composes attaches inline, so this path is dormant.
+  `assertSellQuoteRevealSignable(quote, addresses?)`. Should an attach ever come
+  back as a commit/reveal pair, `openSellOrder` / `signAndFinalizeSellPrep`
+  verify the reveal before the prep prompt, sign it after the commit
+  (`signRevealTx` step), and refuse a pre-signed one or one with no attach
+  commit to spend. In practice the server composes attaches inline, so this
+  path is dormant.
 
 ### Changed
 
@@ -66,15 +80,30 @@ description does not fit an `OP_RETURN` is exactly such a message, so
   as before). The server forwards it as Counterparty Core's `multisig_pubkey`,
   which closes the envelope with the key this wallet can sign for; without it
   the node searches the address's spending history and fails for an address
-  that never spent. Ordinals still send none.
+  that never spent. Only a well-formed compressed key is sent, so a wallet that
+  shares none still creates inline issuances; ordinals still send none. An
+  explicit `publicKey` that the server would reject is now refused locally for
+  any funding address, before the quote pins its descriptor.
+- **`createToken` checks the wallet signed exactly the quoted commit** whenever
+  a reveal is bound to it — the Counterparty one, and the ordinal one the
+  server pre-signs: a commit whose txid moved would strand its output. The
+  reveal PSBT is built for the client's network rather than always mainnet.
 - New progress step `signRevealTx` in `createToken` (5 steps when the issuance
   rides an envelope) and `openSellOrder`.
 - `prepareCounterparty` / `sendCounterparty` refuse a compose response that
   carries a commit/reveal pair (signed or not) instead of broadcasting the
   commit alone.
-- `finalizePsbtHex` moved to `crypto/psbt-finalize.ts` (re-exported from
-  `psbt-signer`), so the reveal module — and through it the creation workflow
-  — loads without the ECPair self-test that `crypto/ecc.ts` runs at import.
+- `finalizePsbtHex` keeps an input the wallet already finalized instead of
+  throwing on it (external wallets may finalize what they sign), and moved to
+  `crypto/psbt-finalize.ts` (re-exported from `psbt-signer`), so the reveal
+  module — and through it the creation workflow — loads without the ECPair
+  self-test that `crypto/ecc.ts` runs at import.
+
+### Fixed
+
+- `examples/sell.ts`: the manual flow awaits `signAndFinalizeSellPrep`, which
+  returns a promise — it listed with neither the prep transaction nor its
+  reveal.
 
 ### Server contract (Horizon Market API)
 

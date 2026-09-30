@@ -656,14 +656,18 @@ control block, the x-only key closing the leaf, the commit output it spends),
 and `createToken` signs it — a second `signPsbtHex` prompt on a one-input
 BIP371 PSBT (`tapLeafScript`, leaf version `0xc0`), which external wallets see
 as an ordinary PSBT — and submits the signed hex. Before asking for either
-signature it checks the reveal against the commit and the wallet's keys, and it
-**refuses** two quotes an out-of-date server can produce: a reveal with no
-signing material (pre-signed by the node, ignored by the network) →
-`PresignedRevealError`; and a commit with no reveal at all (the server dropped
-the unsigned one) → an error naming the cause. `assertCreationQuoteSignable`
-runs those checks on a quote you hold, and `signReveal` / `verifyReveal` are
-exported for wallets driving the compose API themselves. Ordinal reveals are
-not Counterparty messages: they stay pre-signed and echoed verbatim.
+signature it checks the reveal against the commit, the address funding it (the
+envelope must be closed by a key of that address, or the network ignores the
+reveal) and the wallet's keys, and it **refuses** two quotes an out-of-date
+server can produce: a reveal with no signing material (pre-signed by the node,
+ignored by the network) → `PresignedRevealError`; and a commit with no reveal
+at all (the server dropped the unsigned one) → an error naming the cause. After
+the commit prompt it checks the wallet signed that very commit, since the
+reveal spends its txid. `assertCreationQuoteSignable(quote, commitPsbtHex,
+addresses)` runs the pre-signature checks on a quote you hold, and
+`readRevealCommit` / `verifyReveal` / `signReveal` are exported for wallets
+driving the compose API themselves. Ordinal reveals are not Counterparty
+messages: they stay pre-signed and echoed verbatim.
 
 ```ts
 try { await client.createToken(params); }
