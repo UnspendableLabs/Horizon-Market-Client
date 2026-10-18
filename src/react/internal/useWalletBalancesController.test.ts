@@ -5,6 +5,7 @@ import type { AssetOption } from "../hooks/useAssets.js";
 import type { WithdrawTarget } from "../hooks/useWithdraw.js";
 import {
   useWalletBalancesController,
+  assetActionVisibility,
   depositTargetFor,
   assetDepositLabel,
   emptyGroupNotice,
@@ -493,5 +494,75 @@ describe("tokenDepositType", () => {
     expect(tokenDepositType("XCP")).toBe("counterparty");
     expect(tokenDepositType("KOR")).toBe("kor");
     expect(tokenDepositType("ZELD")).toBe("zeld");
+  });
+});
+
+describe("assetActionVisibility", () => {
+  it("shows Withdraw and Sell for every asset when no gate is set", () => {
+    for (const asset of [PEPE, NFT, ORD]) {
+      expect(assetActionVisibility(asset)).toEqual({ withdraw: true, sell: true });
+      expect(assetActionVisibility(asset, {})).toEqual({
+        withdraw: true,
+        sell: true,
+      });
+    }
+  });
+
+  it("keeps a headline token's (disabled) Withdraw when there is no asset", () => {
+    const canWithdrawAsset = vi.fn(() => false);
+    expect(assetActionVisibility(null, { canWithdrawAsset })).toEqual({
+      withdraw: true,
+      sell: true,
+    });
+    expect(assetActionVisibility(undefined, { canWithdrawAsset })).toEqual({
+      withdraw: true,
+      sell: true,
+    });
+    expect(canWithdrawAsset).not.toHaveBeenCalled();
+  });
+
+  it("hides Sell everywhere with hideSell, leaving Withdraw alone", () => {
+    expect(assetActionVisibility(PEPE, { hideSell: true })).toEqual({
+      withdraw: true,
+      sell: false,
+    });
+    expect(assetActionVisibility(null, { hideSell: true })).toEqual({
+      withdraw: true,
+      sell: false,
+    });
+    expect(assetActionVisibility(PEPE, { hideSell: false })).toEqual({
+      withdraw: true,
+      sell: true,
+    });
+  });
+
+  it("asks canWithdrawAsset per asset and hides Withdraw only on false", () => {
+    const canWithdrawAsset = vi.fn(
+      (asset: AssetOption) => asset.type !== "ordinal" && asset.type !== "kontor-nft",
+    );
+    expect(assetActionVisibility(PEPE, { canWithdrawAsset })).toEqual({
+      withdraw: true,
+      sell: true,
+    });
+    expect(assetActionVisibility(ORD, { canWithdrawAsset })).toEqual({
+      withdraw: false,
+      sell: true,
+    });
+    expect(assetActionVisibility(NFT, { canWithdrawAsset })).toEqual({
+      withdraw: false,
+      sell: true,
+    });
+    expect(canWithdrawAsset).toHaveBeenNthCalledWith(1, PEPE);
+    expect(canWithdrawAsset).toHaveBeenNthCalledWith(2, ORD);
+    expect(canWithdrawAsset).toHaveBeenNthCalledWith(3, NFT);
+  });
+
+  it("combines both gates", () => {
+    expect(
+      assetActionVisibility(NFT, {
+        hideSell: true,
+        canWithdrawAsset: () => false,
+      }),
+    ).toEqual({ withdraw: false, sell: false });
   });
 });
