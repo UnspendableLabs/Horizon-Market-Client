@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
 import { useRouter } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
+import { MARKETPLACE_ENABLED } from "../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
 /* ── Tab glyphs (lucide, 24×24 stroke) ─────────────────────── */
@@ -102,13 +103,19 @@ const TABS: Record<string, { label: string; Icon: (p: IconProps) => ReactNode }>
 };
 
 // Tab routes in bar order, with the path each one lives at. Only the standalone
-// bar needs this: inside the pager the navigator's own state supplies both.
-const TAB_ROUTES: { name: string; path: string }[] = [
-  { name: "index", path: "/" },
-  { name: "sell", path: "/sell" },
+// bar needs this: inside the pager the navigator's own state supplies both —
+// including which tabs exist, which is why Buy and Sell are dropped here by hand
+// on a build without the marketplace (the pager drops them via its Protected
+// guard; see (tabs)/_layout.tsx).
+const ALL_TAB_ROUTES: { name: string; path: string; marketplace?: boolean }[] = [
+  { name: "index", path: "/", marketplace: true },
+  { name: "sell", path: "/sell", marketplace: true },
   { name: "wallet", path: "/wallet" },
   { name: "settings", path: "/settings" },
 ];
+const TAB_ROUTES = ALL_TAB_ROUTES.filter(
+  (route) => MARKETPLACE_ENABLED || !route.marketplace,
+);
 
 /** The bar chrome — owns the bottom safe-area inset. */
 function Bar({ children }: { children: ReactNode }) {

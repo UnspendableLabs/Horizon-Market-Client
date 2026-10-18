@@ -122,6 +122,36 @@ First-time setup (once per machine/account): `npm install -g eas-cli`, then
 `eas login`. Testers are managed in App Store Connect → TestFlight (internal
 group; each tester must first exist under Users and Access).
 
+### The iOS build has no marketplace
+
+App Review rejected v1.0 under guideline **3.1.1** (buying/selling NFTs and
+related services — minting, listing, transferring — outside In-App Purchase). So
+the iOS app ships as a **wallet + token explorer**; Android keeps the full market.
+Every difference is a flag in [`lib/store-policy.ts`](lib/store-policy.ts),
+derived from `Platform.OS === "ios"`, so Android evaluates each one to its old
+behaviour:
+
+- **Tabs**: Buy and Sell sit behind a `SwipeTabs.Protected` guard, so iOS is
+  Wallet · Settings and opens on Wallet (whose login gate offers Restore
+  wallet). `HOME_PATH` replaces the hard-coded `/` (wordmark, a cold token
+  screen's Back, the `/auth` sink); `/create` redirects home.
+- **Wallet**: no per-asset Sell (`WalletBalances` `hideSell`), no Credits row.
+  Withdraw stays for BTC, tokens and NFTs. NFT send is a separate switch,
+  `IOS_ALLOW_NFT_SEND`: set it to `false` to drop Withdraw on NFTs (inscriptions,
+  Kontor NFTs, indivisible Counterparty assets) through `canWithdrawAsset`.
+- **Token screen**: no Offers tab, and no issuer link that leads to a
+  marketplace or a purchase (`isPurchaseLink`). Price stats stay.
+- **Profile**: no Credits row.
+- **US storefront only**: a "Trade on horizon.market ↗" link (Wallet, token
+  screen), allowed there by 3.1.1. The storefront is read from StoreKit by the
+  local Expo module [`modules/horizon-storefront`](modules/horizon-storefront)
+  (iOS-only, so a change to it needs a native rebuild), and the check fails
+  closed: no answer means no link.
+
+The App Store screenshots and description must not show or mention buying,
+selling or the marketplace either: metadata falls under the same rule outside
+the US.
+
 ## Kontor (KOR / NFTs) runs natively
 
 Web/Node back `@kontor/sdk` with a **WebAssembly** component, which **Hermes** —
