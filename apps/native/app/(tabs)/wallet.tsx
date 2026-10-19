@@ -6,9 +6,11 @@ import {
 } from "@unspendablelabs/horizon-market-client/react";
 import { ConnectPrompt } from "../../components/ConnectPrompt.js";
 import { KorFaucetAction } from "../../components/KorFaucetAction.js";
+import { WebMarketLink } from "../../components/WebMarketLink.js";
 import { useSellIntent } from "../../lib/sell-intent.js";
 import { logout as web3authLogout } from "../../lib/web3auth.js";
 import { clearMnemonicSession } from "../../lib/mnemonic-session.js";
+import { canWithdrawAsset, MARKETPLACE_ENABLED } from "../../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../../lib/theme.js";
 import {
   trackWalletDepositOpened,
@@ -43,9 +45,14 @@ function CreditsRow() {
  * deposit/withdraw/sell) reached directly — no more header dropdown or "Open
  * wallet" hop. Adds a credits row and a Disconnect action (both previously lived
  * in the header wallet menu). Falls back to the login gate when disconnected.
+ *
+ * On a build without the marketplace (iOS — see lib/store-policy) the per-asset
+ * Sell and the credits row go, and the US storefront gets a link to the website's
+ * market instead. This is also where that build opens, so its login gate (with
+ * Restore wallet) is the first screen a signed-out user sees.
  */
 export default function WalletTab() {
-  const { addresses, logout } = useHorizonMarket();
+  const { addresses, logout, baseUrl } = useHorizonMarket();
   const router = useRouter();
   const { requestSell } = useSellIntent();
 
@@ -79,9 +86,12 @@ export default function WalletTab() {
               smaller default title size. */}
           {/* Tapping Sell on a balance hands the asset to the Sell tab and
               switches to it — landing on the same detail step as the Sell tab's
-              step 2, rather than a modal. */}
+              step 2, rather than a modal. Without the marketplace there is
+              no Sell at all, and NFT send can be switched off on its own. */}
           <WalletBalances
             title={<Text style={styles.title}>Wallet</Text>}
+            hideSell={!MARKETPLACE_ENABLED}
+            canWithdrawAsset={canWithdrawAsset}
             onSellAsset={(asset) => {
               trackWalletSellAssetClicked(asset.type);
               requestSell(asset);
@@ -105,7 +115,7 @@ export default function WalletTab() {
               line.symbol === "KOR" ? <KorFaucetAction /> : null
             }
           />
-          <CreditsRow />
+          {MARKETPLACE_ENABLED ? <CreditsRow /> : <WebMarketLink url={baseUrl} />}
           <Pressable
             onPress={handleDisconnect}
             style={styles.disconnect}

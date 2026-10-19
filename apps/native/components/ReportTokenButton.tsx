@@ -20,6 +20,7 @@ import {
   type ListingReportReason,
   type TokenDetail,
 } from "@unspendablelabs/horizon-market-client/react";
+import { MARKETPLACE_ENABLED } from "../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import {
   trackTokenReportOpened,
@@ -190,8 +191,11 @@ export function ReportTokenButton({ token }: { token: TokenDetail }) {
             <>
               <Text style={styles.lead}>
                 This token has never been listed on Horizon Market, so there is
-                no listing to report. If it shows up for sale, report it from
-                its offer.
+                no listing to report.
+                {/* Offers aren't in an app without the marketplace (iOS), so
+                    there is nowhere to send the reader. */}
+                {MARKETPLACE_ENABLED &&
+                  " If it shows up for sale, report it from its offer."}
               </Text>
               <View style={styles.footer}>
                 <Pressable

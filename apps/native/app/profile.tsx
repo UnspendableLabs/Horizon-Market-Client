@@ -20,6 +20,7 @@ import {
 import { ConnectPrompt } from "../components/ConnectPrompt.js";
 import { Header } from "../components/Header.js";
 import { StandaloneTabBar } from "../components/TabBar.js";
+import { MARKETPLACE_ENABLED } from "../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 import {
   trackProfileAvatarChanged,
@@ -378,11 +379,17 @@ function ProfileEditor() {
         <View style={styles.card}>
           <Row label="Points" value={String(profile.pointsBalance)} />
           <View style={styles.divider} />
-          <Row
-            label="Credits"
-            value={String(profile.credits + profile.freeCredits)}
-          />
-          <View style={styles.divider} />
+          {/* Listing credits are bought on the web and spent on the market,
+              neither of which the iOS build has (see lib/store-policy). */}
+          {MARKETPLACE_ENABLED && (
+            <>
+              <Row
+                label="Credits"
+                value={String(profile.credits + profile.freeCredits)}
+              />
+              <View style={styles.divider} />
+            </>
+          )}
           {/* No X row: linking it is a web-only OAuth flow (server actions on
               the Auth.js cookie, with a fixed web callback URL), so all this
               screen could ever show is a handle it can't change. */}

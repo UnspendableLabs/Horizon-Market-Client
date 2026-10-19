@@ -35,7 +35,13 @@ import {
   tokenHasBrandMark,
 } from "../../../components/TokenImage.js";
 import { TokenValueRow } from "../../../components/TokenValueView.js";
+import { WebMarketLink } from "../../../components/WebMarketLink.js";
 import { getPrivateKey } from "../../../lib/web3auth.js";
+import {
+  canShowExternalLink,
+  HOME_PATH,
+  MARKETPLACE_ENABLED,
+} from "../../../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../../../lib/theme.js";
 import {
   tokenOriginFromRoute,
@@ -65,11 +71,18 @@ import { trackTokenViewed } from "../../../lib/analytics/events.js";
  * A root-stack route pushed over the tab pager, wearing the same chrome as
  * /profile (Header above, StandaloneTabBar below) so it reads as an ordinary
  * screen: tapping any tab takes the user straight there.
+ *
+ * On a build without the marketplace (iOS — see lib/store-policy) the screen is
+ * the explorer's alone: no Offers tab (its list carries Buy buttons), no
+ * issuer link that leads to a marketplace or a purchase, and — on the US
+ * storefront only — a link to this token's page on the website instead. Price
+ * figures stay: they describe the token, they don't sell it.
  */
 
 /**
  * Section tabs, in the order the API lists them, plus the two that are always
- * on: Info (everything the payload describes about the token itself) and Offers.
+ * on: Info (everything the payload describes about the token itself) and Offers
+ * (always, that is, where the marketplace is in the app).
  */
 type Tab = "info" | "offers" | TokenSection;
 
@@ -188,18 +201,21 @@ function TokenBody({ token }: { token: TokenDetail }) {
 
       {/* Section tabs: Info and Offers are always available — every payload
           carries stats or properties, and every token type can be listed. The
-          rest come straight from `availableSections`. */}
+          rest come straight from `availableSections`. Offers is the market,
+          so a build without it has none. */}
       <View style={styles.tabs}>
         <TabButton
           label="Info"
           active={tab === "info"}
           onPress={() => setTab("info")}
         />
-        <TabButton
-          label={`Offers${token.offers.count > 0 ? ` (${token.offers.count})` : ""}`}
-          active={tab === "offers"}
-          onPress={() => setTab("offers")}
-        />
+        {MARKETPLACE_ENABLED && (
+          <TabButton
+            label={`Offers${token.offers.count > 0 ? ` (${token.offers.count})` : ""}`}
+            active={tab === "offers"}
+            onPress={() => setTab("offers")}
+          />
+        )}
         {sections.map((section) => (
           <TabButton
             key={section}
@@ -211,7 +227,7 @@ function TokenBody({ token }: { token: TokenDetail }) {
       </View>
 
       {tab === "info" && <InfoSection token={token} />}
-      {tab === "offers" && <OffersSection token={token} />}
+      {tab === "offers" && MARKETPLACE_ENABLED && <OffersSection token={token} />}
       {tab === "chart" && <ChartSection token={token} />}
       {tab === "activity" && <ActivitySection tokenRef={ref} />}
     </View>
@@ -236,6 +252,14 @@ function InfoSection({ token }: { token: TokenDetail }) {
   // print the markup.
   const description = stripHtml(token.description);
   const hasProse = Boolean(description) || Boolean(richContent);
+  // Issuer-supplied links (website, socials, free-form URL rows) may point at a
+  // marketplace; without the market in the app those are dropped (see
+  // lib/store-policy). Everywhere else this keeps every row.
+  const visible = (value: { url?: string | null }) =>
+    value.url == null || canShowExternalLink(value.url);
+  const stats = token.stats.filter((stat) => visible(stat.value));
+  const properties = token.properties.filter((row) => visible(row.value));
+  const links = token.links.filter(visible);
 
   return (
     <View style={styles.sections}>
@@ -258,11 +282,15 @@ function InfoSection({ token }: { token: TokenDetail }) {
 
       {token.market && <MarketBlock token={token} />}
 
-      {token.stats.length > 0 && (
+      {/* Renders only on iOS, on the US storefront: the market isn't in that
+          app, and that is the one storefront allowed to link to it. */}
+      <WebMarketLink url={token.webUrl} />
+
+      {stats.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Stats</Text>
           <View style={styles.card}>
-            {token.stats.map((stat, index) => (
+            {stats.map((stat, index) => (
               <View key={stat.key}>
                 {index > 0 && <View style={styles.divider} />}
                 <TokenValueRow label={stat.label} value={stat.value} />
@@ -272,7 +300,7 @@ function InfoSection({ token }: { token: TokenDetail }) {
         </View>
       )}
 
-      <PropertyBlocks properties={token.properties} />
+      <PropertyBlocks properties={properties} />
 
       {token.attributes.length > 0 && (
         <View style={styles.section}>
@@ -294,10 +322,10 @@ function InfoSection({ token }: { token: TokenDetail }) {
       {/* `links` and the `links` property group carry the same URLs for every
           token type that has both, so these buttons are a fallback for a payload
           that ships links without the group rather than a second copy of it. */}
-      {token.links.length > 0 &&
+      {links.length > 0 &&
         !token.properties.some((p) => p.group === "links") && (
           <View style={styles.linkRow}>
-            {token.links.map((link) => (
+            {links.map((link) => (
               <Pressable
                 key={`${link.kind}:${link.url}`}
                 onPress={() => void Linking.openURL(link.url)}
@@ -340,7 +368,7 @@ function BackLink() {
     <Pressable
       // Nothing to pop when the route was opened cold (a deep link, or a dev
       // reload): fall back to the first tab rather than leaving a dead control.
-      onPress={() => (router.canGoBack() ? router.back() : router.navigate("/"))}
+      onPress={() => (router.canGoBack() ? router.back() : router.navigate(HOME_PATH))}
       style={({ pressed }) => [styles.backLink, pressed && styles.backLinkPressed]}
       hitSlop={spacing.sm}
       accessibilityRole="button"

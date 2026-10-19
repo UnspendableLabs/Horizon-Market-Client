@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`WalletBalances` `hideSell` / `canWithdrawAsset` (web + native).** Two
+  opt-in gates on the per-asset actions, for a host that ships a build without
+  the marketplace: `hideSell` removes every per-asset Sell action (token rows
+  and holding tiles), so neither `onSellAsset` nor the built-in sell modal can
+  be reached; `canWithdrawAsset(asset)` hides Withdraw for the assets it returns
+  `false` for (the BTC withdraw is unaffected). Both default to today's
+  behaviour. The rule lives in the shared `assetActionVisibility` helper, so the
+  two renderers can't drift.
+
 ## [0.6.0] - 2026-09-30
 
 **The wallet signs the Counterparty reveal.** Counterparty Core v11.5.0
