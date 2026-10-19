@@ -31,6 +31,7 @@ import {
 } from "../internal/walletBalances.native.js";
 import {
   ACTION_LABEL,
+  assetActionVisibility,
   emptyGroupNotice,
   otherLabel,
   tokenDepositType,
@@ -39,6 +40,7 @@ import {
   withdrawTitle,
   type ActionKind,
   type DepositType,
+  type WalletAssetActionGates,
   type WalletDepositEvent,
   type WalletWithdrawEvent,
   type WalletWithdrawCompleteEvent,
@@ -70,6 +72,18 @@ export interface WalletBalancesProps {
    * (an inline {@link SellOrderForm}) is used.
    */
   onSellAsset?: (asset: AssetOption) => void;
+  /**
+   * Hide every per-asset "Sell" action — token rows and holding tiles alike — so
+   * neither {@link onSellAsset} nor the built-in sell modal can be reached. For
+   * hosts that ship without the marketplace. Default `false`.
+   */
+  hideSell?: boolean;
+  /**
+   * Per-asset gate for the "Withdraw" action on token rows and holding tiles:
+   * return `false` to hide it for that asset (e.g. NFTs). The BTC withdraw is
+   * unaffected. Omitted, every asset can be withdrawn.
+   */
+  canWithdrawAsset?: (asset: AssetOption) => boolean;
   /**
    * Notified when a deposit address is opened. Observation only — the built-in
    * deposit modal still shows. Use it for analytics.
@@ -348,6 +362,7 @@ function AssetMedia({ asset, sheet, mutedColor }: { asset: AssetOption; sheet: S
 
 function OtherAssetTile({
   asset,
+  gates,
   onDeposit,
   onWithdraw,
   onSell,
@@ -357,6 +372,7 @@ function OtherAssetTile({
   styleProp,
 }: {
   asset: AssetOption;
+  gates: WalletAssetActionGates;
   onDeposit: (asset: AssetOption) => void;
   onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
@@ -366,6 +382,7 @@ function OtherAssetTile({
   styleProp?: StyleProp<ViewStyle>;
 }) {
   const { name, sub } = otherLabel(asset);
+  const shown = assetActionVisibility(asset, gates);
   return (
     <View style={[sheet.tile, styleProp]}>
       <AssetMedia asset={asset} sheet={sheet} mutedColor={mutedColor} />
@@ -378,8 +395,12 @@ function OtherAssetTile({
         ) : null}
         <View style={sheet.tileActions}>
           <IconAction kind="deposit" onPress={() => onDeposit(asset)} sheet={sheet} color={color} />
-          <IconAction kind="withdraw" onPress={() => onWithdraw(asset)} sheet={sheet} color={color} />
-          <IconAction kind="sell" onPress={() => onSell(asset)} sheet={sheet} color={color} />
+          {shown.withdraw && (
+            <IconAction kind="withdraw" onPress={() => onWithdraw(asset)} sheet={sheet} color={color} />
+          )}
+          {shown.sell && (
+            <IconAction kind="sell" onPress={() => onSell(asset)} sheet={sheet} color={color} />
+          )}
         </View>
       </View>
     </View>
@@ -390,6 +411,7 @@ function OtherAssetTile({
 function TokenCell({
   line,
   action,
+  gates,
   onDeposit,
   onWithdraw,
   onSell,
@@ -399,6 +421,7 @@ function TokenCell({
 }: {
   line: TokenLine;
   action?: ReactNode;
+  gates: WalletAssetActionGates;
   onDeposit: (symbol: string, type: DepositType) => void;
   onWithdraw: (asset: AssetOption) => void;
   onSell: (asset: AssetOption) => void;
@@ -408,6 +431,7 @@ function TokenCell({
 }) {
   const depositType = tokenDepositType(line.symbol);
   const sellAsset = line.sellAsset;
+  const shown = assetActionVisibility(sellAsset, gates);
   return (
     <View style={[sheet.tokenCard, styleProp]}>
       <View style={sheet.balanceInfo}>
@@ -428,22 +452,26 @@ function TokenCell({
       <View style={sheet.actionRow}>
         {action}
         <IconAction kind="deposit" onPress={() => onDeposit(line.symbol, depositType)} sheet={sheet} color={color} />
-        <IconAction
-          kind="withdraw"
-          disabled={!sellAsset}
-          hint={sellAsset ? undefined : `No ${line.symbol} to withdraw`}
-          onPress={() => sellAsset && onWithdraw(sellAsset)}
-          sheet={sheet}
-          color={color}
-        />
-        <LabeledAction
-          kind="sell"
-          disabled={!sellAsset}
-          hint={sellAsset ? undefined : `No ${line.symbol} to sell`}
-          onPress={() => sellAsset && onSell(sellAsset)}
-          sheet={sheet}
-          color={color}
-        />
+        {shown.withdraw && (
+          <IconAction
+            kind="withdraw"
+            disabled={!sellAsset}
+            hint={sellAsset ? undefined : `No ${line.symbol} to withdraw`}
+            onPress={() => sellAsset && onWithdraw(sellAsset)}
+            sheet={sheet}
+            color={color}
+          />
+        )}
+        {shown.sell && (
+          <LabeledAction
+            kind="sell"
+            disabled={!sellAsset}
+            hint={sellAsset ? undefined : `No ${line.symbol} to sell`}
+            onPress={() => sellAsset && onSell(sellAsset)}
+            sheet={sheet}
+            color={color}
+          />
+        )}
       </View>
     </View>
   );
@@ -460,6 +488,8 @@ function TokenCell({
 export function WalletBalances({
   title,
   onSellAsset,
+  hideSell,
+  canWithdrawAsset,
   onDeposit,
   onWithdraw,
   onWithdrawComplete,
@@ -500,6 +530,7 @@ export function WalletBalances({
   } = useWalletBalancesController({ onDeposit, onWithdraw });
 
   const activeNotice = emptyGroupNotice(activeGroup);
+  const gates: WalletAssetActionGates = { hideSell, canWithdrawAsset };
 
   return (
     <View style={[sheet.root, style, stylesProp?.root]}>
@@ -564,6 +595,7 @@ export function WalletBalances({
             key={line.symbol}
             line={line}
             action={renderTokenAction?.(line)}
+            gates={gates}
             onDeposit={openDeposit}
             onWithdraw={openWithdraw}
             onSell={onSellAsset ?? setSellAsset}
@@ -635,6 +667,7 @@ export function WalletBalances({
               <OtherAssetTile
                 key={assetKey(a)}
                 asset={a}
+                gates={gates}
                 onDeposit={openDepositForAsset}
                 onWithdraw={openWithdraw}
                 onSell={onSellAsset ?? setSellAsset}

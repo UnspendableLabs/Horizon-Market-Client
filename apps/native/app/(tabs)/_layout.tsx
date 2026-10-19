@@ -8,6 +8,7 @@ import { TabBar } from "../../components/TabBar.js";
 import { colors } from "../../lib/theme.js";
 import { SellIntentProvider, type SellIntentValue } from "../../lib/sell-intent.js";
 import { BuyRefreshProvider, type BuyRefreshValue } from "../../lib/buy-refresh.js";
+import { MARKETPLACE_ENABLED } from "../../lib/store-policy.js";
 
 /**
  * The app's main tab group: Buy · Sell · Wallet · Settings.
@@ -21,6 +22,13 @@ import { BuyRefreshProvider, type BuyRefreshValue } from "../../lib/buy-refresh.
  *
  * Order here === order in the tab bar AND swipe order: index (Buy), sell, wallet,
  * settings.
+ *
+ * Buy and Sell are the marketplace, which the iOS build doesn't carry (App Store
+ * guideline 3.1.1 — see lib/store-policy). There they sit behind a `Protected`
+ * guard, which drops them from the navigator altogether — no tab button, no
+ * swipe page — so iOS is Wallet · Settings and opens on Wallet: a cold start at
+ * `/` or a deep link to `/sell` names a route the navigator doesn't have, and
+ * the tab router falls back to its first one.
  *
  * Also hosts the {@link SellIntentProvider}: the Wallet tab's per-balance "Sell"
  * action stashes the asset here and switches to the Sell tab, which reads it and
@@ -92,8 +100,10 @@ export default function TabsLayout() {
           ),
         }}
       >
-        <SwipeTabs.Screen name="index" options={{ title: "Buy" }} />
-        <SwipeTabs.Screen name="sell" options={{ title: "Sell" }} />
+        <SwipeTabs.Protected guard={MARKETPLACE_ENABLED}>
+          <SwipeTabs.Screen name="index" options={{ title: "Buy" }} />
+          <SwipeTabs.Screen name="sell" options={{ title: "Sell" }} />
+        </SwipeTabs.Protected>
         <SwipeTabs.Screen name="wallet" options={{ title: "Wallet" }} />
         <SwipeTabs.Screen name="settings" options={{ title: "Settings" }} />
       </SwipeTabs>

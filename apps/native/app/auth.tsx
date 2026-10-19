@@ -1,4 +1,5 @@
 import { Redirect } from "expo-router";
+import { HOME_PATH } from "../lib/store-policy.js";
 
 /**
  * Deep-link sink for the Web3Auth OAuth return.
@@ -13,8 +14,10 @@ import { Redirect } from "expo-router";
  * though login itself succeeds. (The emulator's browser doesn't emit that stray
  * intent, so it only reproduces on-device.)
  *
- * This route absorbs the stray navigation and bounces straight back to the app.
+ * This route absorbs the stray navigation and bounces straight back to the app —
+ * home, not literally `/`: on iOS the Buy tab isn't registered, so a redirect to
+ * `/` would go nowhere and leave this blank route on screen.
  */
 export default function AuthRedirect() {
-  return <Redirect href="/" />;
+  return <Redirect href={HOME_PATH} />;
 }

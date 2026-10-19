@@ -30,11 +30,13 @@ import {
   type PersistedCreationRetry,
   type UseCreateTokenResult,
 } from "@unspendablelabs/horizon-market-client/react";
+import { Redirect } from "expo-router";
 import { ConnectPrompt } from "../components/ConnectPrompt.js";
 import { Header } from "../components/Header.js";
 import { StandaloneTabBar } from "../components/TabBar.js";
 import { ToggleButton, toggleGroupStyle } from "../components/ToggleButton.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
+import { HOME_PATH, MARKETPLACE_ENABLED } from "../lib/store-policy.js";
 import {
   trackCreateCompleted,
   trackCreateFailed,
@@ -112,8 +114,17 @@ function makeRetryStore(key: string): CreationRetryStore {
  * Both the quote and the media upload are session-gated, so — exactly like the
  * Profile screen — this needs a connected wallet *and* the Horizon Market
  * session the provider mints from it.
+ *
+ * Minting is part of the marketplace, which the iOS build doesn't carry (App
+ * Store guideline 3.1.1 — see lib/store-policy): there the menu doesn't offer
+ * this screen, and anything that still lands here (a deep link) is sent home.
  */
-export default function CreateScreen() {
+export default function CreateRoute() {
+  if (!MARKETPLACE_ENABLED) return <Redirect href={HOME_PATH} />;
+  return <CreateScreen />;
+}
+
+function CreateScreen() {
   const { addresses } = useHorizonMarket();
 
   return (

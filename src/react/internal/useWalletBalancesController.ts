@@ -58,6 +58,41 @@ export const ACTION_LABEL: Record<ActionKind, string> = {
   sell: "Sell",
 };
 
+/**
+ * Host gates on the per-asset actions. Both are opt-in: omitted, every holding
+ * shows Withdraw and Sell exactly as before. They exist for hosts that ship a
+ * build without the marketplace (e.g. an App Store build) and so must not offer
+ * Sell — or, per asset, Withdraw — at all, rather than offer it disabled.
+ */
+export interface WalletAssetActionGates {
+  /** Hide every per-asset "Sell" action (token rows and holding tiles). */
+  hideSell?: boolean;
+  /**
+   * Per-asset gate for the "Withdraw" action on token rows and holding tiles;
+   * returning `false` hides it for that asset. The BTC withdraw is unaffected.
+   */
+  canWithdrawAsset?: (asset: AssetOption) => boolean;
+}
+
+/**
+ * Which per-asset actions a balance row shows, shared by both renderers so the
+ * gates can't drift between platforms. Deposit is always shown, so it isn't
+ * part of the answer.
+ *
+ * `asset` is undefined for a headline token the wallet holds none of: its
+ * Withdraw stays (disabled, as before), since there is no asset to ask the gate
+ * about.
+ */
+export function assetActionVisibility(
+  asset: AssetOption | null | undefined,
+  gates: WalletAssetActionGates = {},
+): { withdraw: boolean; sell: boolean } {
+  return {
+    withdraw: asset == null || gates.canWithdrawAsset?.(asset) !== false,
+    sell: gates.hideSell !== true,
+  };
+}
+
 export interface DepositInfo {
   /** Human-readable name of what's being received (e.g. "BTC", "XCP", "NFT"). */
   symbol: string;

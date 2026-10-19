@@ -1,6 +1,6 @@
 /**
  * Fixed brand header — the full Horizon wordmark (the H mark + "Horizon"),
- * tappable to return to the Buy tab, on a slim bar pinned above the tab pager,
+ * tappable to return home (the Buy tab; the Wallet on iOS), on a slim bar pinned above the tab pager,
  * with the search, profile and menu entry points on the right. It sits OUTSIDE the swipeable scenes, so it never scrolls with a tab's
  * content and stays put while swiping between tabs, mirroring the fixed bottom
  * {@link TabBar}. The root SafeAreaView already pads the top inset, so the bar
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useHorizonMarket } from "@unspendablelabs/horizon-market-client/react";
+import { HOME_LABEL, HOME_PATH, MARKETPLACE_ENABLED } from "../lib/store-policy.js";
 import { colors, fonts, radii, spacing } from "../lib/theme.js";
 
 // 1500×304 source — sized here at a 24px height with the width matching the
@@ -105,15 +106,21 @@ function PlusIcon({ color, size = 18 }: { color: string; size?: number }) {
   );
 }
 
-/** Everything the hamburger opens. The action first, then the destination. */
-const MENU_ITEMS: {
+/**
+ * Everything the hamburger opens. The action first, then the destination.
+ * Create (minting) is part of the marketplace, so a build without it — iOS —
+ * offers the explorer alone.
+ */
+const ALL_MENU_ITEMS: {
   label: string;
   path: string;
+  marketplace?: boolean;
   icon: (props: { color: string }) => ReactElement;
 }[] = [
   {
     label: "Create",
     path: "/create",
+    marketplace: true,
     icon: (props) => <PlusIcon color={props.color} />,
   },
   {
@@ -122,6 +129,9 @@ const MENU_ITEMS: {
     icon: (props) => <GridIcon color={props.color} />,
   },
 ];
+const MENU_ITEMS = ALL_MENU_ITEMS.filter(
+  (item) => MARKETPLACE_ENABLED || !item.marketplace,
+);
 
 /**
  * The hamburger's sheet — a dropdown pinned under the bar's right edge.
@@ -192,15 +202,16 @@ export function Header() {
 
   return (
     <View style={styles.bar}>
-      {/* The wordmark is the way home, as on the website: it goes to Buy, the
-          first tab. `navigate` (not `push`) so tapping it from a root-stack
-          route — profile, search, a token — pops back to the pager rather than
+      {/* The wordmark is the way home, as on the website: it goes to the first
+          tab — Buy, or the Wallet on a build without the marketplace.
+          `navigate` (not `push`) so tapping it from a root-stack route —
+          profile, search, a token — pops back to the pager rather than
           stacking another copy of it, same as the tab bar's own buttons. */}
       <Pressable
-        onPress={() => router.navigate("/")}
+        onPress={() => router.navigate(HOME_PATH)}
         hitSlop={spacing.sm}
         accessibilityRole="button"
-        accessibilityLabel="Horizon Market — go to Buy"
+        accessibilityLabel={`Horizon Market — go to ${HOME_LABEL}`}
       >
         <Image source={wordmark} style={styles.logo} resizeMode="contain" />
       </Pressable>

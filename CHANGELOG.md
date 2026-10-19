@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-19
+
+**The iOS app ships without the marketplace.** App Review rejected the native
+example's first iOS submission under guideline 3.1.1: buying and selling NFTs,
+and the services around them (minting, listing, transferring), must go through
+In-App Purchase, which a peer-to-peer swap priced in bitcoin cannot. The iOS
+build is now a wallet and token explorer, and Android, already accepted on
+Play, keeps the full market. The SDK gains the two opt-in gates that made this
+possible; a client that does not pass them renders exactly as before.
+
+### Added
+
+- **`WalletBalances` `hideSell` / `canWithdrawAsset` (web + native).** Two
+  opt-in gates on the per-asset actions, for a host that ships a build without
+  the marketplace: `hideSell` removes every per-asset Sell action (token rows
+  and holding tiles), so neither `onSellAsset` nor the built-in sell modal can
+  be reached; `canWithdrawAsset(asset)` hides Withdraw for the assets it returns
+  `false` for (the BTC withdraw is unaffected). Both default to today's
+  behaviour. The rule lives in the shared `assetActionVisibility` helper, so the
+  two renderers can't drift.
+
+### Changed
+
+- **Native example: the iOS build ships without the marketplace.** Every
+  difference is a flag in `apps/native/lib/store-policy.ts`, derived from
+  `Platform.OS === "ios"`. The Buy and Sell tabs sit behind a `Protected`
+  guard, so iOS opens on Wallet, whose login gate offers Restore wallet: App
+  Review's other finding (2.1(a)) was a reviewer who never reached it from the
+  Buy tab's email-only login. Create redirects home, and the per-asset Sell,
+  the Credits rows, a token's Offers tab and any issuer link to a marketplace
+  or a purchase are gone. Withdraw stays, with NFT send behind its own switch
+  (`IOS_ALLOW_NFT_SEND`) in case App Review objects to it. On the United States
+  storefront only, which 3.1.1 exempts, a "Trade on horizon.market" link sits
+  on the Wallet tab and the token screen. The storefront is read through
+  StoreKit by a new iOS-only local Expo module, `horizon-storefront`, and an
+  unknown storefront means no link. On Android every flag keeps the previous
+  behaviour and the module is not linked.
+
 ## [0.6.0] - 2026-09-30
 
 **The wallet signs the Counterparty reveal.** Counterparty Core v11.5.0
@@ -638,7 +676,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.4.0...v0.5.0
