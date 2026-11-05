@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-05
+
+**No raw server errors after login.** App Review rejected the iOS build (1.0,
+build 12) under 2.1(a) for "a server error inside the app after login". Every
+call that session made to Horizon Market answered 200, which leaves a wallet
+failure notice echoing a third-party status line as the likeliest thing the
+reviewer read. Those lines are gone: a failure the user cannot act on now reads
+as temporarily unavailable, with a Retry, and a reason they can act on keeps
+its text. Patch, not minor: no new API. The error strings the hooks expose
+change wording, which nothing should parse; the technical error is unchanged on
+the hook objects and in the console.
+
 ### Changed
 
 - **No raw server errors on screen after login.** App Review rejected the iOS
@@ -700,7 +712,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.0...v0.5.1
