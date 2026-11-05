@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { failureMessage } from "../internal/failureMessage.js";
 import { useHorizonMarket } from "../context.js";
 import {
   KONTOR_FAUCET_AMOUNT_KOR,
@@ -81,7 +82,14 @@ export function useKontorFaucet(): UseKontorFaucetResult {
       setStatus("success");
     } catch (err) {
       if (seq !== seqRef.current) return;
-      setError(err instanceof Error ? err : new Error(String(err)));
+      // The faucet's own refusal (rate limit, empty, invalid) is kept — it is
+      // what tells the user whether to wait or give up — while a 5xx or a
+      // dropped request reads as temporarily unavailable, not as its status.
+      setError(
+        new Error(failureMessage(err, "request KOR from the faucet"), {
+          cause: err,
+        }),
+      );
       setStatus("error");
     } finally {
       // Only the current generation owns the flag: an abandoned request settling

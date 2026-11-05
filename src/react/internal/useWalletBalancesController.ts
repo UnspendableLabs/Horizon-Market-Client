@@ -3,6 +3,7 @@ import { useHorizonMarket } from "../context.js";
 import type { AssetOption, SourceState } from "../hooks/useAssets.js";
 import { usePrices } from "../hooks/usePrices.js";
 import type { WithdrawTarget } from "../hooks/useWithdraw.js";
+import { failureMessage } from "./failureMessage.js";
 import { assetKey, formatUsd, truncate } from "./format.js";
 import {
   useWalletTokenSummary,
@@ -132,7 +133,10 @@ export function emptyGroupNotice(
     case "error":
       return {
         tone: "error",
-        message: `Couldn't load your ${group.label} holdings: ${group.state.error.message}`,
+        // Never the upstream status line ("Ord API returned 502"): a reason
+        // the user can act on is kept, anything else reads as temporarily
+        // unavailable, and the renderers pair it with a Retry.
+        message: failureMessage(group.state.error, `load your ${group.label} holdings`),
       };
     case "unread":
       return { tone: "muted", message: group.state.reason };

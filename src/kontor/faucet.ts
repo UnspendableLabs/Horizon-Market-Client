@@ -14,6 +14,8 @@
  * Funding an account is the one Kontor errand that must not require the Kontor
  * runtime — it is what you do *before* anything else works.
  */
+import { UserFacingError } from "../react/internal/failureMessage.js";
+
 
 /** KOR granted per faucet request (what the public Portal faucet hands out). */
 export const KONTOR_FAUCET_AMOUNT_KOR = 10;
@@ -81,14 +83,18 @@ export async function requestKontorFaucet(
   // so a body that isn't JSON must not mask the status the caller needs to see.
   const data = (await res.json().catch(() => null)) as FaucetResponse | null;
 
+  // A refusal is the faucet talking to the user (rate limit, empty, invalid
+  // request), so it is marked user-facing and shown as is; a status with no
+  // explanation is the service failing, and the hooks word that neutrally.
   const refusal = faucetError(data);
   if (!res.ok) {
-    throw new Error(refusal ?? `Faucet request failed (HTTP ${res.status})`);
+    if (refusal) throw new UserFacingError(refusal);
+    throw new Error(`Faucet request failed (HTTP ${res.status})`);
   }
   // An error payload under a 200 is still a refusal — no grant was made — and
   // reporting it as success would leave the user watching for KOR that is never
   // coming, with two empty txids and nothing to explain why.
-  if (refusal) throw new Error(refusal);
+  if (refusal) throw new UserFacingError(refusal);
 
   return {
     commitTxid: data?.commit_txid ?? "",

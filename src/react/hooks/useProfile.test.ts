@@ -9,6 +9,8 @@ import {
 } from "../hook-test-utils.js";
 import { useProfile, useProfileWallets } from "./useProfile.js";
 import type { MyProfile, ProfileWallet } from "../../api/profiles.js";
+import { HorizonMarketApiError } from "../../api/http.js";
+import { TEMPORARILY_UNAVAILABLE } from "../internal/failureMessage.js";
 
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
@@ -127,7 +129,7 @@ describe("useProfile", () => {
     ctxRef.current = makeCtx({
       client: profileClient({
         getMyProfile: vi.fn(async () => {
-          throw new Error("HTTP 401: Unauthorized");
+          throw new HorizonMarketApiError(401, "Unauthorized");
         }),
       }),
     });
@@ -135,7 +137,7 @@ describe("useProfile", () => {
     const { result } = renderHook(() => useProfile());
 
     await waitFor(() =>
-      expect(result.current.error).toBe("HTTP 401: Unauthorized"),
+      expect(result.current.error).toBe("Couldn't load your profile: Unauthorized"),
     );
     expect(result.current.loading).toBe(false);
   });
@@ -179,7 +181,7 @@ describe("useProfile", () => {
   it("reports a rejected save instead of throwing at the form", async () => {
     const client = profileClient({
       updateMyProfile: vi.fn(async () => {
-        throw new Error("HTTP 409: Username already taken");
+        throw new HorizonMarketApiError(409, "Username already taken");
       }),
     });
     ctxRef.current = makeCtx({ client });
@@ -191,7 +193,9 @@ describe("useProfile", () => {
     });
 
     expect(saved).toBeNull();
-    expect(result.current.saveError).toBe("HTTP 409: Username already taken");
+    expect(result.current.saveError).toBe(
+      "Couldn't save your profile: Username already taken",
+    );
     expect(result.current.saved).toBe(false);
     expect(result.current.profile).toEqual(PROFILE);
   });
@@ -239,7 +243,7 @@ describe("useProfile", () => {
   it("surfaces a refused upload", async () => {
     const client = profileClient({
       uploadMyAvatar: vi.fn(async () => {
-        throw new Error("HTTP 400: Image size must be less than 5MB");
+        throw new HorizonMarketApiError(400, "Image size must be less than 5MB");
       }),
     });
     ctxRef.current = makeCtx({ client });
@@ -252,7 +256,7 @@ describe("useProfile", () => {
 
     expect(ok).toBe(false);
     expect(result.current.avatarError).toBe(
-      "HTTP 400: Image size must be less than 5MB",
+      "Couldn't update your picture: Image size must be less than 5MB",
     );
   });
 
@@ -321,7 +325,12 @@ describe("useProfileWallets", () => {
 
     const { result } = renderHook(() => useProfileWallets());
 
-    await waitFor(() => expect(result.current.error).toBe("HTTP 500: boom"));
+    // A 5xx is the service's problem, not the user's: no status, no "boom".
+    await waitFor(() =>
+      expect(result.current.error).toBe(
+        `Couldn't load your wallets right now. ${TEMPORARILY_UNAVAILABLE}`,
+      ),
+    );
   });
 
   it("re-lists on refresh()", async () => {
@@ -355,7 +364,7 @@ describe("useProfileWallets", () => {
   it("leaves the row untouched when the update is refused", async () => {
     const client = walletClient({
       setWalletVisibility: vi.fn(async () => {
-        throw new Error("HTTP 404: Wallet not found");
+        throw new HorizonMarketApiError(404, "Wallet not found");
       }),
     });
     ctxRef.current = makeCtx({ client });
@@ -369,6 +378,6 @@ describe("useProfileWallets", () => {
 
     expect(ok).toBe(false);
     expect(result.current.wallets[0].isPublic).toBe(false);
-    expect(result.current.error).toBe("HTTP 404: Wallet not found");
+    expect(result.current.error).toBe("Couldn't update that wallet: Wallet not found");
   });
 });

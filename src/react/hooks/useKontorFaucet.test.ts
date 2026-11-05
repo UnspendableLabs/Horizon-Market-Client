@@ -8,6 +8,7 @@ import {
   type CtxRef,
 } from "../hook-test-utils.js";
 import { useKontorFaucet } from "./useKontorFaucet.js";
+import { TEMPORARILY_UNAVAILABLE, UserFacingError } from "../internal/failureMessage.js";
 
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
@@ -74,7 +75,7 @@ describe("useKontorFaucet", () => {
   it("lands a refusal in `error` instead of rejecting the click handler", async () => {
     const requestKontorFaucet = vi
       .fn()
-      .mockRejectedValue(new Error("FAUCET_UNAVAILABLE"));
+      .mockRejectedValue(new UserFacingError("FAUCET_UNAVAILABLE"));
     ctxRef.current = signetCtx({ requestKontorFaucet });
 
     const { result } = renderHook(() => useKontorFaucet());
@@ -84,8 +85,31 @@ describe("useKontorFaucet", () => {
     });
 
     expect(result.current.status).toBe("error");
-    expect(result.current.error?.message).toBe("FAUCET_UNAVAILABLE");
+    // The faucet's own refusal is what tells the user whether to wait, so it
+    // is kept; the raw error rides along as the cause.
+    expect(result.current.error?.message).toBe(
+      "Couldn't request KOR from the faucet: FAUCET_UNAVAILABLE",
+    );
+    expect(result.current.error?.cause).toBeInstanceOf(UserFacingError);
     expect(result.current.result).toBeNull();
+  });
+
+  it("words a failed request as temporarily unavailable, not as its status", async () => {
+    const requestKontorFaucet = vi
+      .fn()
+      .mockRejectedValue(new Error("Faucet request failed (HTTP 503)"));
+    ctxRef.current = signetCtx({ requestKontorFaucet });
+
+    const { result } = renderHook(() => useKontorFaucet());
+    await act(async () => {
+      await result.current.request();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toBe(
+      `Couldn't request KOR from the faucet right now. ${TEMPORARILY_UNAVAILABLE}`,
+    );
+    expect(result.current.error?.message).not.toContain("503");
   });
 
   it("ignores a second request while one is in flight — one grant per click", async () => {
