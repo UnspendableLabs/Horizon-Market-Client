@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
+import { failureMessage } from "../internal/failureMessage.js";
 import type {
   AvatarUpload,
   MyProfile,
@@ -7,9 +8,10 @@ import type {
   UpdateMyProfileParams,
 } from "../../api/profiles.js";
 
-function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+// Every error string these hooks expose is written for the screen: a server
+// refusal keeps its reason ("Username already taken"), while a 5xx or a failed
+// request reads as temporarily unavailable rather than as its status line.
+const message = failureMessage;
 
 export interface UseProfileResult {
   /** The signed-in account's profile, or `null` before it loads / signed out. */
@@ -129,7 +131,7 @@ export function useProfile(): UseProfileResult {
       })
       .catch((err) => {
         if (seq !== seqRef.current) return;
-        setError(message(err));
+        setError(message(err, "load your profile"));
         setLoading(false);
       });
   }, [client, isAuthenticated, nonce]);
@@ -147,7 +149,7 @@ export function useProfile(): UseProfileResult {
         setSaved(true);
         return updated;
       } catch (err) {
-        setSaveError(message(err));
+        setSaveError(message(err, "save your profile"));
         return null;
       } finally {
         setSaving(false);
@@ -183,7 +185,7 @@ export function useProfile(): UseProfileResult {
         setAvatarLoading(false);
         return true;
       } catch (err) {
-        setAvatarError(message(err));
+        setAvatarError(message(err, "update your picture"));
         return false;
       } finally {
         setUploadingAvatar(false);
@@ -263,7 +265,7 @@ export function useProfileWallets(): UseProfileWalletsResult {
       })
       .catch((err) => {
         if (seq !== seqRef.current) return;
-        setError(message(err));
+        setError(message(err, "load your wallets"));
         setLoading(false);
       });
   }, [client, isAuthenticated, nonce]);
@@ -285,7 +287,7 @@ export function useProfileWallets(): UseProfileWalletsResult {
         );
         return true;
       } catch (err) {
-        setError(message(err));
+        setError(message(err, "update that wallet"));
         return false;
       } finally {
         setUpdating(null);

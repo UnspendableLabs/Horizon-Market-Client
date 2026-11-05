@@ -14,6 +14,7 @@ import type { AssetOption } from "../hooks/useAssets.js";
 import { useHorizonMarket } from "../context.js";
 import { useTheme } from "../hooks/useTheme.js";
 import type { ResolvedTheme } from "../theme.js";
+import { failureMessage } from "../internal/failureMessage.js";
 import { assetImageUrl, assetKey, truncate } from "../internal/format.js";
 import {
   CheckIcon,
@@ -190,7 +191,10 @@ function createSheet(theme: ResolvedTheme) {
     tabTextActive: { color: theme.colors.text },
     emptyOthers: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md, flexWrap: "wrap" },
     emptyText: { color: theme.colors.textMuted, fontSize: theme.typography.fontSizeSm },
-    errorText: { color: theme.colors.error, fontSize: theme.typography.fontSizeSm },
+    errorText: { color: theme.colors.error, fontSize: theme.typography.fontSizeSm, flexShrink: 1 },
+    // A failure line with its Retry beside it (wrapping under it when narrow).
+    inlineNotice: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, flexWrap: "wrap" },
+    retryText: { fontSize: theme.typography.fontSizeSm, fontWeight: "600", color: theme.colors.primary },
     // Applied over an amount style, so it must carry the color only.
     amountError: { color: theme.colors.error },
     // Other-holdings tiles: 2-column flex-wrap.
@@ -292,6 +296,33 @@ function LabeledAction({
     >
       <ActionGlyph kind={kind} size={14} color={color} />
       <Text style={sheet.labeledActionText}>{ACTION_LABEL[kind]}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The Retry beside a failed read. The header's Refresh does the same thing,
+ * but a failure line without its own way out reads as final; this one re-reads
+ * every source and disables itself while the read is in flight.
+ */
+function RetryAction({
+  onPress,
+  busy,
+  sheet,
+}: {
+  onPress: () => void;
+  busy: boolean;
+  sheet: Sheet;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: busy }}
+      style={busy && sheet.disabled}
+    >
+      <Text style={sheet.retryText}>{busy ? "Retrying…" : "Retry"}</Text>
     </Pressable>
   );
 }
@@ -568,9 +599,12 @@ export function WalletBalances({
               <Text style={sheet.btcUnit}>BTC</Text>
             </Text>
             {btc.error ? (
-              <Text style={sheet.errorText}>
-                Couldn&apos;t load your BTC balance: {btc.error.message}
-              </Text>
+              <View style={sheet.inlineNotice}>
+                <Text style={sheet.errorText}>
+                  {failureMessage(btc.error, "load your BTC balance")}
+                </Text>
+                <RetryAction onPress={refresh} busy={isFetching} sheet={sheet} />
+              </View>
             ) : usd ? (
               <Text style={sheet.btcUsd}>{usd}</Text>
             ) : null}
@@ -644,6 +678,9 @@ export function WalletBalances({
             >
               {activeNotice.message}
             </Text>
+            {activeNotice.tone === "error" && (
+              <RetryAction onPress={refresh} busy={isFetching} sheet={sheet} />
+            )}
           </View>
         )}
         {activeGroup.options.length === 0 ? (

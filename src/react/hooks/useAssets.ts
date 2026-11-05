@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHorizonMarket } from "../context.js";
+import { UserFacingError } from "../internal/failureMessage.js";
 import type {
   CounterpartyBalance,
   KontorUnavailableReason,
@@ -479,7 +480,7 @@ export function useAssets(): UseAssetsResult {
           // consumer renders a confident "no Kontor holdings" for what is really
           // "we couldn't look".
           if (holdings.unavailable) {
-            nextErrors.kontor = new Error(
+            nextErrors.kontor = new UserFacingError(
               KONTOR_UNAVAILABLE_MESSAGE[holdings.unavailable],
             );
           }

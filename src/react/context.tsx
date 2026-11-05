@@ -17,6 +17,7 @@ import {
 } from "../config.js";
 import { HDSigner, LocalSigner, type Signer } from "../crypto/signer.js";
 import { privateKeyToMnemonic } from "../crypto/mnemonic.js";
+import { failureMessage } from "./internal/failureMessage.js";
 import type { Network } from "../types/index.js";
 import {
   resolveTheme,
@@ -552,9 +553,11 @@ export function HorizonMarketProvider({
       })
       .catch((err) => {
         // Allow a retry on a later render if this is still the active wallet,
-        // and surface the reason so the UI can show it instead of a silent "…".
+        // and surface a reason the UI can show instead of a silent "…" — worded
+        // for the user (a 5xx or a dropped connection becomes "temporarily
+        // unavailable", never the raw status line); the error itself is logged.
         if (signedInFor.current === address) signedInFor.current = null;
-        setSignInError(err instanceof Error ? err.message : String(err));
+        setSignInError(failureMessage(err, "sign in to Horizon Market"));
         console.error("Horizon Market wallet sign-in failed:", err);
       });
   }, [

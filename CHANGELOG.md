@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **No raw server errors on screen after login.** App Review rejected the iOS
+  build under 2.1(a) for "a server error inside the app after login"; the only
+  lines that could have read that way were the wallet's failure notices, which
+  echoed the upstream status verbatim (`Couldn't load your BTC balance: mempool
+  address returned 503`, `Ord API returned 502: Bad Gateway`, `HTTP 500: Failed
+  to sign in`). Every default renderer and hook now words a failure for the
+  person reading it, through one helper (`failureMessage`): a reason they can
+  act on is kept — a Horizon Market 4xx (`Couldn't save your profile: Username
+  already taken`), the Kontor faucet's own refusal, Kontor's "could not start
+  here" — while a 5xx, a dead indexer or a dropped connection becomes
+  `Couldn't load your Ordinals holdings right now. The service may be
+  temporarily unavailable. Please try again in a moment.` with no status code
+  or upstream text. Covers `WalletBalances` (BTC line + holdings tabs, web and
+  native), the provider's `signInError`, `useProfile` / `useProfileWallets`,
+  `useAccountDeletion` and `useKontorFaucet`. The technical error is unchanged
+  on the hook objects (`error.cause` where the hook exposes an `Error`) and in
+  the console.
+- **Retry beside a failed wallet read.** The BTC line and the holdings notice
+  in `WalletBalances` get a Retry that re-reads every source (the header's
+  Refresh did the same, but a failure line with no way out of its own read as
+  final); it disables itself while a read is in flight.
+
 ## [0.7.0] - 2026-10-19
 
 **The iOS app ships without the marketplace.** App Review rejected the native

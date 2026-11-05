@@ -16,6 +16,7 @@ import {
   type OtherGroup,
 } from "./useWalletBalancesController.js";
 import type { WalletTokenSummary } from "./useWalletTokenSummary.js";
+import { TEMPORARILY_UNAVAILABLE, UserFacingError } from "./failureMessage.js";
 
 const { ctxRef, summaryRef, pricesRef } = vi.hoisted(() => ({
   ctxRef: { current: null } as CtxRef,
@@ -188,9 +189,18 @@ describe("useWalletBalancesController", () => {
     // Only `ok` yields no notice — i.e. only there does the renderer fall
     // through to "No Ordinals holdings yet." + the deposit affordance.
     expect(notice({ status: "ok" })).toBeNull();
+    // The upstream status line never reaches the screen: a failed read is
+    // "temporarily unavailable", with the renderers' Retry beside it.
     expect(notice({ status: "error", error: err })).toEqual({
       tone: "error",
-      message: "Couldn't load your Ordinals holdings: ord api down",
+      message: `Couldn't load your Ordinals holdings right now. ${TEMPORARILY_UNAVAILABLE}`,
+    });
+    // A reason written for the user (Kontor's "could not start here") is kept.
+    expect(
+      notice({ status: "error", error: new UserFacingError("Kontor could not start here.") }),
+    ).toEqual({
+      tone: "error",
+      message: "Couldn't load your Ordinals holdings: Kontor could not start here.",
     });
     // Not configured is not a failure: muted wording, no error styling, and
     // (in the renderers) no "!" marker on the tab.

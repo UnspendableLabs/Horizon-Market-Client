@@ -8,6 +8,8 @@ import {
   type CtxRef,
 } from "../hook-test-utils.js";
 import { useAccountDeletion } from "./useAccountDeletion.js";
+import { HorizonMarketApiError } from "../../api/http.js";
+import { TEMPORARILY_UNAVAILABLE } from "../internal/failureMessage.js";
 
 const { ctxRef } = vi.hoisted(() => ({ ctxRef: { current: null } as CtxRef }));
 vi.mock("../context.js", () => ({ useHorizonMarket: () => ctxRef.current }));
@@ -109,14 +111,34 @@ describe("useAccountDeletion", () => {
   });
 
   it("lands a refusal in `error` rather than rejecting", async () => {
-    requestAccountDeletion.mockRejectedValue(new Error("Too many requests"));
+    requestAccountDeletion.mockRejectedValue(
+      new HorizonMarketApiError(429, "Too many requests"),
+    );
     const { result } = renderHook(() => useAccountDeletion());
     await act(async () => {
       await result.current.submit({ email: "me@example.com" });
     });
     expect(result.current.status).toBe("error");
-    expect(result.current.error?.message).toBe("Too many requests");
+    // A refusal keeps the server's reason (without the HTTP prefix)…
+    expect(result.current.error?.message).toBe(
+      "Couldn't send your deletion request: Too many requests",
+    );
     expect(result.current.result).toBeNull();
+  });
+
+  it("words a failed request as temporarily unavailable, not as its status", async () => {
+    // …while a 5xx is the service's problem and never reaches the screen as such.
+    requestAccountDeletion.mockRejectedValue(
+      new HorizonMarketApiError(500, "Internal Server Error"),
+    );
+    const { result } = renderHook(() => useAccountDeletion());
+    await act(async () => {
+      await result.current.submit({ email: "me@example.com" });
+    });
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toBe(
+      `Couldn't send your deletion request right now. ${TEMPORARILY_UNAVAILABLE}`,
+    );
   });
 
   it("ignores a second submit while one is in flight", async () => {

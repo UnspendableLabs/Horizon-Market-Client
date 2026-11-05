@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { failureMessage } from "../internal/failureMessage.js";
 import { useHorizonMarket } from "../context.js";
 import type {
   AccountDeletionRequest,
@@ -121,7 +122,14 @@ export function useAccountDeletion(
         setStatus("success");
       } catch (err) {
         if (seq !== seqRef.current) return;
-        setError(err instanceof Error ? err : new Error(String(err)));
+        // Worded for the screen (the raw error rides along as `cause`): a server
+        // refusal keeps its reason, a 5xx or dropped request reads as temporarily
+        // unavailable instead of a status line.
+        setError(
+          new Error(failureMessage(err, "send your deletion request"), {
+            cause: err,
+          }),
+        );
         setStatus("error");
       } finally {
         // Only the current generation owns the flag: an abandoned submit settling

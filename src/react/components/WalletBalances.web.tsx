@@ -10,6 +10,7 @@ import {
   truncate,
 } from "../internal/format.js";
 import * as ws from "../internal/styles.web.js";
+import { failureMessage } from "../internal/failureMessage.js";
 import { webTokens } from "../theme.js";
 import { NoImageIcon } from "../internal/icons.web.js";
 import {
@@ -134,6 +135,33 @@ const refreshButton: CSSProperties = {
   padding: "4px 10px",
   fontSize: 12,
 };
+
+/**
+ * The Retry beside a failed read. The header's Refresh does the same thing,
+ * but a failure line without its own way out reads as final; this one re-reads
+ * every source and disables itself while the read is in flight.
+ */
+function RetryButton({
+  onClick,
+  busy,
+  className,
+}: {
+  onClick: () => void;
+  busy: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      className={className}
+      style={ws.withDisabled(refreshButton, busy)}
+    >
+      {busy ? "Retrying…" : "Retry"}
+    </button>
+  );
+}
 
 // A titled section (title + content) — the title carries equal space above and
 // below (matching the page's inter-block rhythm).
@@ -781,8 +809,11 @@ export function WalletBalances({
               <span style={btcUnit}>BTC</span>
             </div>
             {btc.error ? (
-              <div style={ws.errorText}>
-                Couldn&apos;t load your BTC balance: {btc.error.message}
+              <div style={emptyOthers}>
+                <span style={ws.errorText}>
+                  {failureMessage(btc.error, "load your BTC balance")}
+                </span>
+                <RetryButton onClick={refresh} busy={isFetching} className={classNames?.buttonSecondary} />
               </div>
             ) : (
               usd && <div style={btcUsdText}>{usd}</div>
@@ -834,7 +865,7 @@ export function WalletBalances({
                   an unread or still-loading source is not something to alarm
                   the user about. */}
               {group.state.status === "error" && (
-                <span style={ws.errorText} title={group.state.error.message}>
+                <span style={ws.errorText} title={emptyGroupNotice(group)?.message}>
                   {" "}
                   !
                 </span>
@@ -851,6 +882,9 @@ export function WalletBalances({
             >
               {activeNotice.message}
             </span>
+            {activeNotice.tone === "error" && (
+              <RetryButton onClick={refresh} busy={isFetching} className={classNames?.buttonSecondary} />
+            )}
           </div>
         )}
         {activeGroup.options.length === 0 ? (
