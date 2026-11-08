@@ -31,6 +31,4 @@ coverage:
       default:
         informational: true
 
-comment:
-  layout: "reach, diff, files"
-  require_changes: false
+comment: false
