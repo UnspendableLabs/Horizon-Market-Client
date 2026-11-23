@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
+**Kontor on the relaunched signet.** Kontor relaunched signet on a fresh
+network (`https://signet.kontor.network:35000/api`) running the launch
+transaction format, which `@kontor/sdk` rc.6 predates: every Kontor sell, buy,
+delist and send this client composed was in the old format. This release moves
+to rc.8, pinned exactly, keeps each input's requested sighash when an external
+wallet signs, regenerates the contract bindings, and settles an uncertain
+broadcast instead of starting it over. Minor, not patch: hosts must pin
+`@kontor/sdk` 0.3.0-rc.8 alongside it and add `ESNext.Disposable` to their
+TypeScript `lib`, and `signPsbtHex` gains an optional third argument.
+
 ### Changed
 
 - **`@kontor/sdk` 0.3.0-rc.8, pinned exactly, for the relaunched Kontor
@@ -776,7 +788,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...v0.6.0
