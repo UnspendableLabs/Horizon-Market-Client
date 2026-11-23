@@ -4,6 +4,10 @@ import { resolveKontorFunding } from "../kontor/funding.js";
 import { getKontorSigning } from "../kontor/signing.js";
 import { bindKontorToken, bindKontorNft, Decimal } from "../kontor/contracts.js";
 import { xOnlyFromTaprootAddress } from "../kontor/holders.js";
+import {
+  recoveredRevealTxid,
+  settleKontorPublication,
+} from "../kontor/publication.js";
 import type { KontorContext } from "../kontor/context.js";
 import type { PreparedSend, SendDeps, SendResult } from "./types.js";
 
@@ -90,10 +94,16 @@ export async function sendKontorToken(
   });
 
   try {
-    const submitted = await bindKontorToken(session)
-      .transfer(dst, Decimal.from(params.amount))
-      .submit();
-    return { txid: submitted.txid };
+    const transfer = bindKontorToken(session).transfer(
+      dst,
+      Decimal.from(params.amount),
+    );
+    const txid = await settleKontorPublication(
+      "transfer",
+      async () => (await transfer.submit()).txid,
+      recoveredRevealTxid,
+    );
+    return { txid };
   } finally {
     session.close();
   }
@@ -141,10 +151,16 @@ export async function sendKontorNft(
   });
 
   try {
-    const submitted = await bindKontorNft(session, params.contractAddress)
-      .transfer(params.nftId, dst)
-      .submit();
-    return { txid: submitted.txid };
+    const transfer = bindKontorNft(session, params.contractAddress).transfer(
+      params.nftId,
+      dst,
+    );
+    const txid = await settleKontorPublication(
+      "transfer",
+      async () => (await transfer.submit()).txid,
+      recoveredRevealTxid,
+    );
+    return { txid };
   } finally {
     session.close();
   }

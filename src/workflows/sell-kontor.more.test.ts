@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { HttpClient } from "../api/http.js";
 import type { KontorContext } from "../kontor/context.js";
 import type { KontorSellParams } from "./sell-kontor.js";
-import { makeSigner } from "../test-utils.js";
+import { makeKontorSubmissionError, makeSigner } from "../test-utils.js";
+import { KontorPublicationUnresolvedError } from "../kontor/publication.js";
 
 // Mock every Kontor helper sell-kontor.ts touches. It has no direct @kontor/sdk
 // import (offer composition goes through ../kontor/contracts.js), so mocking the
@@ -336,5 +337,61 @@ describe("openKontorSellOrder happy path", () => {
     expect(result.created).toBe(true);
     expect(result.swap.id).toBe("swap1");
     expect(result.transactions).toEqual([{ txid: ESCROW_TXID, kind: "asset" }]);
+  });
+});
+
+describe("openKontorSellOrder uncertain attach broadcast", () => {
+  function attachIsUncertain(reconcile: () => Promise<unknown>) {
+    const lost = makeKontorSubmissionError(reconcile);
+    mockBindToken.mockReturnValue({
+      attachment: () => ({ offer: () => Promise.reject(lost) }),
+    });
+    return lost;
+  }
+
+  it("records the listing with the signed offer the SDK kept, when the attach did land", async () => {
+    // `Attachment.offer()` keeps the signed offer with its recovery handle, so a
+    // lost broadcast response does not lose the listing.
+    const lost = attachIsUncertain(async () => ({
+      result: { txid: ESCROW_TXID },
+      value: { serialize: () => "RECOVEREDBLOB" },
+    }));
+    mockCreateSwap.mockResolvedValue({ swap: { id: "swap1" }, created: true });
+
+    await openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx);
+
+    expect(lost.recovery.reconcile).toHaveBeenCalledTimes(1);
+    expect(mockAttachEscrow).toHaveBeenCalledWith("RECOVEREDBLOB");
+    expect(mockCreateSwap).toHaveBeenCalledWith(
+      http,
+      expect.objectContaining({ kontorOfferBlob: "RECOVEREDBLOB" }),
+    );
+  });
+
+  it("records nothing and hands the recovery handle out while the attach is unresolved", async () => {
+    const lost = attachIsUncertain(() => Promise.reject(new Error("unknown")));
+
+    const err = await openKontorSellOrder(
+      tokenParams,
+      http,
+      makeSigner({ p2tr: P2TR }),
+      ctx,
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(KontorPublicationUnresolvedError);
+    expect((err as KontorPublicationUnresolvedError).operation).toBe("listing");
+    expect((err as KontorPublicationUnresolvedError).recovery).toBe(
+      lost.recovery,
+    );
+    expect(mockCreateSwap).not.toHaveBeenCalled();
+  });
+
+  it("does not guess when the re-check passes but no signed offer was saved", async () => {
+    attachIsUncertain(async () => ({ result: { txid: ESCROW_TXID } }));
+
+    await expect(
+      openKontorSellOrder(tokenParams, http, makeSigner({ p2tr: P2TR }), ctx),
+    ).rejects.toBeInstanceOf(KontorPublicationUnresolvedError);
+    expect(mockCreateSwap).not.toHaveBeenCalled();
   });
 });
