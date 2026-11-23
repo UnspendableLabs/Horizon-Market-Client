@@ -769,5 +769,9 @@ export function describeHolder(holder: HolderRef): string {
       return "the core identity";
     case "burner":
       return "the burner";
+    case "ordering-pool":
+      return "the ordering reward pool";
+    case "storage-pool":
+      return "the storage reward pool";
   }
 }

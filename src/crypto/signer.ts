@@ -32,6 +32,23 @@ async function loadKontorLocalKey() {
   }
 }
 
+/** What a caller of {@link Signer.signPsbtHex} requires beyond the input indices. */
+export interface SignPsbtHexOptions {
+  /**
+   * The sighash each input must be signed under, keyed by input index:
+   * `0x00` (taproot `SIGHASH_DEFAULT`), `0x81` (`ALL|ANYONECANPAY`), `0x83`
+   * (`SINGLE|ANYONECANPAY`), … One request may mix them.
+   *
+   * Passed by the Kontor flows of an external-wallet signer (see
+   * `kontor/wallet-signing.ts`). Every non-default entry is also written into
+   * that PSBT input's `sighashType`, so a signer that reads the PSBT sees the
+   * same request; one whose wallet API takes explicit lists (e.g. UniSat / OKX
+   * `toSignInputs[].sighashTypes`) can forward these instead. A signature under
+   * any other sighash is rejected before broadcast.
+   */
+  sighashTypes?: Readonly<Record<number, number>>;
+}
+
 export interface Signer {
   getAddresses(): {
     p2wpkh: string;
@@ -46,10 +63,14 @@ export interface Signer {
    * or a promise — external wallets (browser extensions, mobile wallets) sign
    * asynchronously through a popup/native prompt and never expose their key. All
    * SDK call sites `await` the result, so both forms work.
+   *
+   * `options.sighashTypes`, when present, is the sighash each input must be
+   * signed under — see {@link SignPsbtHexOptions}.
    */
   signPsbtHex(
     psbtHex: string,
     inputIndices: number[],
+    options?: SignPsbtHexOptions,
   ): string | Promise<string>;
   /** Sign a message (BIP322). Sync for key signers, async for external wallets. */
   signMessage(address: string, message: string): string | Promise<string>;

@@ -49,7 +49,7 @@ const DEFAULTS = {
     baseUrl: "https://signet.horizon.market",
     ordApiBaseUrl: "https://signet.counterparty.io:37000",
     counterpartyApiBaseUrl: "https://signet.counterparty.io:34000",
-    kontorIndexerUrl: "https://signet.kontor.network:35100",
+    kontorIndexerUrl: "https://signet.kontor.network:35000/api",
   },
 } as const;
 
@@ -87,7 +87,8 @@ export const NETWORKS: Record<UiNetwork, NetworkConfig> = {
       DEFAULTS.signet.counterpartyApiBaseUrl,
     // ZELD signet has no default yet (API not live); set its URL to enable.
     zeldApiBaseUrl: clean(import.meta.env.VITE_ZELD_API_URL_SIGNET),
-    // Override with `${baseUrl}/api/kontor-indexer` to avoid browser CORS.
+    // The public API answers CORS from any origin; override with
+    // `${baseUrl}/api/kontor-indexer` (or the dev proxy) for same-origin calls.
     kontorIndexerUrl:
       clean(import.meta.env.VITE_KONTOR_INDEXER_URL_SIGNET) ??
       DEFAULTS.signet.kontorIndexerUrl,

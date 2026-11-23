@@ -64,15 +64,15 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      // The Kontor signet indexer (signet.kontor.network:35100) sends no CORS
-      // headers, so the browser blocks any direct cross-origin call to it
-      // ("Failed to fetch"). Proxy it through the dev server so the SDK can hit
-      // a same-origin relative path instead — set
-      // VITE_KONTOR_INDEXER_URL_SIGNET=/kontor-signet to use this.
-      // The indexer serves its routes under an `/api` prefix, so rewrite
+      // Optional same-origin path to the Kontor signet API — set
+      // VITE_KONTOR_INDEXER_URL_SIGNET=/kontor-signet to use it. No longer
+      // required: the relaunched API (signet.kontor.network:35000) answers CORS
+      // from any origin, preflights included, unlike the retired :35100 cluster
+      // this proxy was added for, so the default calls it directly.
+      // The API serves its routes under an `/api` prefix, so rewrite
       // `/kontor-signet/...` → `/api/...` (stripping to "" yields 404s).
       "/kontor-signet": {
-        target: "https://signet.kontor.network:35100",
+        target: "https://signet.kontor.network:35000",
         changeOrigin: true,
         secure: true,
         rewrite: (p) => p.replace(/^\/kontor-signet/, "/api"),

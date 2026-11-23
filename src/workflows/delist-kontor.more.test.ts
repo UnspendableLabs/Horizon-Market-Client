@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { HttpClient } from "../api/http.js";
 import type { KontorContext } from "../kontor/context.js";
 import type { AtomicSwap } from "../types/index.js";
-import { makeSigner } from "../test-utils.js";
+import { makeKontorSubmissionError, makeSigner } from "../test-utils.js";
+import { KontorPublicationUnresolvedError } from "../kontor/publication.js";
 
 // delist-kontor.ts imports { Offer } from "@kontor/sdk" directly, so that module
 // must be mocked too. The rest is the Kontor-helper + delist-API surface.
@@ -226,5 +227,47 @@ describe("delistKontorSwap happy path", () => {
     expect(signer.signMessage).toHaveBeenCalledWith("tb1pseller", "dr_1");
     expect(mockConfirmDelist).toHaveBeenCalledWith(http, "dr_1", "base64sig==");
     expect(session.close).toHaveBeenCalled();
+  });
+});
+
+describe("delistKontorSwap uncertain revoke broadcast", () => {
+  it("completes the server delist when a read-only re-check finds the revoke on-chain", async () => {
+    const lost = makeKontorSubmissionError(async () => ({
+      result: { txid: "reveal-txid" },
+    }));
+    mockRevoke.mockRejectedValue(lost);
+    mockStartDelist.mockResolvedValue({
+      id: "dr1",
+      atomicSwap: { sellerAddress: "tb1pseller" },
+    });
+    mockConfirmDelist.mockResolvedValue(undefined);
+
+    await delistKontorSwap(baseSwap(), {}, http, makeSigner({ p2tr: "tb1pseller" }), ctx);
+
+    expect(lost.recovery.reconcile).toHaveBeenCalledTimes(1);
+    // Never revoked a second time: the escrow is already spent.
+    expect(mockRevoke).toHaveBeenCalledTimes(1);
+    expect(mockConfirmDelist).toHaveBeenCalledWith(http, "dr1", "base64sig==");
+  });
+
+  it("stops before the server delist while the revoke is unresolved", async () => {
+    const lost = makeKontorSubmissionError(() =>
+      Promise.reject(new Error("unknown")),
+    );
+    mockRevoke.mockRejectedValue(lost);
+
+    const err = await delistKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pseller" }),
+      ctx,
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(KontorPublicationUnresolvedError);
+    expect((err as KontorPublicationUnresolvedError).operation).toBe("delisting");
+    // Not a KontorDelistNotRecordedError: whether the escrow moved is unknown.
+    expect(err).not.toBeInstanceOf(KontorDelistNotRecordedError);
+    expect(mockStartDelist).not.toHaveBeenCalled();
   });
 });

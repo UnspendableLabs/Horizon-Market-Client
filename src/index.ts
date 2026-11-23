@@ -32,6 +32,13 @@ export type {
 export { KontorListingNotRecordedError } from "./workflows/sell-kontor.js";
 export { KontorDelistNotRecordedError } from "./workflows/delist-kontor.js";
 export { KontorPurchaseNotRecordedError } from "./workflows/buy-kontor.js";
+// A Kontor write whose broadcast could not be confirmed even after a read-only
+// re-check: it may be on-chain, so the operation must not be started again. It
+// carries the SDK's recovery handle for the exact signed package.
+export {
+  KontorPublicationUnresolvedError,
+  type KontorPublicationOperation,
+} from "./kontor/publication.js";
 // Safe recovery for a KontorPurchaseNotRecordedError: replay only the recording
 // POST (client.recordKontorPurchase) with the carried txid — never re-accept.
 export {
@@ -105,7 +112,7 @@ export type {
 export { HorizonMarketApiError } from "./api/http.js";
 
 // Signer
-export type { Signer } from "./crypto/signer.js";
+export type { Signer, SignPsbtHexOptions } from "./crypto/signer.js";
 // LocalSigner: single-key (web3auth). HDSigner: Horizon-Wallet-compatible HD (BIP84 + BIP86).
 export { LocalSigner, HDSigner } from "./crypto/signer.js";
 

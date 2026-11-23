@@ -6,6 +6,10 @@ import { resolveKontorFunding } from "../kontor/funding.js";
 import { makeKontorSession } from "../kontor/session.js";
 import { getKontorSigning } from "../kontor/signing.js";
 import { preflightKontorDelist } from "../kontor/preflight.js";
+import {
+  recoveredRevealTxid,
+  settleKontorPublication,
+} from "../kontor/publication.js";
 import type { KontorContext } from "../kontor/context.js";
 import type {
   AtomicSwap,
@@ -121,7 +125,16 @@ export async function delistKontorSwap(
   try {
     await progress.runAsync("revokeKontorOffer", async () => {
       const offer = new Offer(session, JSON.parse(offerBlob));
-      await offer.revoke();
+      // The revoke spends the escrow's script-path input under
+      // ALL|ANYONECANPAY plus key-path fee inputs under SIGHASH_DEFAULT, in one
+      // signing request. A lost broadcast response is reconciled against the
+      // signed package — re-running the revoke could never succeed once the
+      // escrow is spent, so it is never retried by composing again.
+      await settleKontorPublication(
+        "delisting",
+        async () => (await offer.revoke()).txid,
+        recoveredRevealTxid,
+      );
     });
   } finally {
     session.close();

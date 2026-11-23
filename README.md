@@ -233,7 +233,7 @@ await client.openSellOrder({
   listingType: "kontor",
   kontorAssetKind: "nft",
   nftId: "my-nft-id",
-  nftContractAddress: "nft@307992.5",
+  nftContractAddress: "nft@0.0",
   priceSats: 250_000,
 });
 
@@ -330,6 +330,15 @@ the workflows throw marker errors so you can recover without re-broadcasting:
 - `fillSwaps` → `KontorPurchaseNotRecordedError` carrying `{ swapId, txId, buyerAddress }` — the offer is consumed; retry only the recording
 - `delistSwap` → `KontorDelistNotRecordedError` carrying `{ swapId }` — the revoke happened; re-run only `startDelist` → sign → `confirmDelist`
 
+The broadcast itself can be uncertain too: Bitcoin may accept a commit and reject its
+reveal, or accept both while the response is lost. Every Kontor write (`openSellOrder`,
+`fillSwaps`, `delistSwap`, `send`) then re-checks the exact signed package once,
+read-only, and carries on if it landed. Otherwise it throws
+`KontorPublicationUnresolvedError` carrying `{ operation, txid, recovery }`: the package
+may be on-chain, so do **not** start the operation over. `recovery` is `@kontor/sdk`'s
+handle on the signed bytes — `reconcile()` re-checks, `retry()` re-sends the same bytes
+without signing again. It lives only in the current process.
+
 **External wallets.** Kontor also works through a connected browser-extension or
 mobile wallet (Xverse, Horizon Wallet, …), not just an in-process key. Connect one via
 [`initializeWithSigner(signer)`](#connecting-an-external-wallet): when the `Signer`
@@ -342,9 +351,15 @@ the key is never exposed. Two things the wallet path needs:
   connect), not the tweaked output key decoded from a `bc1p…` address. The SDK re-derives
   the P2TR address from it and asserts it matches `p2tr`, so a wrong key or network fails
   immediately.
-- The wallet's `signPsbtHex` must honor the per-input sighash the SDK stamps into the PSBT
-  (the seller's detach input is signed `SINGLE | ANYONECANPAY`) — i.e. pass the wallet's
-  `allowedSignHash` through when a non-default sighash is present.
+- The wallet's `signPsbtHex` must sign each input under the sighash the SDK requests for
+  it, and one request can mix them: `ALL | ANYONECANPAY` (0x81) on the `kon` TapScript-leaf
+  input of every Kontor transaction, `SINGLE | ANYONECANPAY` (0x83) on a seller's detach,
+  `SIGHASH_DEFAULT` on key-path inputs (a delist asks for 0x81 and default together).
+  Non-default sighashes are stamped into the PSBT, and the full per-input map is passed as
+  `signPsbtHex(psbtHex, indices, { sighashTypes })` for wallet APIs that take explicit
+  lists. The SDK verifies every signature before broadcasting, so a wallet that substitutes
+  its own sighash fails before anything is sent — test a wallet's 0x81, 0x83 and mixed
+  requests before enabling Kontor on it.
 
 > Key-holding signers (`LocalSigner` / `HDSigner`, built from `privateKey` or `mnemonic`)
 > use their in-process key via `getKontorSigning(chain)`. BLS registration (raw

@@ -262,10 +262,11 @@ const KONTOR_NOT_CONFIGURED: KontorHoldings = {
   unavailable: null,
 };
 
-// `list_nfts_by_holder` clamps `limit` to 100 per call; page with `offset` up to
-// this many NFTs per holder candidate to bound the work.
+// `list-nfts-by-holder` returns at most 100 entries per page and continues with
+// an opaque cursor; read up to this many NFTs per holder candidate to bound the
+// work.
 const KONTOR_NFT_PAGE = 100n;
-const KONTOR_NFT_MAX_PER_HOLDER = 1000n;
+const KONTOR_NFT_MAX_PER_HOLDER = 1000;
 
 /** Options for `delistSwap`. Kontor delists may carry `fundingUtxos` for the on-chain revoke. */
 export interface DelistSwapOptions extends WorkflowOptions {
@@ -716,18 +717,13 @@ export class HorizonMarketClient {
         const nft = bindKontorNft(session, contractAddress);
         const seen = new Set<string>();
         for (const holder of candidates) {
-          const total = await nft.countNftsByHolder(holder);
-          if (total <= 0n) continue;
-          const cap =
-            total < KONTOR_NFT_MAX_PER_HOLDER ? total : KONTOR_NFT_MAX_PER_HOLDER;
-          for (let offset = 0n; offset < cap; offset += KONTOR_NFT_PAGE) {
-            const page = await nft.listNftsByHolder(
-              holder,
-              offset,
-              KONTOR_NFT_PAGE,
-            );
-            for (const info of page) {
-              if (seen.has(info.nftId)) continue;
+          // Iterating the view walks its pages by cursor (an empty holder costs
+          // one request) and `break` stops further page requests at the cap.
+          let read = 0;
+          for await (const info of nft.listNftsByHolder(holder, {
+            limit: KONTOR_NFT_PAGE,
+          })) {
+            if (!seen.has(info.nftId)) {
               seen.add(info.nftId);
               nfts.push({
                 nftId: info.nftId,
@@ -735,7 +731,7 @@ export class HorizonMarketClient {
                 address: taprootAddress,
               });
             }
-            if (BigInt(page.length) < KONTOR_NFT_PAGE) break;
+            if (++read >= KONTOR_NFT_MAX_PER_HOLDER) break;
           }
         }
       }

@@ -26,10 +26,15 @@ vi.mock("./kontor/contracts.js", () => ({
     balance: vi.fn(async (holder: string) => (holder === "holderB" ? 5n : 0n)),
   })),
   bindKontorNft: vi.fn(() => ({
-    countNftsByHolder: vi.fn(async (holder: string) =>
-      holder === "holderB" ? 2n : 0n,
-    ),
-    listNftsByHolder: vi.fn(async () => [{ nftId: "n1" }, { nftId: "n2" }]),
+    // A cursor-paginated view: iterating it walks every page. Only holderB
+    // owns anything.
+    listNftsByHolder: vi.fn((holder: string) => ({
+      async *[Symbol.asyncIterator]() {
+        if (holder !== "holderB") return;
+        yield { nftId: "n1" };
+        yield { nftId: "n2" };
+      },
+    })),
   })),
 }));
 vi.mock("./kontor/holders.js", () => ({
@@ -592,6 +597,34 @@ describe("HorizonMarketClient.getKontorHoldings", () => {
       { nftId: "n1", contractAddress: "nftcontract@100.1", address: "bc1ptaproot" },
       { nftId: "n2", contractAddress: "nftcontract@100.1", address: "bc1ptaproot" },
     ]);
+  });
+
+  it("walks NFT pages by cursor and stops reading a holder at the cap", async () => {
+    const contracts = await import("./kontor/contracts.js");
+    let yielded = 0;
+    const listNftsByHolder = vi.fn(() => ({
+      async *[Symbol.asyncIterator]() {
+        // An endless holder: only the client's cap ends the walk.
+        for (;;) yield { nftId: `n${yielded++}` };
+      },
+    }));
+    vi.mocked(contracts.bindKontorNft).mockReturnValueOnce({
+      listNftsByHolder,
+    } as never);
+    const client = new HorizonMarketClient({
+      signer: makeSigner({ p2tr: "bc1ptaproot", xOnlyPubkey: "deadbeef" }),
+      network: "testnet",
+      kontorNetwork: "signet",
+      kontorNftContractAddress: "nft@0.0",
+    });
+
+    const res = await client.getKontorHoldings();
+
+    // The live contract takes a `cursor-request`, not (offset, limit).
+    expect(listNftsByHolder).toHaveBeenCalledWith("holderA", { limit: 100n });
+    // 1000 per holder candidate, two candidates.
+    expect(res.nfts).toHaveLength(2000);
+    expect(yielded).toBe(2000);
   });
 
   it("reads KOR balance only when no NFT contract is configured", async () => {

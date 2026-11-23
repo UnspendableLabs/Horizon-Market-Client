@@ -1,6 +1,6 @@
 import * as btc from "bitcoinjs-lib";
 import { inMemoryFunding, queryFunding } from "@kontor/sdk";
-import type { Utxo } from "@kontor/sdk";
+import type { FundingSource, Utxo } from "@kontor/sdk";
 import type { HttpClient } from "../api/http.js";
 import type { KontorFunding, KontorUtxoInput } from "../types/index.js";
 
@@ -61,6 +61,12 @@ export async function fetchKontorFundingUtxos(
  * - explicit fetcher → re-queried on every on-chain submit
  * - undefined        → auto-fetch confirmed UTXOs from Horizon's public proxy
  *
+ * Every submit takes a per-submission lease (`reserve()`) on these candidates;
+ * the SDK keeps only the inputs its signed package uses and settles the lease
+ * with what was spent once Bitcoin accepts it. A source is built per workflow
+ * call, so its reservations and spent-outpoint filter last for that one call:
+ * a later call starts from a fresh wallet snapshot.
+ *
  * SECURITY: auto-fetch sends only the taproot ADDRESS (public). No private key is
  * ever involved here — signing happens later, locally, inside the Kontor SDK.
  */
@@ -69,7 +75,7 @@ export function resolveKontorFunding(
   address: string,
   network: btc.Network,
   funding: KontorFunding | undefined,
-): ReturnType<typeof inMemoryFunding> | ReturnType<typeof queryFunding> {
+): FundingSource {
   const scriptPubKey = taprootScriptPubKeyHex(address, network);
 
   if (Array.isArray(funding)) {

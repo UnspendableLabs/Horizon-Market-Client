@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { HttpClient } from "../api/http.js";
 import type { KontorContext } from "../kontor/context.js";
 import type { AtomicSwap } from "../types/index.js";
-import { makeSigner } from "../test-utils.js";
+import { makeKontorSubmissionError, makeSigner } from "../test-utils.js";
+import { KontorPublicationUnresolvedError } from "../kontor/publication.js";
 
 // Mock the Kontor helpers directly so we can drive the offer/accept/record flow
 // (and its error branches) without a real session or network. buy-kontor.ts has
@@ -443,6 +444,74 @@ describe("fillKontorSwap happy path", () => {
     expect(
       events.some((e) => e.step === "submitPurchase" && e.phase === "complete"),
     ).toBe(true);
+    expect(session.close).toHaveBeenCalled();
+  });
+});
+
+describe("fillKontorSwap uncertain swap broadcast", () => {
+  function sessionWhoseAcceptIsUncertain(reconcile: () => Promise<unknown>) {
+    const lost = makeKontorSubmissionError(reconcile);
+    return {
+      lost,
+      session: makeSession({
+        openOffer: vi.fn(() => ({
+          inspect: vi.fn(async () => ({ valid: true })),
+          accept: vi.fn(async () => Promise.reject(lost)),
+        })),
+      }),
+    };
+  }
+
+  it("records the purchase when a read-only re-check finds the swap on-chain", async () => {
+    // The relay accepted the package but its response was lost. Recording
+    // with the saved txid is what keeps a completed purchase from looking failed.
+    const { lost, session } = sessionWhoseAcceptIsUncertain(async () => ({
+      result: { txid: "reveal-txid" },
+    }));
+    mockMakeSession.mockReturnValue(session);
+    mockKontorBuy.mockResolvedValue({
+      txId: "reveal-txid",
+      buyerAddress: "tb1pbuyeridentity",
+      atomicSwap: { id: "swap1" },
+    });
+
+    const sales = await fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    );
+
+    expect(lost.recovery.reconcile).toHaveBeenCalledTimes(1);
+    expect(lost.recovery.retry).not.toHaveBeenCalled();
+    expect(sales[0].txId).toBe("reveal-txid");
+    expect(mockKontorBuy).toHaveBeenCalledWith(http, "swap1", {
+      buyerAddress: "tb1pbuyeridentity",
+      txId: "reveal-txid",
+    });
+  });
+
+  it("stops with the recovery handle, recording nothing, while the swap stays unresolved", async () => {
+    const { lost, session } = sessionWhoseAcceptIsUncertain(() =>
+      Promise.reject(new Error("still partial")),
+    );
+    mockMakeSession.mockReturnValue(session);
+
+    const err = await fillKontorSwap(
+      baseSwap(),
+      {},
+      http,
+      makeSigner({ p2tr: "tb1pbuyer" }),
+      ctx,
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(KontorPublicationUnresolvedError);
+    expect((err as KontorPublicationUnresolvedError).recovery).toBe(
+      lost.recovery,
+    );
+    expect((err as KontorPublicationUnresolvedError).txid).toBe("reveal-txid");
+    expect(mockKontorBuy).not.toHaveBeenCalled();
     expect(session.close).toHaveBeenCalled();
   });
 });
