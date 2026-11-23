@@ -732,6 +732,13 @@ describe("describeHolder", () => {
     ).toBe(`utxo ${ESCROW_TXID.slice(0, 12)}…:3`);
     expect(describeHolder(HolderRef.core())).toBe("the core identity");
     expect(describeHolder(HolderRef.burner())).toBe("the burner");
+    // The protocol reward pools (@kontor/sdk 0.3.0-rc.8).
+    expect(describeHolder(HolderRef.orderingPool())).toBe(
+      "the ordering reward pool",
+    );
+    expect(describeHolder(HolderRef.storagePool())).toBe(
+      "the storage reward pool",
+    );
   });
 });
 

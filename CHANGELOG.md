@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
+**Kontor on the relaunched signet.** Kontor relaunched signet on a fresh
+network (`https://signet.kontor.network:35000/api`) running the launch
+transaction format, which `@kontor/sdk` rc.6 predates: every Kontor sell, buy,
+delist and send this client composed was in the old format. This release moves
+to rc.8, pinned exactly, keeps each input's requested sighash when an external
+wallet signs, regenerates the contract bindings, and settles an uncertain
+broadcast instead of starting it over. Minor, not patch: hosts must pin
+`@kontor/sdk` 0.3.0-rc.8 alongside it and add `ESNext.Disposable` to their
+TypeScript `lib`, and `signPsbtHex` gains an optional third argument.
+
+### Changed
+
+- **`@kontor/sdk` 0.3.0-rc.8, pinned exactly, for the relaunched Kontor
+  signet.** The network now runs the launch transaction format (Kontor
+  `9f5779f2`), which rc.6 predates: every Kontor transaction this client
+  composed — sell, buy, delist, KOR and NFT sends — used the old format. rc.8
+  signs direct transactions through the amount- and network-bound `kon`
+  TapScript leaf under `ALL|ANYONECANPAY` (0x81), signs a marketplace seller's
+  detach `SINGLE|ANYONECANPAY` (0x83) with the buyer's Sponsor bound to it, and
+  verifies the composer's answers and every returned signature before
+  broadcast. Pinned without a caret because rc.7 and rc.8 each changed the
+  wire format: a host resolving a newer rc on its own would sign for a network
+  it does not match. `fundingUtxos` is unchanged; funding now runs on rc.8's
+  per-submission leases. TypeScript consumers need `ESNext.Disposable` in their
+  `lib` (the SDK's Wasm `Wit` resource is `Disposable`), which this package's
+  `tsconfig.json` now lists.
+- **Default Kontor API: `https://signet.kontor.network:35000/api`.**
+  `DEFAULT_KONTOR_INDEXER_URL` and the signet defaults of the CLI, web and
+  native examples leave the retired `:35100`, whose port is closed. The CLI and
+  web defaults also gain the `/api` prefix they lacked — every route 404s
+  without it. The API answers CORS from any origin, so the web example's
+  `/kontor-signet` dev proxy is optional now.
+- **Contract bindings regenerated with rc.8's `kontor-codegen`.** The vendored
+  ones fail to load under rc.8 (`WIT validation failed: exported functions
+  must be synchronous`), which took every Kontor path down at import. Writes
+  now resolve to their success value and throw `ContractError` on an outer
+  `err`; `token.balances` and the NFT `list-*` views take a `{ after, limit }`
+  cursor. `src/kontor/__generated__/README.md` documents regenerating them from
+  the Kontor source WIT.
+- **`getKontorHoldings` walks NFTs by cursor.** The relaunched contract's
+  `list-nfts-by-holder` takes a `cursor-request`, not `(offset, limit)`. Reads
+  stay capped at 1,000 NFTs per holder candidate, and the separate count
+  request per holder is gone.
+- **External-wallet Kontor signing keeps each input's sighash.** One signing
+  request may mix sighashes — a delist's revoke asks for 0x81 on the escrow's
+  leaf input and `SIGHASH_DEFAULT` on its key-path fee inputs — which the
+  adapter used to refuse outright; `all-anyonecanpay` (0x81) is now mapped.
+  Non-default sighashes are still stamped into the PSBT, and the full
+  per-input map is also handed to `signPsbtHex` (see Added). A wallet that
+  signs under any other sighash fails before anything is broadcast, since the
+  SDK verifies every signature: test each wallet's 0x81, 0x83 and mixed
+  requests before enabling Kontor on it.
+- **Native example: `@kontor/sdk` and `@kontor/sdk-native` 0.3.0-rc.8**, bumped
+  together. The native module moves to uniffi-bindgen-react-native 0.31, so the
+  app needs a native rebuild, not just a new JS bundle.
+
+### Added
+
+- **`KontorPublicationUnresolvedError`.** Since rc.8 a failed broadcast request
+  no longer means nothing was sent: the SDK throws `SubmissionError` with a
+  recovery handle on the exact signed package. Every Kontor write (listing,
+  purchase, delisting, KOR / NFT transfer) now re-checks that package once,
+  read-only, and carries on when it landed — a purchase whose response was
+  lost is still recorded, and a listing still posts the signed offer the SDK
+  kept. Otherwise it throws `KontorPublicationUnresolvedError` carrying
+  `{ operation, txid, recovery }`, worded to tell the user not to start over;
+  `recovery.reconcile()` / `recovery.retry()` re-check or re-send the same
+  bytes without signing again.
+- **`signPsbtHex(psbtHex, indices, { sighashTypes })`.** An optional third
+  argument (`SignPsbtHexOptions`) maps each input index to the sighash it must
+  be signed under, for wallet APIs that take explicit lists (UniSat / OKX
+  `toSignInputs[].sighashTypes`, …) rather than reading the PSBT. Two-argument
+  signers keep working.
+
 ## [0.7.1] - 2026-11-05
 
 **No raw server errors after login.** App Review rejected the iOS build (1.0,
@@ -712,7 +788,8 @@ Initial public release.
 - Private keys never leave the client: write operations send only signed PSBTs, signed transactions, or BIP322 signatures to the API.
 - `decryptKeystore` rejects out-of-bounds scrypt parameters in imported keystores (memory/CPU DoS hardening).
 
-[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/UnspendableLabs/Horizon-Market-Client/compare/v0.5.1...v0.6.0

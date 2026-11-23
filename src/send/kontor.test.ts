@@ -60,7 +60,8 @@ import {
   prepareKontorNft,
   sendKontorNft,
 } from "./kontor.js";
-import { makeSigner } from "../test-utils.js";
+import { makeKontorSubmissionError, makeSigner } from "../test-utils.js";
+import { KontorPublicationUnresolvedError } from "../kontor/publication.js";
 
 const TAPROOT = "tb1ptaproot";
 const RECIPIENT = "tb1precipient";
@@ -156,6 +157,40 @@ describe("sendKontorToken", () => {
     expect(h.sessionClose).toHaveBeenCalledTimes(1);
   });
 
+  it("returns the saved txid when a lost broadcast response reconciles as accepted", async () => {
+    // Re-sending a transfer whose first broadcast landed would send it twice:
+    // the read-only re-check is the only way past an uncertain publication.
+    const lost = makeKontorSubmissionError(async () => ({
+      result: { txid: "reveal-txid" },
+    }));
+    h.submitToken.mockRejectedValueOnce(lost);
+
+    await expect(
+      sendKontorToken({ toAddress: RECIPIENT, amount: "5" }, baseDeps()),
+    ).resolves.toEqual({ txid: "reveal-txid" });
+    expect(h.submitToken).toHaveBeenCalledTimes(1);
+    expect(h.sessionClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces an unresolved transfer with its recovery handle instead of resending", async () => {
+    const lost = makeKontorSubmissionError(() =>
+      Promise.reject(new Error("unknown")),
+    );
+    h.submitToken.mockRejectedValueOnce(lost);
+
+    const err = await sendKontorToken(
+      { toAddress: RECIPIENT, amount: "5" },
+      baseDeps(),
+    ).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(KontorPublicationUnresolvedError);
+    expect((err as KontorPublicationUnresolvedError).operation).toBe("transfer");
+    expect((err as KontorPublicationUnresolvedError).recovery).toBe(
+      lost.recovery,
+    );
+    expect(h.submitToken).toHaveBeenCalledTimes(1);
+  });
+
   it("throws when the Kontor context is missing", async () => {
     await expect(
       sendKontorToken(
@@ -243,6 +278,15 @@ describe("sendKontorNft", () => {
       /nft submit failed/,
     );
     expect(h.sessionClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the saved txid when a lost broadcast response reconciles as accepted", async () => {
+    h.submitNft.mockRejectedValueOnce(
+      makeKontorSubmissionError(async () => ({ result: { txid: "nft-reveal" } })),
+    );
+    await expect(sendKontorNft(params, baseDeps())).resolves.toEqual({
+      txid: "nft-reveal",
+    });
   });
 
   it("throws when the Kontor context is missing", async () => {

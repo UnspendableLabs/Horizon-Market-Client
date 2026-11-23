@@ -41,7 +41,7 @@ const DEFAULTS = {
     baseUrl: "https://signet.horizon.market",
     ordApiBaseUrl: "https://signet.counterparty.io:37000",
     counterpartyApiBaseUrl: "https://signet.counterparty.io:34000",
-    kontorIndexerUrl: "https://signet.kontor.network:35100",
+    kontorIndexerUrl: "https://signet.kontor.network:35000/api",
   },
 } as const;
 

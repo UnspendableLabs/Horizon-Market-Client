@@ -1,4 +1,4 @@
-import type { KontorSession } from "@kontor/sdk";
+import type { KontorSession, Offer } from "@kontor/sdk";
 import type { HttpClient } from "../api/http.js";
 import type { Signer } from "../crypto/signer.js";
 import {
@@ -17,6 +17,7 @@ import {
 import { preflightKontorListing } from "../kontor/preflight.js";
 import { kontorNativeTokenAddress } from "../kontor/chain.js";
 import { getKontorSigning } from "../kontor/signing.js";
+import { settleKontorPublication } from "../kontor/publication.js";
 import type { KontorContext } from "../kontor/context.js";
 import type {
   AtomicSwap,
@@ -80,6 +81,18 @@ export class KontorListingNotRecordedError extends Error {
     this.createRequest = createRequest;
     this.cause = cause;
   }
+}
+
+/**
+ * The signed offer a reconciled attach saved: `Attachment.offer()` keeps it as
+ * the prepared result's `value`, so it survives a lost broadcast response.
+ */
+function recoveredOffer(saved: unknown): Offer | null {
+  const offer = (saved as { value?: unknown } | null)?.value;
+  return offer != null &&
+    typeof (offer as { serialize?: unknown }).serialize === "function"
+    ? (offer as Offer)
+    : null;
 }
 
 function validateKontorSellParams(params: KontorSellParams): void {
@@ -246,17 +259,34 @@ async function escrowAndRecord(
         ? { price: BigInt(params.priceSats), extraOutputs }
         : { price: BigInt(params.priceSats) };
 
+      // `offer()` signs the seller's detach SINGLE|ANYONECANPAY (0x83) and
+      // leaves the Sponsor to the buyer: `accept()` binds its Sponsor to this
+      // escrow input, so the buyer pays the detach's gas. Nothing for the
+      // seller side to add. A lost broadcast response still yields the signed
+      // offer (the SDK keeps it with the recovery handle), so a reconciled
+      // attach carries on to the listing POST like a clean one.
       if (params.kontorAssetKind === "nft") {
         resolvedContractAddress = params.nftContractAddress;
-        const offer = await bindKontorNft(session, resolvedContractAddress)
-          .attachment(params.nftId)
-          .offer(offerOpts);
+        const attachment = bindKontorNft(
+          session,
+          resolvedContractAddress,
+        ).attachment(params.nftId);
+        const offer = await settleKontorPublication(
+          "listing",
+          () => attachment.offer(offerOpts),
+          recoveredOffer,
+        );
         blob = offer.serialize();
       } else {
         resolvedContractAddress = kontorNativeTokenAddress(ctx.chain);
-        const offer = await bindKontorToken(session)
-          .attachment(Decimal.from(params.korAmount))
-          .offer(offerOpts);
+        const attachment = bindKontorToken(session).attachment(
+          Decimal.from(params.korAmount),
+        );
+        const offer = await settleKontorPublication(
+          "listing",
+          () => attachment.offer(offerOpts),
+          recoveredOffer,
+        );
         blob = offer.serialize();
       }
 

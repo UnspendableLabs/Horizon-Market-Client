@@ -6,6 +6,10 @@ import { resolveKontorFunding } from "../kontor/funding.js";
 import { makeKontorSession } from "../kontor/session.js";
 import { getKontorSigning } from "../kontor/signing.js";
 import { preflightKontorPurchase } from "../kontor/preflight.js";
+import {
+  recoveredRevealTxid,
+  settleKontorPublication,
+} from "../kontor/publication.js";
 import type { KontorContext } from "../kontor/context.js";
 import type {
   AtomicSwap,
@@ -224,8 +228,17 @@ export async function fillKontorSwap(
 
     const buyerAddress = session.identity.address;
 
-    const { txid } = await progress.runAsync("acceptKontorOffer", () =>
-      incoming.accept(),
+    // `accept()` makes the buyer the Sponsor: its input 0 carries a Sponsor
+    // bound to the seller's escrow input, so the buyer pays the detach's gas
+    // (the pre-flight above checked exactly that). A lost broadcast response
+    // is reconciled against the signed package before giving up, so a swap
+    // that did land still gets recorded below.
+    const txid = await progress.runAsync("acceptKontorOffer", () =>
+      settleKontorPublication(
+        "purchase",
+        async () => (await incoming.accept()).txid,
+        recoveredRevealTxid,
+      ),
     );
 
     // The swap reveal is on-chain now: recording retries transient failures

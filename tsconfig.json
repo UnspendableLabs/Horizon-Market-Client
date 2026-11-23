@@ -7,7 +7,10 @@
     // 7). We keep the strict-ESM interop semantics on purpose (paired with
     // verbatimModuleSyntax), so acknowledge the deprecation instead of flipping it.
     "ignoreDeprecations": "6.0",
-    "lib": ["ES2022", "DOM"],
+    // `ESNext.Disposable`: @kontor/sdk (>= 0.3.0-rc.7) declares its Wasm `Wit`
+    // resource as `Disposable`. @types/node happens to declare it too, but the
+    // SDK requires it of every TypeScript consumer, so do not lean on that.
+    "lib": ["ES2022", "DOM", "ESNext.Disposable"],
     "jsx": "react-jsx",
     "strict": true,
     "verbatimModuleSyntax": true,

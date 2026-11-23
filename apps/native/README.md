@@ -189,13 +189,14 @@ reads return empty holdings, writes throw a clear `KontorUnavailableError`.
 Kontor is **signet-only** today (`kontorNetwork: "signet"`) and inert on mainnet.
 
 > Note: `@kontor/sdk` and `@kontor/sdk-native` are consumed from the npm registry
-> (both pinned to `0.3.0-rc.6`), and the native binaries (iOS xcframework +
-> Android `.so`s) ship inside the `@kontor/sdk-native` tarball — no local build.
-> `rc.6` ships all the packaging fixes the app used to apply via `postinstall`
-> (`homepage` + `codegenConfig` in package.json, correctly-named
-> `KontorSdkNative.xcframework`, clean Android codegen, no stray
-> `expo-module.config.json`), so those workaround scripts are gone. Verified
-> on-device (market + wallet flows) after a native rebuild.
+> (both pinned to `0.3.0-rc.8` — bump them together), and the native binaries (iOS
+> xcframework + Android `.so`s) ship inside the `@kontor/sdk-native` tarball — no
+> local build. Since `rc.6` the package ships all the packaging fixes the app used to
+> apply via `postinstall` (`homepage` + `codegenConfig` in package.json,
+> correctly-named `KontorSdkNative.xcframework`, clean Android codegen, no stray
+> `expo-module.config.json`), so those workaround scripts are gone. A Kontor bump
+> replaces the native module, so rebuild the app (`expo run:ios` /
+> `expo run:android`), not just the JS bundle.
 
 ## App lock (biometrics / device passcode)
 

@@ -22,8 +22,8 @@
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",
-    "@kontor/sdk": "0.3.0-rc.6",
-    "@kontor/sdk-native": "0.3.0-rc.7",
+    "@kontor/sdk": "0.3.0-rc.8",
+    "@kontor/sdk-native": "0.3.0-rc.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/material-top-tabs": "^7.6.7",
     "@unspendablelabs/horizon-market-client": "file:../..",

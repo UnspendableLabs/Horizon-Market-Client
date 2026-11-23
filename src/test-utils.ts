@@ -184,6 +184,32 @@ export function makeAsyncSigner(
   };
 }
 
+// ─── Kontor uncertain publication ────────────────────────────────────────────
+
+/**
+ * The shape of `@kontor/sdk`'s `SubmissionError` (rc.8+): publication of a
+ * signed commit + reveal is unresolved, and `recovery.reconcile()` re-checks it
+ * read-only. `reconcile` decides the outcome — resolve with the saved result
+ * for "it landed", reject for "still unresolved". The reveal is the last
+ * transaction, txid `"reveal-txid"`.
+ */
+export function makeKontorSubmissionError(reconcile: () => Promise<unknown>) {
+  const err = new Error(
+    "transaction publication is unresolved; recover the original signed submission",
+  );
+  err.name = "SubmissionError";
+  return Object.assign(err, {
+    recovery: {
+      reconcile: vi.fn(reconcile),
+      retry: vi.fn(),
+      transactions: [
+        { hex: "00", txid: "commit-txid", wtxid: "commit-txid" },
+        { hex: "01", txid: "reveal-txid", wtxid: "reveal-txid" },
+      ],
+    },
+  });
+}
+
 // ─── Counterparty taproot commit/reveal fixtures ─────────────────────────────
 
 /**
