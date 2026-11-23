@@ -62,7 +62,7 @@ describe("getNetworkConfig", () => {
     expect(cfg.kontorNetwork).toBe("signet");
     expect(cfg.baseUrl).toBe("https://signet.horizon.market");
     expect(cfg.counterpartyApiBaseUrl).toBe("https://signet.counterparty.io:34000");
-    expect(cfg.kontorIndexerUrl).toBe("https://signet.kontor.network:35100");
+    expect(cfg.kontorIndexerUrl).toBe("https://signet.kontor.network:35000/api");
     // ZELD is mainnet-only — no signet default.
     expect(cfg.zeldApiBaseUrl).toBeUndefined();
   });
