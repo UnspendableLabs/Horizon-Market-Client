@@ -105,7 +105,7 @@ export type {
 export { HorizonMarketApiError } from "./api/http.js";
 
 // Signer
-export type { Signer } from "./crypto/signer.js";
+export type { Signer, SignPsbtHexOptions } from "./crypto/signer.js";
 // LocalSigner: single-key (web3auth). HDSigner: Horizon-Wallet-compatible HD (BIP84 + BIP86).
 export { LocalSigner, HDSigner } from "./crypto/signer.js";
 

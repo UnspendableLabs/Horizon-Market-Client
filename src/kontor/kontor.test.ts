@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as btc from "bitcoinjs-lib";
 import { Identity, signet } from "@kontor/sdk";
 import { resolveKontorChain, kontorNativeTokenAddress } from "./chain.js";
@@ -7,7 +7,11 @@ import {
   attachRevealEscrowFromBlob,
 } from "./contracts.js";
 import { getKontorSigning } from "./signing.js";
-import { fetchKontorFundingUtxos, taprootScriptPubKeyHex } from "./funding.js";
+import {
+  fetchKontorFundingUtxos,
+  resolveKontorFunding,
+  taprootScriptPubKeyHex,
+} from "./funding.js";
 import { LocalSigner, type Signer } from "../crypto/signer.js";
 import { HttpClient } from "../api/http.js";
 import { createKontorFeeQuote } from "../api/kontor.js";
@@ -170,6 +174,88 @@ describe("fetchKontorFundingUtxos (key safety)", () => {
     expect(calls[0].init?.body).toBeUndefined();
     // The private key appears nowhere in the request.
     expect(JSON.stringify(calls)).not.toContain(TEST_KEY);
+  });
+});
+
+describe("resolveKontorFunding (per-submission leases)", () => {
+  const p2tr = new LocalSigner(TEST_KEY, "testnet").getAddresses().p2tr!;
+  const script = taprootScriptPubKeyHex(p2tr, btc.networks.testnet);
+  const unusedHttp = {} as unknown as HttpClient;
+  const utxo = (byte: string, value: number) => ({
+    txid: byte.repeat(32),
+    vout: 0,
+    value,
+  });
+
+  it("leases a static list single-flight, and chains its change once settled", async () => {
+    const funding = resolveKontorFunding(unusedHttp, p2tr, btc.networks.testnet, [
+      utxo("aa", 1000),
+    ]);
+
+    const lease = await funding.reserve();
+    // The scriptPubKey is derived from the address the list was given for.
+    expect(lease.utxos).toEqual([
+      { txid: "aa".repeat(32), vout: 0, value: 1000n, scriptPubKey: script },
+    ]);
+    // A second submission cannot take the same coins while the first is open.
+    await expect(funding.reserve()).rejects.toThrow(/prior submission unresolved/);
+
+    const change = { txid: "cc".repeat(32), vout: 1, value: 400n, scriptPubKey: script };
+    lease.settle({ spent: [...lease.utxos], change: [change] });
+    // Only the verified change is left to fund the next submission.
+    await expect(funding.reserve()).resolves.toMatchObject({ utxos: [change] });
+  });
+
+  it("re-queries a fetcher per lease, never handing out a reserved or spent outpoint", async () => {
+    let snapshot = [utxo("aa", 1000), utxo("bb", 2000)];
+    const fetcher = vi.fn(async () => snapshot);
+    const funding = resolveKontorFunding(
+      unusedHttp,
+      p2tr,
+      btc.networks.testnet,
+      fetcher,
+    );
+
+    const first = await funding.reserve();
+    first.retain([first.utxos[0]!]); // the signed package used only `aa`
+    const second = await funding.reserve();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    // `aa` is reserved by the open lease; the unused `bb` went back to the pool.
+    expect(second.utxos.map((u) => u.txid)).toEqual(["bb".repeat(32)]);
+    second.release();
+
+    first.settle({ spent: [...first.utxos], change: [] });
+    // The wallet's snapshot may still list `aa` (the spend is unconfirmed):
+    // a settled spend is retired from this source, not offered again.
+    snapshot = [utxo("aa", 1000), utxo("bb", 2000)];
+    const third = await funding.reserve();
+    expect(third.utxos.map((u) => u.txid)).toEqual(["bb".repeat(32)]);
+  });
+
+  it("auto-fetches the address's confirmed UTXOs from Horizon on each lease", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (url: string | URL) => {
+      urls.push(String(url));
+      return {
+        status: 200,
+        json: async () => ({
+          data: [
+            { ...utxo("aa", 1000), status: { confirmed: true } },
+            { ...utxo("bb", 2000), status: { confirmed: false } },
+          ],
+        }),
+      } as unknown as Response;
+    }) as typeof fetch;
+    const http = new HttpClient({ baseUrl: "https://horizon.market", fetch: fetchFn });
+    const funding = resolveKontorFunding(http, p2tr, btc.networks.testnet, undefined);
+
+    const lease = await funding.reserve();
+
+    expect(lease.utxos.map((u) => u.txid)).toEqual(["aa".repeat(32)]);
+    expect(urls).toEqual([
+      `https://horizon.market/api/bitcoin/address/${p2tr}/utxos`,
+    ]);
   });
 });
 

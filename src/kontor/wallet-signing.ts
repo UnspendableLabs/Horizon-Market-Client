@@ -1,7 +1,12 @@
 import { hex } from "@scure/base";
 import { SigHash, Transaction } from "@scure/btc-signer";
 import { Identity } from "@kontor/sdk";
-import type { Chain, Signing, SignPsbtOptions } from "@kontor/sdk";
+import type {
+  Chain,
+  SighashKind,
+  Signing,
+  SignPsbtOptions,
+} from "@kontor/sdk";
 import type { Signer } from "../crypto/signer.js";
 
 /**
@@ -22,6 +27,14 @@ import type { Signer } from "../crypto/signer.js";
  * generic {@link Signer} (`signPsbtHex` / `signMessage`) rather than binding to
  * sats-connect — so it works with ANY host-supplied external signer, whatever
  * wallet it wraps. See {@link getKontorSigning}, which selects it automatically.
+ *
+ * The wallet must sign every input under the sighash Kontor requests for it:
+ * `ALL|ANYONECANPAY` (0x81) on `kon` TapScript-leaf inputs, `SINGLE|ANYONECANPAY`
+ * (0x83) on a marketplace seller's detach, `SIGHASH_DEFAULT` on key-path inputs.
+ * The SDK verifies each returned signature before broadcasting, so a wallet that
+ * substitutes its own sighash fails the flow before anything is sent — but it
+ * still fails. Test a wallet's 0x81 / 0x83 and mixed-input support before
+ * relying on it.
  *
  * The wallet's **internal** taproot x-only public key (from
  * `getAddresses().xOnlyPubkey`) is Kontor's identity — NOT the tweaked output key
@@ -72,32 +85,44 @@ export function createWalletKontorSigning(signer: Signer, chain: Chain): Signing
       }
       if (inputs.length === 0) return psbt;
 
-      // A single `signPsbtHex` call signs every requested input under one sighash
-      // (an extension wallet's signPsbt takes one allowedSignHash per request), so
-      // one call can't mix sighash kinds. Kontor never does within a single call.
-      const sighash = singleSighash(inputs);
+      // Each input keeps the sighash Kontor asked for, and one request may mix
+      // them: a delist's revoke signs the escrow's script-path input under
+      // ALL|ANYONECANPAY (0x81) and its key-path fee inputs under
+      // SIGHASH_DEFAULT. Collapsing them to one sighash would make the SDK
+      // reject the signatures (it verifies each one before broadcast).
+      const sighashTypes: Record<number, number> = {};
+      for (const { index, sighash } of inputs) {
+        sighashTypes[index] = sighashFlag(sighash ?? "default");
+      }
 
       let bytes = psbt;
-      if (sighash !== "default") {
-        // Encode the requested sighash into each input so the underlying signer
-        // (and the wallet behind it) signs under it. `allowUnknown` preserves
-        // Kontor's proprietary PSBT fields across the re-serialize.
+      const stamped = inputs.filter(
+        (i) => sighashTypes[i.index] !== SigHash.DEFAULT,
+      );
+      if (stamped.length > 0) {
+        // Encode the non-default sighashes into their inputs so a signer that
+        // reads the PSBT (and the wallet behind it) signs under them. Default
+        // inputs are left as they are, as Kontor's own sats-connect adapter
+        // does. `allowUnknown` preserves Kontor's proprietary PSBT fields
+        // across the re-serialize.
         const tx = Transaction.fromPSBT(psbt, {
           allowUnknown: true,
           allowUnknownInputs: true,
           allowUnknownOutputs: true,
           disableScriptCheck: true,
         });
-        const sighashType = SIGHASH_BY_KIND[sighash];
-        for (const { index } of inputs) {
-          tx.updateInput(index, { sighashType }, true);
+        for (const { index } of stamped) {
+          tx.updateInput(index, { sighashType: sighashTypes[index] }, true);
         }
         bytes = tx.toPSBT();
       }
 
+      // The same request, stated explicitly, for a signer whose wallet API
+      // takes sighash lists rather than reading the PSBT field.
       const signedHex = await signer.signPsbtHex(
         hex.encode(bytes),
         inputs.map((i) => i.index),
+        { sighashTypes },
       );
       return hex.decode(stripHexPrefix(signedHex));
     },
@@ -109,27 +134,32 @@ export function createWalletKontorSigning(signer: Signer, chain: Chain): Signing
   };
 }
 
-/** Kontor `SighashKind` → the numeric sighash flag the PSBT input carries. */
-const SIGHASH_BY_KIND: Record<"all" | "single-anyonecanpay", number> = {
+/**
+ * Kontor `SighashKind` → the numeric sighash flag. Typed over the SDK's whole
+ * union so a kind added by a future SDK release fails to compile here instead
+ * of being signed under the wrong sighash.
+ *
+ * Kontor's launch format signs direct transactions through the `kon` TapScript
+ * leaf under `all-anyonecanpay` (0x81); a marketplace seller signs the detach
+ * under `single-anyonecanpay` (0x83); commits and fee inputs are key-path
+ * spends under `default`.
+ */
+const SIGHASH_BY_KIND: Record<SighashKind, number> = {
+  default: SigHash.DEFAULT,
   all: SigHash.ALL,
+  "all-anyonecanpay": SigHash.ALL_ANYONECANPAY,
   "single-anyonecanpay": SigHash.SINGLE_ANYONECANPAY,
 };
 
-/**
- * Collapse a batch of inputs to the one sighash they must all share. Kontor tags
- * each input with `sighash` (default `"default"`); a batch that mixes kinds can't
- * be expressed in a single wallet signPsbt request, so we reject it.
- */
-function singleSighash(
-  inputs: NonNullable<SignPsbtOptions["inputs"]>,
-): "default" | "all" | "single-anyonecanpay" {
-  const kinds = new Set(inputs.map((i) => i.sighash ?? "default"));
-  if (kinds.size > 1) {
+/** The flag for `kind`, refusing a kind this adapter does not know. */
+function sighashFlag(kind: SighashKind): number {
+  const flag = SIGHASH_BY_KIND[kind] as number | undefined;
+  if (flag === undefined) {
     throw new Error(
-      "wallet Kontor signing: one signPsbt call can't mix sighash types.",
+      `wallet Kontor signing: unsupported sighash "${String(kind)}".`,
     );
   }
-  return [...kinds][0] ?? "default";
+  return flag;
 }
 
 /**
