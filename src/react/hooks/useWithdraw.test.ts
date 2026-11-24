@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-utils.js";
+import {
+  makeCtx,
+  makeKontorUnresolvedError,
+  renderHook,
+  act,
+  waitFor,
+  type CtxRef,
+} from "../hook-test-utils.js";
 import type { HorizonMarketContextValue } from "../context.js";
 import type { PreparedSend } from "../../send/types.js";
 import type { FeeEstimates } from "./useFeeEstimates.js";
@@ -867,6 +874,109 @@ describe("useWithdraw", () => {
       await act(async () => result.current.retry());
       expect(result.current.step).toBe("form");
       expect(result.current.status).toBe("idle");
+    });
+
+    describe("after an uncertain Kontor publication", () => {
+      /** A KOR send whose broadcast ends in KontorPublicationUnresolvedError. */
+      async function reachUnresolved(onSuccess = vi.fn()) {
+        const { error, recovery } = makeKontorUnresolvedError("transfer");
+        const broadcast = vi.fn().mockRejectedValue(error);
+        const prepared = { kind: "kor", feeSats: null, broadcast } as PreparedSend;
+        const prepareSend = withPrepareSend(vi.fn().mockResolvedValue(prepared));
+        const { result } = renderHook(() =>
+          useWithdraw({ target: korTarget(), onSuccess }),
+        );
+        await reachConfirm(result, { destination: "tb1pdest", quantity: "1" });
+        await act(async () => {
+          await result.current.confirmAndSend();
+        });
+        return { result, error, recovery, broadcast, prepareSend, onSuccess };
+      }
+
+      it("flags the failure as unresolved, unlike any other failure", async () => {
+        const { result, error } = await reachUnresolved();
+        expect(result.current.status).toBe("error");
+        expect(result.current.error).toBe(error);
+        expect(result.current.isUnresolved).toBe(true);
+      });
+
+      it("goBack does not reopen the filled-in form", async () => {
+        const { result, error } = await reachUnresolved();
+        await act(async () => result.current.goBack());
+        expect(result.current.step).toBe("result");
+        expect(result.current.error).toBe(error);
+      });
+
+      it("retry re-sends the same signed package and never composes again", async () => {
+        const { result, recovery, broadcast, prepareSend, onSuccess } =
+          await reachUnresolved();
+        recovery.retry.mockResolvedValueOnce({ result: { txid: "reveal-landed" } });
+
+        await act(async () => result.current.retry());
+
+        expect(recovery.retry).toHaveBeenCalledTimes(1);
+        expect(prepareSend).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(result.current.step).toBe("result");
+        expect(result.current.status).toBe("success");
+        expect(result.current.isUnresolved).toBe(false);
+        expect(result.current.result).toEqual({ txid: "reveal-landed" });
+        expect(onSuccess).toHaveBeenCalledWith("reveal-landed");
+        expect(assetsRef.current.refresh).toHaveBeenCalled();
+      });
+
+      it("falls back to the package's reveal txid when the saved result has none", async () => {
+        const { result, recovery } = await reachUnresolved();
+        recovery.retry.mockResolvedValueOnce(undefined);
+        await act(async () => result.current.retry());
+        expect(result.current.result).toEqual({ txid: "reveal-txid" });
+      });
+
+      it("stays unresolved, with the original message, when it still can't tell", async () => {
+        const { result, error, recovery } = await reachUnresolved();
+        recovery.retry.mockRejectedValueOnce(new Error("broadcast report unknown"));
+
+        await act(async () => result.current.retry());
+
+        expect(result.current.status).toBe("error");
+        expect(result.current.isUnresolved).toBe(true);
+        expect(result.current.error).toBe(error);
+        expect(result.current.isSubmitting).toBe(false);
+      });
+
+      it("ignores a second check while one is in flight", async () => {
+        const { result, recovery } = await reachUnresolved();
+        let land!: (v: unknown) => void;
+        recovery.retry.mockReturnValueOnce(new Promise((r) => (land = r)));
+
+        await act(async () => result.current.retry());
+        expect(result.current.isSubmitting).toBe(true);
+        await act(async () => result.current.retry());
+        expect(recovery.retry).toHaveBeenCalledTimes(1);
+
+        await act(async () => land({ result: { txid: "reveal-landed" } }));
+        expect(result.current.status).toBe("success");
+      });
+
+      it("a plain broadcast failure is not unresolved", async () => {
+        const broadcast = vi.fn().mockRejectedValue(new Error("nope"));
+        const prepared = { kind: "btc", feeSats: 1n, broadcast } as PreparedSend;
+        withPrepareSend(vi.fn().mockResolvedValue(prepared));
+        const { result } = renderHook(() => useWithdraw({ target: btcTarget() }));
+        await reachConfirm(result);
+        await act(async () => {
+          await result.current.confirmAndSend();
+        });
+        expect(result.current.status).toBe("error");
+        expect(result.current.isUnresolved).toBe(false);
+      });
+
+      it("reset leaves the unresolved state behind", async () => {
+        const { result } = await reachUnresolved();
+        await act(async () => result.current.reset());
+        expect(result.current.isUnresolved).toBe(false);
+        expect(result.current.step).toBe("form");
+      });
     });
 
     it("reset restores every field to its default", async () => {

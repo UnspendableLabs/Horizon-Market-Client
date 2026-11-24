@@ -7,6 +7,7 @@ import type {
 import type { SellBroadcastTx } from "../../workflows/sell.js";
 import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
 import { buildSellOrderParams } from "../internal/sellFormValidation.js";
+import { unresolvedKontorPublication } from "../../kontor/publication.js";
 import type { OpenSellOrderParams } from "../../workflows/sell.js";
 import type { AssetOption } from "./useAssets.js";
 
@@ -59,9 +60,18 @@ export interface UseSellOrderResult {
   ) => void;
   submitForm: () => void;
   confirmAndSell: (overrides?: { satsPerVbyte?: number }) => Promise<void>;
+  /** Back a step — but not from {@link isUnresolved}, whose form re-signs. */
   goBack: () => void;
+  /** Re-run a failed listing — a no-op when {@link isUnresolved}. */
   retry: () => void;
   reset: () => void;
+  /**
+   * True when the failed listing is an uncertain Kontor publication
+   * (`KontorPublicationUnresolvedError`): its attach was signed and sent, and
+   * may already be on-chain. Re-running it would sign a second attach, so
+   * neither `retry` nor `goBack` does anything; offer a way out, not "Retry".
+   */
+  isUnresolved: boolean;
   steps: WorkflowProgressEvent[];
   totalSteps: number | null;
   status: SellOrderStatus;
@@ -90,6 +100,8 @@ export function useSellOrder(
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<SellOrderResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const isUnresolved =
+    status === "error" && unresolvedKontorPublication(error) !== null;
 
   const submittingRef = useRef(false);
   const confirmedParamsRef = useRef<OpenSellOrderParams | null>(null);
@@ -189,19 +201,21 @@ export function useSellOrder(
     }
   }, [client, refreshCredits]);
 
+  // Neither goes anywhere after an uncertain publication: both lead straight
+  // back to signing a second attach for an asset the first may have escrowed.
   const goBack = useCallback(() => {
     if (step === "confirm") {
       setStep("form");
-    } else if (step === "result" && status === "error") {
+    } else if (step === "result" && status === "error" && !isUnresolved) {
       setError(null);
       setStep("form");
     }
-  }, [step, status]);
+  }, [step, status, isUnresolved]);
 
   const retry = useCallback(() => {
-    if (status !== "error") return;
+    if (status !== "error" || isUnresolved) return;
     void confirmAndSell();
-  }, [status, confirmAndSell]);
+  }, [status, isUnresolved, confirmAndSell]);
 
   const reset = useCallback(() => {
     setStep("form");
@@ -225,6 +239,7 @@ export function useSellOrder(
     goBack,
     retry,
     reset,
+    isUnresolved,
     steps,
     totalSteps,
     status,

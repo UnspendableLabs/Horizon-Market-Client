@@ -8,6 +8,11 @@ import {
   DEFAULT_ZELD_API_BASE_URL,
 } from "../config.js";
 import type { HorizonMarketContextValue } from "./context.js";
+import {
+  KontorPublicationUnresolvedError,
+  type KontorPublicationOperation,
+} from "../kontor/publication.js";
+import type { PendingSubmission } from "@kontor/sdk";
 import { defaultTheme } from "./theme.js";
 
 export { renderHook, act, waitFor } from "@testing-library/react";
@@ -114,3 +119,31 @@ export function makeCtx(
  * ```
  */
 export type CtxRef = { current: HorizonMarketContextValue | null };
+
+/**
+ * A {@link KontorPublicationUnresolvedError} for `operation`, as a Kontor write
+ * throws it once the read-only re-check could not settle it either. The reveal
+ * is the package's last transaction, txid `"reveal-txid"`. `recovery.retry`
+ * (re-send the same signed bytes) is a mock the test drives: resolve it with
+ * the saved result for "it landed", reject it for "still unknown".
+ */
+export function makeKontorUnresolvedError(
+  operation: KontorPublicationOperation = "transfer",
+) {
+  const recovery = {
+    reconcile: vi.fn(async () => {
+      throw new Error("still unresolved");
+    }),
+    retry: vi.fn<() => Promise<unknown>>(),
+    transactions: [
+      { hex: "00", txid: "commit-txid", wtxid: "commit-txid" },
+      { hex: "01", txid: "reveal-txid", wtxid: "reveal-txid" },
+    ],
+  };
+  const error = new KontorPublicationUnresolvedError(
+    operation,
+    recovery as unknown as PendingSubmission,
+    new Error("still unresolved"),
+  );
+  return { error, recovery };
+}

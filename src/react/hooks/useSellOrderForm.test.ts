@@ -51,6 +51,7 @@ function makeSellOrder(
     goBack: vi.fn(),
     retry: vi.fn(),
     reset: vi.fn(),
+    isUnresolved: false,
     steps: [],
     totalSteps: null,
     status: "idle",

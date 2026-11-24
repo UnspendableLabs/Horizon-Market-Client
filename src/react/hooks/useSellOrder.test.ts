@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-utils.js";
+import {
+  makeCtx,
+  makeKontorUnresolvedError,
+  renderHook,
+  act,
+  waitFor,
+  type CtxRef,
+} from "../hook-test-utils.js";
 import { CLIENT_NOT_INITIALIZED } from "../internal/format.js";
 import type { AssetOption } from "./useAssets.js";
 import { useSellOrder } from "./useSellOrder.js";
@@ -248,6 +255,46 @@ describe("useSellOrder", () => {
     });
     await waitFor(() => expect(result.current.status).toBe("success"));
     expect(openSellOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it("never re-runs or reopens an uncertain listing publication", async () => {
+    const { error } = makeKontorUnresolvedError("listing");
+    const openSellOrder = vi.fn().mockRejectedValue(error);
+    ctxRef.current = makeCtx({ client: { openSellOrder } });
+    const { result } = renderHook(() => useSellOrder());
+
+    fillAndSubmit(result);
+    await act(async () => {
+      await result.current.confirmAndSell();
+    });
+    expect(result.current.status).toBe("error");
+    expect(result.current.isUnresolved).toBe(true);
+
+    // retry would sign a second attach; goBack leads straight to one.
+    await act(async () => {
+      result.current.retry();
+    });
+    act(() => result.current.goBack());
+    expect(openSellOrder).toHaveBeenCalledTimes(1);
+    expect(result.current.step).toBe("result");
+    expect(result.current.error).toBe(error);
+
+    // A deliberate fresh start is still possible.
+    act(() => result.current.reset());
+    expect(result.current.isUnresolved).toBe(false);
+    expect(result.current.step).toBe("form");
+  });
+
+  it("isUnresolved stays false for any other failure", async () => {
+    const openSellOrder = vi.fn().mockRejectedValue(new Error("refused"));
+    ctxRef.current = makeCtx({ client: { openSellOrder } });
+    const { result } = renderHook(() => useSellOrder());
+    fillAndSubmit(result);
+    await act(async () => {
+      await result.current.confirmAndSell();
+    });
+    expect(result.current.status).toBe("error");
+    expect(result.current.isUnresolved).toBe(false);
   });
 
   it("reset clears the whole flow", async () => {

@@ -406,6 +406,9 @@ export function WithdrawForm({
         onComplete={w.reset}
         completeLabel="New withdrawal"
         onClose={onClose}
+        unresolved={w.isUnresolved}
+        onCheckAgain={w.retry}
+        checking={w.isSubmitting}
         classNames={{
           button: classNames?.button,
           buttonSecondary: classNames?.buttonSecondary,

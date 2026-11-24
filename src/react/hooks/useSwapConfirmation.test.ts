@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { makeCtx, renderHook, act, waitFor, type CtxRef } from "../hook-test-utils.js";
+import {
+  makeCtx,
+  makeKontorUnresolvedError,
+  renderHook,
+  act,
+  waitFor,
+  type CtxRef,
+} from "../hook-test-utils.js";
 import type { HorizonMarketContextValue } from "../context.js";
 import type {
   PendingSale,
@@ -584,6 +591,67 @@ describe("useSwapConfirmation — retry / reset / swapId change", () => {
     });
     await waitFor(() => expect(result.current.delistStatus).toBe("success"));
     expect(delistSwap).toHaveBeenCalledTimes(2);
+  });
+
+  it("retry never re-accepts after an uncertain purchase publication", async () => {
+    const { error } = makeKontorUnresolvedError("purchase");
+    const fillSwaps = vi.fn().mockRejectedValue(error);
+    const recordKontorPurchase = vi.fn();
+    ctxRef.current = ctxWith({ fillSwaps, recordKontorPurchase });
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({ swapId: "swap-u-1", mode: "buy" }),
+    );
+    await act(async () => {
+      await result.current.confirmPurchase();
+    });
+    expect(result.current.buyStatus).toBe("error");
+    expect(result.current.isUnresolved).toBe(true);
+
+    await act(async () => {
+      result.current.retry();
+    });
+    expect(fillSwaps).toHaveBeenCalledTimes(1);
+    expect(recordKontorPurchase).not.toHaveBeenCalled();
+    expect(result.current.error).toBe(error);
+  });
+
+  it("retry never re-revokes after an uncertain delist publication", async () => {
+    const { error } = makeKontorUnresolvedError("delisting");
+    const delistSwap = vi.fn().mockRejectedValue(error);
+    ctxRef.current = ctxWith({ delistSwap });
+
+    const { result } = renderHook(() =>
+      useSwapConfirmation({ swapId: "swap-u-2", mode: "sell" }),
+    );
+    await act(async () => {
+      await result.current.delist();
+    });
+    expect(result.current.delistStatus).toBe("error");
+    expect(result.current.isUnresolved).toBe(true);
+
+    await act(async () => {
+      result.current.retry();
+    });
+    expect(delistSwap).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.reset());
+    expect(result.current.isUnresolved).toBe(false);
+  });
+
+  it("isUnresolved stays false for a record-only failure", async () => {
+    const fillSwaps = vi
+      .fn()
+      .mockRejectedValue(notRecordedError("swap-u-3", "tx-reveal", "bc1qbuyer"));
+    ctxRef.current = ctxWith({ fillSwaps });
+    const { result } = renderHook(() =>
+      useSwapConfirmation({ swapId: "swap-u-3", mode: "buy" }),
+    );
+    await act(async () => {
+      await result.current.confirmPurchase();
+    });
+    expect(result.current.buyStatus).toBe("error");
+    expect(result.current.isUnresolved).toBe(false);
   });
 
   it("retry is a no-op when nothing has run yet", async () => {

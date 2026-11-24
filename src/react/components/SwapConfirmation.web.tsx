@@ -89,6 +89,7 @@ export function SwapConfirmation({
     preflight,
     retry,
     reset,
+    isUnresolved,
   } = useSwapConfirmation({
     swapId: swap.id,
     mode,
@@ -252,6 +253,7 @@ export function SwapConfirmation({
         isError={status === "error"}
         onBack={reset}
         onRetry={retry}
+        unresolved={isUnresolved}
         onComplete={() => { reset(); onComplete?.(); }}
         completeLabel="Done"
         classNames={{
