@@ -122,6 +122,7 @@ export function SellOrderForm({
     goBack,
     retry,
     reset,
+    isUnresolved,
     steps,
     totalSteps,
     status,
@@ -315,6 +316,7 @@ export function SellOrderForm({
         isError={status === "error"}
         onBack={goBack}
         onRetry={retry}
+        unresolved={isUnresolved}
         onComplete={reset}
         completeLabel="New order"
         onClose={onDone ?? onClose}

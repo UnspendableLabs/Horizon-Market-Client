@@ -9,6 +9,10 @@ import type { PreparedSend, SendKind, SendRequest } from "../../client.js";
 import type { KontorAssetKind } from "../../types/index.js";
 import { useKontorMinerFee } from "../internal/useKontorMinerFee.js";
 import { estimateKontorMinerFee } from "../internal/kontorFeeEstimate.js";
+import {
+  recoveredRevealTxid,
+  unresolvedKontorPublication,
+} from "../../kontor/publication.js";
 import { usePrices } from "./usePrices.js";
 import { useAssets, type AssetOption } from "./useAssets.js";
 import { useFeeEstimates, type FeeEstimates } from "./useFeeEstimates.js";
@@ -120,9 +124,23 @@ export interface UseWithdrawResult {
   /** True when the Kontor estimate was calibrated from a live same-kind listing. */
   feeEstimateCalibrated: boolean;
   isSubmitting: boolean;
+  /**
+   * True when the failed send is an uncertain Kontor publication
+   * (`KontorPublicationUnresolvedError`): it was signed and handed to the
+   * network, and may already be on-chain. Starting over would compose and sign
+   * a second transfer, so `goBack` is a no-op and `retry` re-sends the SAME
+   * signed package instead — offer "Check again", never "Back" / "Retry".
+   */
+  isUnresolved: boolean;
   submitForm: () => void;
   confirmAndSend: () => Promise<void>;
+  /** Back to the form (from review, or from a failed result unless {@link isUnresolved}). */
   goBack: () => void;
+  /**
+   * After a failure: back to the form to compose afresh — or, when
+   * {@link isUnresolved}, re-send the exact signed package (never re-composed
+   * or re-signed), turning the result into success once Bitcoin has all of it.
+   */
   retry: () => void;
   reset: () => void;
   result: WithdrawResult | null;
@@ -323,6 +341,8 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
   const [feeSats, setFeeSats] = useState<bigint | null>(null);
   const [result, setResult] = useState<WithdrawResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const isUnresolved =
+    status === "error" && unresolvedKontorPublication(error) !== null;
 
   const preparingRef = useRef(false);
   const submittingRef = useRef(false);
@@ -442,22 +462,55 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
       preparedRef.current = null;
       setFeeSats(null);
       setStep("form");
-    } else if (step === "result" && status === "error") {
+    } else if (step === "result" && status === "error" && !isUnresolved) {
+      // Not after an uncertain publication: the form is still filled in, one
+      // "Review → Confirm" away from signing the same transfer a second time.
       setError(null);
       setStep("form");
     }
-  }, [step, status]);
+  }, [step, status, isUnresolved]);
 
-  // On a broadcast failure the composed tx may be stale (e.g. spent inputs), so
-  // retry re-composes from the form rather than re-broadcasting.
+  // An uncertain Kontor publication may already be on-chain. Re-send the exact
+  // signed package — the SDK never composes or signs again, and Bitcoin cannot
+  // accept the same transactions twice — so it both re-checks it and completes
+  // a broadcast that only got halfway (commit accepted, reveal not).
+  const recheckPublication = useCallback(async () => {
+    const unresolved = unresolvedKontorPublication(error);
+    if (!unresolved || submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      const saved = await unresolved.recovery.retry();
+      const res = { txid: recoveredRevealTxid(saved, unresolved.recovery) };
+      setResult(res);
+      setError(null);
+      setStatus("success");
+      optsRef.current.onSuccess?.(res.txid);
+      refreshAssets();
+    } catch {
+      // Still unresolved: keep the original error, whose message already says
+      // not to send again and to check later. The SDK's own error adds nothing
+      // the user can act on.
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  }, [error, refreshAssets]);
+
+  // On any other broadcast failure the composed tx may be stale (e.g. spent
+  // inputs), so retry re-composes from the form rather than re-broadcasting.
   const retry = useCallback(() => {
     if (status !== "error") return;
+    if (isUnresolved) {
+      void recheckPublication();
+      return;
+    }
     preparedRef.current = null;
     setFeeSats(null);
     setError(null);
     setStatus("idle");
     setStep("form");
-  }, [status]);
+  }, [status, isUnresolved, recheckPublication]);
 
   const reset = useCallback(() => {
     setFormValuesState({ destination: "", quantity: "" });
@@ -527,6 +580,7 @@ export function useWithdraw(options: UseWithdrawOptions): UseWithdrawResult {
     estimatedFeeSats,
     feeEstimateCalibrated: kontorMiner.calibrated,
     isSubmitting,
+    isUnresolved,
     submitForm,
     confirmAndSend,
     goBack,

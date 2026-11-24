@@ -71,6 +71,29 @@ export class KontorPublicationUnresolvedError extends Error {
   }
 }
 
+/**
+ * The {@link KontorPublicationUnresolvedError} behind a failure, or null.
+ *
+ * UIs use it to tell an uncertain publication apart from every other failure:
+ * for those, starting over is the fix, while here it is the one thing that can
+ * send twice. Matched by name as well as `instanceof`, like the SDK error
+ * below, so a second copy of this module is still recognised.
+ */
+export function unresolvedKontorPublication(
+  err: unknown,
+): KontorPublicationUnresolvedError | null {
+  if (err instanceof KontorPublicationUnresolvedError) return err;
+  if (
+    err instanceof Error &&
+    err.name === "KontorPublicationUnresolvedError" &&
+    typeof (err as Partial<KontorPublicationUnresolvedError>).recovery
+      ?.retry === "function"
+  ) {
+    return err as KontorPublicationUnresolvedError;
+  }
+  return null;
+}
+
 /** The shape of `@kontor/sdk`'s `SubmissionError` this module relies on. */
 interface SubmissionErrorLike extends Error {
   recovery: PendingSubmission;

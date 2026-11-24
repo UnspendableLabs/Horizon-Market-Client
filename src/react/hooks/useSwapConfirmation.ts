@@ -15,6 +15,7 @@ import {
   kontorPurchaseRecovery,
   type KontorPurchaseRecovery,
 } from "../../kontor/purchase-recovery.js";
+import { unresolvedKontorPublication } from "../../kontor/publication.js";
 import { CLIENT_NOT_INITIALIZED, mempoolTxUrl } from "../internal/format.js";
 
 export type SwapConfirmationStep = "confirm" | "progress" | "result";
@@ -83,8 +84,16 @@ export interface UseSwapConfirmationResult {
   preflight: UseKontorPreflightResult;
   confirmPurchase: (extra?: Partial<FillSwapsParams>) => Promise<void>;
   delist: () => Promise<void>;
+  /** Re-run the failed buy / delist — a no-op when {@link isUnresolved}. */
   retry: () => void;
   reset: () => void;
+  /**
+   * True when the failed buy or delist is an uncertain Kontor publication
+   * (`KontorPublicationUnresolvedError`): its transaction was signed and sent,
+   * and may already be on-chain. `retry` would sign a second one, so it does
+   * nothing; offer a way out, not "Retry".
+   */
+  isUnresolved: boolean;
 }
 
 type Action =
@@ -360,7 +369,12 @@ export function useSwapConfirmation(
     }
   }, [client, swapId]);
 
+  const isUnresolved = unresolvedKontorPublication(error) !== null;
+
   const retry = useCallback(() => {
+    // Signed, sent, maybe on-chain: re-running would sign a second accept or
+    // revoke rather than look for the first.
+    if (isUnresolved) return;
     // The offer was consumed on-chain but not recorded — replay only the
     // recording POST, never a fresh fillSwaps (which would re-broadcast).
     if (recordRetry) {
@@ -370,7 +384,7 @@ export function useSwapConfirmation(
     if (!lastAction) return;
     if (lastAction.type === "buy") void confirmPurchase(lastAction.params);
     else void delist();
-  }, [recordRetry, recordPurchase, lastAction, confirmPurchase, delist]);
+  }, [isUnresolved, recordRetry, recordPurchase, lastAction, confirmPurchase, delist]);
 
   // Unified view of the active flow so both renderers read one status/steps/
   // message instead of each re-selecting buy-vs-delist and rebuilding the label.
@@ -411,5 +425,6 @@ export function useSwapConfirmation(
     delist,
     retry,
     reset,
+    isUnresolved,
   };
 }

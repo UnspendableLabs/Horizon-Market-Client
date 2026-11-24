@@ -291,6 +291,7 @@ export function SellOrderForm({
     goBack,
     retry,
     reset,
+    isUnresolved,
     steps,
     totalSteps,
     status,
@@ -449,6 +450,7 @@ export function SellOrderForm({
           isError={status === "error"}
           onBack={goBack}
           onRetry={retry}
+          unresolved={isUnresolved}
           onComplete={newOrder}
           completeLabel="New order"
           // The result "Close" can go somewhere different from the back button

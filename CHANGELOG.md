@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **No "Retry" after an uncertain Kontor publication.** When a Kontor write
+  ended in `KontorPublicationUnresolvedError` (signed, sent, maybe already
+  on-chain), the default result screens still offered Back and Retry, and both
+  started the operation over. For a KOR or NFT withdraw from `WalletBalances`,
+  that composed and signed a second transfer, a second spend of the same funds
+  once the first one lands. For a listing, it signed a second attach. The
+  withdraw result now offers **Check again**, which re-sends the exact signed
+  package through the SDK's `recovery.retry()`: nothing is composed or signed
+  again, so Bitcoin cannot accept it twice. It turns into "Sent!" with the
+  reveal txid once every transaction is observed, and keeps the original
+  "do not send again" message while it still cannot tell. A listing, purchase
+  or delist that ends unresolved now offers only a way out (Close, or the
+  flow's completion button). Their recovery also has to record the result with
+  Horizon Market, which a re-check alone does not do.
+
+### Added
+
+- **`isUnresolved` on `useWithdraw`, `useSellOrder` / `useSellOrderForm` and
+  `useSwapConfirmation`**, for hosts with their own result screen. When it is
+  true, `goBack` does nothing (the form it reopens is one click away from
+  signing again), and `retry` re-sends the same package for a withdraw and
+  does nothing for the other flows. Don't render a "Retry" for it.
+
 ## [0.8.0] - 2026-11-23
 
 **Kontor on the relaunched signet.** Kontor relaunched signet on a fresh

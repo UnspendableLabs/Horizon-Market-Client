@@ -14,6 +14,7 @@ import {
   KontorPublicationUnresolvedError,
   recoveredRevealTxid,
   settleKontorPublication,
+  unresolvedKontorPublication,
 } from "./publication.js";
 
 /**
@@ -221,5 +222,49 @@ describe("recoveredRevealTxid", () => {
     expect(recoveredRevealTxid(undefined, pending)).toBe(
       pending.transactions[1]!.txid,
     );
+  });
+});
+
+describe("unresolvedKontorPublication", () => {
+  it("picks out the unresolved error, including a second copy of its class", async () => {
+    const { pending } = await uncertainPackage(async () => ({}));
+    const unresolved = new KontorPublicationUnresolvedError(
+      "transfer",
+      pending,
+      new Error("lost"),
+    );
+    expect(unresolvedKontorPublication(unresolved)).toBe(unresolved);
+
+    const copy = Object.assign(new Error(unresolved.message), {
+      name: "KontorPublicationUnresolvedError",
+      recovery: pending,
+    });
+    expect(unresolvedKontorPublication(copy)).toBe(copy);
+  });
+
+  it("is null for anything else, the SDK's own SubmissionError included", async () => {
+    const { pending } = await uncertainPackage(async () => ({}));
+    const named = new Error("no handle");
+    named.name = "KontorPublicationUnresolvedError";
+    expect(unresolvedKontorPublication(named)).toBeNull();
+    expect(unresolvedKontorPublication(new SubmissionError(pending))).toBeNull();
+    expect(unresolvedKontorPublication(new Error("refused"))).toBeNull();
+    expect(unresolvedKontorPublication(null)).toBeNull();
+  });
+
+  it("its recovery re-sends the exact signed bytes, which is what a UI's re-check runs", async () => {
+    const request = vi.fn<Request>();
+    const { pending, saved } = await uncertainPackage(request);
+    const raw = pending.transactions.map((tx) => tx.hex);
+
+    request.mockResolvedValueOnce(report(pending, ["accepted", "unknown"]));
+    await expect(pending.retry()).rejects.toBeInstanceOf(SubmissionError);
+    request.mockResolvedValueOnce(report(pending, ["accepted", "accepted"]));
+    await expect(pending.retry()).resolves.toBe(saved);
+
+    expect(request.mock.calls).toEqual([
+      ["broadcast", raw],
+      ["broadcast", raw],
+    ]);
   });
 });
